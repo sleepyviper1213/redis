@@ -1,0 +1,73 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# MacOS
+.DS_Store
+*.dSYM
+
+# Build folders
+build/
+compile_commands.json
+
+# CMake cache
+.cache
+
+# logs folder
+logs
+
+# Docs generated from Doxygen
+docs
+
+# Qt generated file
+CMakeLists.txt.user
+
+# binary executable folders
+bin
+
+# CTest temporaries
+Testing
+
+# CMake-Conan preset config
+CMakeUserPresets.json
+conan_provider.cmake
+
+# CLion cache
+.idea
+
+# Jupyter
+.ipynb_checkpoints/
+
+# SSL certificates
+*.crt
+*.key
+*.pem

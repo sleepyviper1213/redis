@@ -1,0 +1,2 @@
+#pragma once
+enum class TTLError { KEY_ITER_NOTFOUND, TTL_NOT_FOUND, INVALID_ARGUMENT };

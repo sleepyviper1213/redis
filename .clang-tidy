@@ -1,0 +1,35 @@
+Checks: >
+  -*,
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  -cert-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-owning-memory,
+  llvm-*,
+  -llvm-header-guard,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  misc-*,
+  -performance-*
+
+CheckOptions:
+  readability-identifier-naming.ClassCase: 'CamelCase'
+  readability-identifier-naming.GlobalConstantCase: 'UPPER_CASE'
+  readability-identifier-naming.EnumConstantCase: 'UPPER_CASE'
+  readability-identifier-naming.EnumCase: 'CamelCase'
+  readability-identifier-naming.FunctionCase: 'camelBack'
+  readability-identifier-naming.FunctionIgnoredRegexp: '"LLVMFuzzerTestOneInput"'
+  readability-identifier-naming.MemberCase: 'camelBack'
+  readability-identifier-naming.UnionCase: 'CamelCase'
+  readability-identifier-naming.LocalVariableCase: 'camelBack'
+  readability-identifier-naming.PrivateMemberCase: 'camelBack'
+  readability-identifier-naming.PrivateMemberHungarianPrefix: 'm_'
+  readability-identifier-naming.TemplateParameterCase: 'CamelCase'
+  readability-identifier-naming.ParameterCase: 'camelBack'
+  readability-identifier-naming.IgnoreMainLikeFunctions: 'true'
+  readability-redundant-member-init.IgnoreBaseInCopyConstructors: 'true'
+  modernize-use-default-member-init.UseAssignment: 'true'
+  readability-function-size.LineThreshold: '35'
+  readability-identifier-naming.GetConfigPerFile: 'false'
