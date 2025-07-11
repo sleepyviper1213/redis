@@ -18,8 +18,8 @@ endif()
 find_package(Catch2 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(cereal REQUIRED)
-find_package(Boost 1.83.0 COMPONENTS system CONFIG QUIET)
-
+find_package(boost_thread CONFIG REQUIRED)
+find_package(boost_beast CONFIG REQUIRED)
 
 if(PROJECT_IS_TOP_LEVEL)
 	set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -27,7 +27,7 @@ if(PROJECT_IS_TOP_LEVEL)
 
 	# Let's ensure -std=c++xx instead of -std=g++xx
 	set(CMAKE_CXX_STANDARD 23)
-	set(CMAKE_CXX_EXTENSIONS ON)
+	set(CMAKE_CXX_EXTENSIONS OFF)
 	# Testing only available if this is the main app. add_subdirectory(tests)
 endif()
 

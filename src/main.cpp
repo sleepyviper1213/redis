@@ -1,7 +1,8 @@
-#include "gate.hpp"
-#include "http_server.hpp"
+#include "actions/gate.hpp"
+#include "net.hpp"
 
 #include <spdlog/spdlog.h>
+
 
 constexpr int PORT                = 8080;
 constexpr int MAX_THREADS         = 4;
@@ -15,7 +16,7 @@ int main() {
 		auto dqr = std::make_shared<dbQueryResource>(&db);
 
 		boost::asio::co_spawn(io_ctx,
-							  listener({tcp::v4(), 8080}, dqr),
+							  listener({tcp::v4(), PORT}, dqr),
 							  boost::asio::detached);
 
 		spdlog::info("[MAIN] Web server started. Listening on port 8080.");

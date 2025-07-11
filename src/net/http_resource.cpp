@@ -1,6 +1,9 @@
 #include "http_resource.hpp"
 
+#include "utils/visitor_helper_type.hpp"
+
 #include <fmt/chrono.h>
+#include <fmt/std.h>
 #include <spdlog/spdlog.h>
 
 dbQueryResource::dbQueryResource(Gate *db) : db(db) {}
@@ -23,6 +26,7 @@ dbQueryResource::handle_request(const http::request<http::string_body> &req) {
 
 	std::string resp;
 
+	// TODO: Move this to custom formatter for std::expected<decltype(x)>
 	if (!x.has_value()) {
 		resp = fmt::format("ERROR: {}", x.error());
 		spdlog::error("[Parse] {}", x.error());

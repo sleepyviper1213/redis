@@ -1,8 +1,9 @@
 #pragma once
-#include <cereal/archives/binary.hpp>
-
 #include <fstream>
-#include <vector>
+#define MY_CEREAL_INTERACE 0
+
+#ifdef MY_CEREAL_INTERACE
+#include <cereal/archives/binary.hpp>
 
 template <typename T>
 void save(const T &var, const std::string &filename) {
@@ -19,5 +20,4 @@ T load(const std::string &filename) {
 	archive(var);
 	return var;
 }
-
-std::vector<std::string> split_by_space(const std::string &input);
+#endif

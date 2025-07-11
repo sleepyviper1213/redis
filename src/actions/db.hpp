@@ -1,11 +1,8 @@
 #pragma once
 
-#include "commands/cmd.hpp"
-#include "error/execute_error.hpp"
-#include "error/ttl_error.hpp"
-#include "key.hpp"
-#include "ret.hpp"
-#include "value.hpp"
+#include "command.hpp"
+#include "error.hpp"
+#include "primitive.hpp"
 
 #include <chrono>
 #include <concepts>
@@ -39,8 +36,8 @@ public:
 		if (!it.has_value()) deleteVal(*it);
 		Key new_key{.key      = key,
 					.val_iter = values_.insert(values_.end(), Value{val})};
-		keys_[key]       = new_key;
-		last_access[key] = std::chrono::system_clock::now();
+		keys_[key]        = new_key;
+		last_access_[key] = std::chrono::system_clock::now();
 		return {keys_.find(key), new_key.val_iter};
 	}
 
@@ -134,6 +131,6 @@ private:
 
 	value_type values_;
 	std::unordered_map<std::string, std::chrono::system_clock::time_point>
-		last_access;
-	std::shared_timed_mutex vals_mtx, keys_mtx, last_access_mtx;
+		last_access_;
+	std::shared_timed_mutex vals_mtx_, keys_mtx_, last_access_mtx_;
 };

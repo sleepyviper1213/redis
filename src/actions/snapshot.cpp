@@ -1,5 +1,9 @@
+#if defined(_WIN32) || defined(_WIN64)
+#error "Windows is not supported yet"
+#elif defined(__unix__)
 #include "snapshot.hpp"
 
+#include "commands/keyspace_command.hpp"
 #include "db.hpp"
 #include "utility.hpp"
 
@@ -50,7 +54,7 @@ bool Snapshot::createSnapshot(Db &db) {
 			auto key = split_by_space(cmd.args()).front();
 			auto ttl = db.cmdTTL(key);
 			if (ttl.has_value()) {
-				expires.emplace_back(CommandType::GEXPIRE,
+				expires.emplace_back(KeyspaceCommand::EXPIRE,
 									 fmt::format("{} {}", key, *ttl));
 			} else if (ttl.error() == TTLError::KEY_ITER_NOTFOUND) continue;
 			cmd.binarySerializeTo(of);
@@ -99,3 +103,4 @@ std::expected<Db *, SnapshotError> Snapshot::restoreSnapshot() {
 	commands = cmds;
 	return db;
 }
+#endif

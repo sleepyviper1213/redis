@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gate.hpp"
+#include "actions/gate.hpp"
 
 #include <boost/beast.hpp>
 

@@ -6,7 +6,7 @@ std::expected<Ret, AppError> Gate::parseAndExecute(const std::string &cmd) {
 	auto command = Command::fromString(cmd);
 	if (!command.has_value()) return std::unexpected(command.error());
 
-	// TODO
+	// TODO: Pattern matching
 	// if (command->type() == CommandType::EXIT)
 	// return std::unexpected(AppError::EXIT);
 	if (command->type() == CommandType::SNAPSHOT) {

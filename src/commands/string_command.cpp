@@ -16,5 +16,5 @@ auto fmt::formatter<StringCommand>::format(StringCommand c, format_context& ctx)
         case SGET: name = "get"; break;
         default: std::unreachable();
     }
-    return formatter<std::string_view>::format(name, ctx);
+    return formatter<string_view>::format(name, ctx);
 }

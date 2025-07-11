@@ -3,12 +3,14 @@
 #include "command_type.hpp"
 #include "error/parse_error.hpp"
 
+#include <cereal/archives/binary.hpp>
+#include <cereal/types/variant.hpp>
 #include <fmt/base.h>
 
 #include <expected>
-#include <fstream>
 #include <string>
 
+// TODO: Move serialistion API to libcereal
 class Command {
 public:
 	Command(CommandType type, std::string args);
@@ -24,7 +26,10 @@ public:
 
 	[[nodiscard]] const std::string &args() const;
 
-	void binarySerializeTo(std::ofstream &of) const;
+	template <class Archive>
+	void serialize(Archive &ar) {
+		ar(type_, args_);
+	}
 
 private:
 	CommandType type_;

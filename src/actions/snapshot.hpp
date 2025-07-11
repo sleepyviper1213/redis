@@ -12,6 +12,7 @@ static const std::filesystem::path PATH = "ledis.snap";
 
 std::filesystem::path createTempFile();
 
+// TODO: Rename this class. as its main fuctionality is to save log to disk
 class Snapshot {
 public:
 	void clear();

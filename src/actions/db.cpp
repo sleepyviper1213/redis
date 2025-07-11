@@ -1,6 +1,6 @@
 #include "db.hpp"
 
-#include "utility.hpp"
+#include "utils/split_by_space.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -36,7 +36,7 @@ bool Db::deleteKV(const std::string &key) {
 	deleteVal(*it);
 
 	keys_.erase(key_iter);
-	last_access.erase(key_iter->first);
+	last_access_.erase(key_iter->first);
 	return true;
 }
 
@@ -44,7 +44,7 @@ std::expected<std::chrono::seconds, TTLError>
 Db::cmdTTL(const std::string &key) {
 	preCommand({key});
 
-	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
+	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
 	auto key_iter = keys_.find(key);
 	if (key_iter == keys_.end())
 		return std::unexpected(TTLError::KEY_ITER_NOTFOUND);
@@ -59,7 +59,7 @@ void Db::preCommand(const std::vector<std::string> &keys_to_check,
 	std::vector<key_type::iterator> expired_keys;
 
 	{
-		std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
+		std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
 		if (all_keys) {
 			for (auto it = keys_.begin(); it != keys_.end(); it++)
 				if (isExpired(it)) expired_keys.push_back(it);
@@ -71,16 +71,16 @@ void Db::preCommand(const std::vector<std::string> &keys_to_check,
 		}
 	}
 	if (!expired_keys.empty()) {
-		std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-		std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
-		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
+		std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+		std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
+		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
 		for (const auto &key : expired_keys) deleteKV(key->first);
 	}
 }
 
 std::vector<std::string> Db::cmdKeys() {
 	preCommand({}, true);
-	std::shared_lock<std::shared_timed_mutex> _(keys_mtx);
+	std::shared_lock<std::shared_timed_mutex> _(keys_mtx_);
 
 	std::vector<std::string> keys;
 
@@ -97,7 +97,7 @@ Db::cmdExpire(const std::string &key, std::chrono::seconds ttl) {
 std::expected<std::chrono::seconds, TTLError>
 Db::setTTL(const std::string &key, std::chrono::seconds ttl) {
 	if (ttl.count() < 0) return std::unexpected(TTLError::INVALID_ARGUMENT);
-	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx);
+	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx_);
 	auto key_iter = keys_.find(key);
 	if (key_iter == keys_.end())
 		return std::unexpected(TTLError::KEY_ITER_NOTFOUND);
@@ -111,13 +111,13 @@ Db::setTTL(const std::string &key, std::chrono::seconds ttl) {
 
 size_t Db::pushList(const std::string &key,
 					const std::vector<std::string> &vals, Where where) {
-	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> lock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> lock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) {
 		// key does not exist, create a new list
 		spdlog::debug("Key does not exist, creating new list");
-		std::unique_lock<std::shared_timed_mutex> lock_la(last_access_mtx);
+		std::unique_lock<std::shared_timed_mutex> lock_la(last_access_mtx_);
 		auto [_, val_iter] =
 			writeKV(key,
 					where == Where::LBACK
@@ -140,12 +140,12 @@ size_t Db::pushList(const std::string &key,
 
 void Db::postAccessCommand(const std::vector<std::string> &keys,
 						   bool all_keys) {
-	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> lock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> lock_val(vals_mtx_);
 	const auto now = std::chrono::system_clock::now();
 	auto process   = [this, &now](key_type::iterator key_iter) {
         if (key_iter == this->keys_.end()) return;
-        this->last_access[key_iter->first] = now;
+        this->last_access_[key_iter->first] = now;
 	};
 	if (all_keys)
 		for (auto it = this->keys_.begin(); it != this->keys_.end(); it++)
@@ -166,6 +166,7 @@ std::expected<Ret, ExecuteError> Db::execute(const Command &command) {
 	const auto args = split_by_space(command.args());
 	spdlog::info("{}", command);
 	Ret ret;
+	// TODO:: Pattern matching this Command
 	switch (command.type()) {
 		using enum CommandType;
 	case GKEYS:
@@ -283,9 +284,9 @@ std::expected<Ret, ExecuteError> Db::execute(const Command &command) {
 
 bool Db::cmdDel(const std::string &key) {
 	preCommand({key});
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
 	return deleteKV(key);
 }
 
@@ -297,8 +298,8 @@ std::optional<size_t> Db::cmdLlen(const std::string &key) {
 }
 
 std::optional<size_t> Db::getListLen(const std::string &key) {
-	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
-	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx);
+	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
+	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) return std::nullopt;
 	return it.value()->getList().size();
@@ -312,8 +313,8 @@ std::optional<std::string> Db::cmdPop(const std::string &key, Where where) {
 }
 
 std::optional<std::string> Db::popList(const std::string &key, Where where) {
-	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) return std::nullopt;
 
@@ -332,7 +333,7 @@ std::optional<std::string> Db::popList(const std::string &key, Where where) {
 	default: std::unreachable();
 	}
 	if (list.empty()) {
-		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
+		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
 		deleteKV(key);
 	}
 
@@ -349,8 +350,8 @@ std::vector<std::string> Db::cmdLrange(const std::string &key, int start,
 
 std::vector<std::string> Db::rangeList(const std::string &key, int start,
 									   int stop) {
-	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) return {};
 
@@ -372,12 +373,12 @@ std::vector<std::string> Db::rangeList(const std::string &key, int start,
 
 size_t Db::insertSet(const std::string &key,
 					 const std::vector<std::string> &vals) {
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) {
 		// key does not exist, create a new set
-		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
+		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
 		auto [_, val_iter] =
 			writeKV(key, std::set<std::string>{vals.begin(), vals.end()});
 		return val_iter->getSet().size();
@@ -410,8 +411,8 @@ size_t Db::cmdSrem(const std::string &key,
 
 size_t Db::removeSet(const std::string &key,
 					 const std::vector<std::string> &vals) {
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	auto it = getValIterFromKey(key);
 	if (!it.has_value()) return 0;
 
@@ -419,7 +420,7 @@ size_t Db::removeSet(const std::string &key,
 	auto &set  = it.value()->getSet();
 	for (auto &val : vals) ret += set.erase(val);
 	if (set.empty()) {
-		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
+		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
 		deleteKV(key);
 	}
 
@@ -434,8 +435,8 @@ std::optional<size_t> Db::cmdScard(const std::string &key) {
 }
 
 std::optional<size_t> Db::getSetLen(const std::string &key) {
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) return std::nullopt;
 
@@ -450,8 +451,8 @@ std::vector<std::string> Db::cmdSmembers(const std::string &key) {
 }
 
 std::vector<std::string> Db::getSetMems(const std::string &key) {
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) return {};
 
@@ -467,8 +468,8 @@ std::vector<std::string> Db::cmdSinter(const std::vector<std::string> &keys) {
 }
 
 std::vector<std::string> Db::getSetInter(const std::vector<std::string> &keys) {
-	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
-	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx);
+	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
+	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx_);
 	std::vector<std::set<std::string>> sets;
 	for (auto &key : keys) {
 		const auto it = getValIterFromKey(key);
@@ -496,8 +497,8 @@ std::optional<std::string> Db::cmdGet(const std::string &key) {
 }
 
 std::optional<std::string> Db::getStr(const std::string &key) {
-	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx);
-	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx);
+	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
+	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx_);
 	const auto it = getValIterFromKey(key);
 	if (!it.has_value()) return std::nullopt;
 
@@ -505,9 +506,9 @@ std::optional<std::string> Db::getStr(const std::string &key) {
 }
 
 void Db::setStr(const std::string &key, const std::string &val) {
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
-	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
+	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
 	writeKV(key, val);
 }
 
@@ -518,12 +519,12 @@ void Db::cmdSet(const std::string &key, const std::string &val) {
 }
 
 void Db::cmdFlush() {
-	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
 	keys_.clear();
 
-	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx);
+	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	while (!values_.empty()) deleteVal(values_.begin());
 
-	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx);
-	last_access.clear();
+	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
+	last_access_.clear();
 }
