@@ -71,3 +71,7 @@ conan_provider.cmake
 *.crt
 *.key
 *.pem
+
+#vcpkg config
+vcpkg-configuration.json
+CMakeUserPresets.json
