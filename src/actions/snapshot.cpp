@@ -1,19 +1,21 @@
-#if defined(_WIN32) || defined(_WIN64)
-#error "Windows is not supported yet"
-#elif defined(__unix__)
+
 #include "snapshot.hpp"
 
-#include "commands/keyspace_command.hpp"
 #include "db.hpp"
-#include "utility.hpp"
+#include "utils.hpp"
 
+#include <cereal/archives/binary.hpp>
 #include <fmt/chrono.h>
 #include <spdlog/spdlog.h>
 
 #include <fstream>
+#include <memory>
 #include <mutex>
+#if defined(_WIN32)
+#error "Windows is not supported yet"
+#elif defined(__APPLE__) || defined(__linux__)
 #include <unistd.h>
-
+#endif
 void Snapshot::clear() { commands.clear(); }
 
 void Snapshot::addCommand(Command command) {
@@ -33,8 +35,12 @@ std::filesystem::path createTempFile() {
 		fmt::format("{}", std::chrono::system_clock::now()));
 	return filename / PATH.extension();
 }
+#if defined(_WIN32)
+#error "Windows is not supported yet"
+#elif defined(__APPLE__) || defined(__linux__)
+#include <unistd.h>
 
-bool Snapshot::createSnapshot(Db &db) {
+ErrorOr<void> Snapshot::createSnapshot(Db &db) {
 	namespace fs            = std::filesystem;
 	const auto tmp_filename = createTempFile();
 
@@ -45,7 +51,9 @@ bool Snapshot::createSnapshot(Db &db) {
 	if (rc == 0) {
 		std::ofstream of(tmp_filename,
 						 std::ios::out | std::ios::binary | std::ios::trunc);
-		if (!of.is_open()) exit(1);
+		if (!of.is_open())
+			return failed("No snapshot file created",
+						  std::errc::no_such_file_or_directory);
 
 		// Snapshot all TTL at this current time point
 		std::list<Command> expires;
@@ -61,7 +69,7 @@ bool Snapshot::createSnapshot(Db &db) {
 		}
 		for (auto &cmd : expires) cmd.binarySerializeTo(of);
 		of.close();
-		exit(0);
+		return;
 	}
 
 	int status = 0;
@@ -74,33 +82,35 @@ bool Snapshot::createSnapshot(Db &db) {
 	bool can_read   = (perms & fs::perms::owner_read) != fs::perms::none;
 	if (can_read) {
 		filename.replace_extension(".bak");
-		return false;
+		return failed("Unable to rename temporary snapshot",
+					  std::errc::permission_denied);
 	}
 
 	fs::rename(tmp_filename, filename);
 	fs::remove(filename / ".bak");
-	return true;
 }
+#endif
 
-std::expected<Db *, SnapshotError> Snapshot::restoreSnapshot() {
+ErrorOr<std::unique_ptr<Db>> Snapshot::restoreSnapshot() {
 	std::unique_lock<std::shared_mutex> lck_file(file_mtx);
 
 	std::ifstream ifile(PATH, std::ios::in | std::ios::binary);
-	if (!ifile.is_open()) return std::unexpected(SnapshotError::FILE_NOT_FOUND);
+	if (!ifile.is_open())
+		return failed("No snapshot file", std::errc::no_such_file_or_directory);
 
+	cereal::BinaryInputArchive iarchive(ifile);
 	std::list<Command> cmds;
-	auto *db = new Db();
+	auto db = std::make_unique<Db>();
 	while (true) {
-		const auto x = Command::binaryDeserializeFrom(ifile);
-
-		if (!x.has_value()) break;
-		cmds.push_back(*x);
-		db->execute(*x);
+		Command x;
+		iarchive(x);
+		cmds.push_back(x);
+		// TODO: Handle error here
+		TRY(db->execute(x));
 	}
 
 	std::unique_lock<std::shared_mutex> lck_cmd(cmds_mtx);
 	this->clear();
-	commands = cmds;
+	commands = std::move(cmds);
 	return db;
 }
-#endif

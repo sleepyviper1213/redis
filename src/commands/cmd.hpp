@@ -1,13 +1,12 @@
 #pragma once
 
 #include "command_type.hpp"
-#include "error/parse_error.hpp"
+#include "error.hpp"
 
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/variant.hpp>
 #include <fmt/base.h>
 
-#include <expected>
 #include <string>
 
 // TODO: Move serialistion API to libcereal
@@ -15,8 +14,7 @@ class Command {
 public:
 	Command(CommandType type, std::string args);
 
-	static std::expected<Command, ParseError>
-	fromString(const std::string &line);
+	static ErrorOr<Command> fromString(const std::string &line);
 
 	[[nodiscard]] bool isModifiableCommand() const;
 

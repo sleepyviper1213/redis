@@ -1,13 +1,41 @@
 #pragma once
-#include "client_connection_command.hpp"
-#include "keyspace_command.hpp"
-#include "list_command.hpp"
-#include "server_command.hpp"
-#include "set_command.hpp"
-#include "string_command.hpp"
+#include <fmt/base.h>
 
-#include <variant>
+#include <optional>
+#include <string_view>
 
-using CommandType =
-	std::variant<KeyspaceCommand, ServerCommand, ClientConnectionCommand,
-				 SetCommand, StringCommand, ListCommand>;
+
+enum class CommandType {
+
+	DEL,
+	EXPIRE,
+	TTL,
+	KEYS,
+	FLUSHDB,
+	LLEN,
+	LPUSH,
+	RPUSH,
+	LPOP,
+	RPOP,
+	LRANGE,
+	SADD,
+	SREM,
+	SMEMBERS,
+	SINTER,
+	SCARD,
+	SSET,
+	SGET,
+	EXIT,
+	SNAPSHOT,
+	RESTORE
+};
+
+namespace CommandTypeUtil {
+std::optional<CommandType> fromString(std::string_view sv);
+} // namespace CommandTypeUtil
+
+template <>
+struct fmt::formatter<CommandType> : formatter<string_view> {
+	auto format(CommandType c,
+				format_context &ctx) const -> format_context::iterator;
+};

@@ -1,5 +1,6 @@
 #include "db.hpp"
 
+#include "primitive/ret.hpp"
 #include "utils/split_by_space.hpp"
 
 #include <spdlog/spdlog.h>
@@ -40,16 +41,15 @@ bool Db::deleteKV(const std::string &key) {
 	return true;
 }
 
-std::expected<std::chrono::seconds, TTLError>
-Db::cmdTTL(const std::string &key) {
+ErrorOr<std::chrono::seconds> Db::cmdTTL(const std::string &key) {
 	preCommand({key});
 
 	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
 	auto key_iter = keys_.find(key);
 	if (key_iter == keys_.end())
-		return std::unexpected(TTLError::KEY_ITER_NOTFOUND);
+		return failed("Key iter not found", std::errc::invalid_argument);
 	if (!key_iter->second.ttl.has_value())
-		return std::unexpected(TTLError::TTL_NOT_FOUND);
+		return failed("TTL not found", std::errc::invalid_argument);
 	auto ret = key_iter->second.ttl.value() - std::chrono::system_clock::now();
 	return std::chrono::duration_cast<std::chrono::seconds>(ret);
 }
@@ -88,19 +88,20 @@ std::vector<std::string> Db::cmdKeys() {
 	return keys;
 }
 
-std::expected<std::chrono::seconds, TTLError>
-Db::cmdExpire(const std::string &key, std::chrono::seconds ttl) {
+ErrorOr<std::chrono::seconds> Db::cmdExpire(const std::string &key,
+											std::chrono::seconds ttl) {
 	preCommand({key});
 	return setTTL(key, ttl);
 }
 
-std::expected<std::chrono::seconds, TTLError>
-Db::setTTL(const std::string &key, std::chrono::seconds ttl) {
-	if (ttl.count() < 0) return std::unexpected(TTLError::INVALID_ARGUMENT);
+ErrorOr<std::chrono::seconds> Db::setTTL(const std::string &key,
+										 std::chrono::seconds ttl) {
+	if (ttl.count() < 0)
+		return failed("invalid time to leave", std::errc::invalid_argument);
 	std::unique_lock<std::shared_timed_mutex> lock_key(keys_mtx_);
 	auto key_iter = keys_.find(key);
 	if (key_iter == keys_.end())
-		return std::unexpected(TTLError::KEY_ITER_NOTFOUND);
+		return failed("TTL not found", std::errc::invalid_argument);
 	// TODO: why ttl < 0 again
 	if (ttl.count() < 0)
 		key_iter->second.ttl = std::chrono::system_clock::now();
@@ -162,122 +163,103 @@ size_t Db::cmdPush(const std::string &key, const std::vector<std::string> &vals,
 	return ret;
 }
 
-std::expected<Ret, ExecuteError> Db::execute(const Command &command) {
+ErrorOr<Ret> Db::execute(const Command &command) {
 	const auto args = split_by_space(command.args());
 	spdlog::info("{}", command);
 	Ret ret;
 	// TODO:: Pattern matching this Command
 	switch (command.type()) {
 		using enum CommandType;
-	case GKEYS:
-		if (!args.empty())
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+	case KEYS:
+		if (!args.empty()) return failed("", std::errc::invalid_argument);
 
 		ret = cmdKeys();
 		break;
-	case GDEL:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+	case DEL:
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 
 		ret = cmdDel(args.front());
 		break;
-	case GFLUSHDB:
-		if (!args.empty())
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+	case FLUSHDB:
+		if (!args.empty()) return failed("", std::errc::invalid_argument);
 
 		cmdFlush();
 		break;
-	case GTTL:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+	case TTL:
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 
 		ret = cmdTTL(args.front()).value_or(std::chrono::seconds(0));
 		break;
 
-	case GEXPIRE:
-		if (args.size() != 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+	case EXPIRE:
+		if (args.size() != 2) return failed("", std::errc::invalid_argument);
 
 		ret = cmdExpire(args[0], std::chrono::seconds(std::stoull(args[1])))
 				  .value_or(std::chrono::seconds(0));
 		break;
 	case RPUSH:
-		if (args.size() < 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() < 2) return failed("", std::errc::invalid_argument);
 
 		ret = cmdPush(args[0], {args.begin() + 1, args.end()}, Where::LBACK);
 		break;
 	case LPUSH:
-		if (args.size() < 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() < 2) return failed("", std::errc::invalid_argument);
 
 		ret = cmdPush(args[0], {args.begin() + 1, args.end()}, Where::LFRONT);
 		break;
 	case LLEN:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 
 		ret = cmdLlen(args.front()).value_or(0);
 		break;
 	case LPOP:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 
 		ret = cmdPop(args[0], Where::LFRONT).value_or("Failed");
 		break;
 	case RPOP:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 
 		ret = cmdPop(args[0], Where::LBACK).value_or("Failed");
 		break;
 	case LRANGE:
-		if (args.size() != 3)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 3) return failed("", std::errc::invalid_argument);
 
 		ret = cmdLrange(args[0], std::stoi(args[1]), std::stoi(args[2]));
 		break;
 
 	case SADD:
-		if (args.size() < 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() < 2) return failed("", std::errc::invalid_argument);
 
 		ret = cmdSadd(args[0], {args.begin() + 1, args.end()});
 		break;
 	case SREM:
-		if (args.size() < 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() < 2) return failed("", std::errc::invalid_argument);
 
 		ret = cmdSrem(args[0], {args.begin() + 1, args.end()});
 		break;
 	case SCARD:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 
 		ret = cmdScard(args[0]).value_or(0);
 		break;
 	case SMEMBERS:
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 		ret = cmdSmembers(args[0]);
 		break;
 	case SINTER:
-		if (args.size() < 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() < 2) return failed("", std::errc::invalid_argument);
 		ret = cmdSinter({args.begin(), args.end()});
 		break;
 	case SGET: {
-		if (args.size() != 1)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 1) return failed("", std::errc::invalid_argument);
 		ret = cmdGet(args[0]).value_or("Failed");
 		break;
 	}
 	case SSET:
-		if (args.size() != 2)
-			return std::unexpected(ExecuteError::INVALID_ARGUMENTS);
+		if (args.size() != 2) return failed("", std::errc::invalid_argument);
 		cmdSet(args[0], args[1]);
 		break;
-	default: return std::unexpected(ExecuteError::UNKNOWN);
 	}
 	return ret;
 }

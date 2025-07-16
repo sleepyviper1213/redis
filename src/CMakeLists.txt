@@ -4,11 +4,9 @@ add_executable(
   actions/snapshot.cpp
   actions/gate.cpp
   commands/cmd.cpp
-  commands/keyspace_command.cpp
-  commands/list_command.cpp
-  error/parse_error.cpp
-  error/snapshot_error.cpp
-  error/ttl_error.cpp
+  commands/cmd.cpp
+  commands/command_type.cpp
+  error/error.cpp
   net/http_server.cpp
   net/http_resource.cpp
   main.cpp

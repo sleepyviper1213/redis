@@ -51,26 +51,25 @@ public:
 
 	bool deleteKV(const std::string &key);
 
-	std::expected<std::chrono::seconds, TTLError>
-	cmdTTL(const std::string &key);
+	ErrorOr<std::chrono::seconds> cmdTTL(const std::string &key);
 
 
 	void preCommand(const std::vector<std::string> &keys,
 					bool all_keys = false);
 
 
-	std::expected<long long, TTLError> getTTL(const std::string &key);
+	ErrorOr<long long> getTTL(const std::string &key);
 
 
 	std::vector<std::string> cmdKeys();
 
 	void cmdFlush();
 
-	std::expected<std::chrono::seconds, TTLError>
-	cmdExpire(const std::string &key, std::chrono::seconds ttl);
+	ErrorOr<std::chrono::seconds> cmdExpire(const std::string &key,
+											std::chrono::seconds ttl);
 
-	std::expected<std::chrono::seconds, TTLError>
-	setTTL(const std::string &key, std::chrono::seconds ttl);
+	ErrorOr<std::chrono::seconds> setTTL(const std::string &key,
+										 std::chrono::seconds ttl);
 
 	size_t pushList(const std::string &key,
 					const std::vector<std::string> &vals, Where where);
@@ -81,7 +80,7 @@ public:
 	size_t cmdPush(const std::string &key, const std::vector<std::string> &vals,
 				   Where where);
 
-	std::expected<Ret, ExecuteError> execute(const Command &command);
+	ErrorOr<Ret> execute(const Command &command);
 
 	bool cmdDel(const std::string &key);
 

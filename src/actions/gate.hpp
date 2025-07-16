@@ -1,6 +1,6 @@
 #pragma once
 #include "actions.hpp"
-#include "error/app_error.hpp"
+#include "error.hpp"
 #include "primitive/ret.hpp"
 
 #include <expected>
@@ -8,7 +8,7 @@
 
 class Gate {
 public:
-	std::expected<Ret, AppError> parseAndExecute(const std::string &cmd);
+	ErrorOr<Ret> parseAndExecute(const std::string &cmd);
 
 private:
 	std::unique_ptr<Db> db;

@@ -6,8 +6,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <expected>
 #include <utility>
-#include <variant>
 
 Command::Command(CommandType type, std::string args)
 	: type_(type), args_(std::move(args)) {}
@@ -17,34 +17,33 @@ std::string format_as(const Command &command) {
 }
 
 bool Command::isModifiableCommand() const {
-	return std::holds_alternative<StringCommand>(type_) ||
-		   std::holds_alternative<KeyspaceCommand>(type_);
+	// TODO
 }
 
-bool Command::isFlushDatabase() const {
-	return std::holds_alternative<KeyspaceCommand>(type_) &&
-		   std::get<KeyspaceCommand>(type_) == KeyspaceCommand::FLUSHDB;
-}
+bool Command::isFlushDatabase() const { return type_ == CommandType::FLUSHDB; }
 
 CommandType Command::type() const { return type_; }
 
 const std::string &Command::args() const { return args_; }
 
-std::expected<Command, ParseError>
-Command::fromString(const std::string &line) {
+ErrorOr<Command> Command::fromString(const std::string &line) {
 	std::istringstream iss{line};
 	std::string cmd;
 	iss >> cmd;
 	std::string args;
 	std::getline(iss, args);
-	if (iss.fail()) return std::unexpected(ParseError::ARGS_PARSE_FAILED);
+	if (iss.fail())
+		return failed("String contains invalid arguments",
+					  std::errc::invalid_argument);
 
 	std::ranges::transform(args, args.begin(), [](unsigned char c) {
 		return std::tolower(c);
 	});
 
-	auto type = CommandTypeUtil::fromString(cmd);
-	if (!type.has_value()) return std::unexpected(ParseError::TYPE_FAILED);
+	auto type = TRY(ok_or(CommandTypeUtil::fromString(cmd),
+						  "String contains invalid command",
+						  std::errc::invalid_argument));
 
-	return Command{*type, args};
+
+	return Command{type, std::move(args)};
 }

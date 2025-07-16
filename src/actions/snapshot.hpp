@@ -1,7 +1,6 @@
 #pragma once
 
 #include "commands/cmd.hpp"
-#include "error/snapshot_error.hpp"
 
 #include <filesystem>
 #include <list>
@@ -19,10 +18,10 @@ public:
 
 	void addCommand(Command command);
 
-	bool createSnapshot(Db &db);
+	ErrorOr<void> createSnapshot(Db &db);
 
 
-	std::expected<Db *, SnapshotError> restoreSnapshot();
+	ErrorOr<std::unique_ptr<Db>> restoreSnapshot();
 
 private:
 	std::list<Command> commands;
