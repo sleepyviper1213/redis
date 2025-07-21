@@ -1,5 +1,7 @@
 #include "cmd.hpp"
 
+#include "commands/command_type.hpp"
+
 #include <fmt/format.h>
 #include <fmt/std.h>
 #include <spdlog/spdlog.h>
@@ -16,8 +18,9 @@ std::string format_as(const Command &command) {
 	return fmt::format("[Command] {} {}", command.type(), command.args());
 }
 
-bool Command::isModifiableCommand() const {
-	// TODO
+bool Command::isModifiableCommand()
+	const { // isstringcommand or iskeyspacecommand
+	return type_ == CommandType::DEL;
 }
 
 bool Command::isFlushDatabase() const { return type_ == CommandType::FLUSHDB; }
@@ -45,5 +48,5 @@ ErrorOr<Command> Command::fromString(const std::string &line) {
 						  std::errc::invalid_argument));
 
 
-	return Command{type, std::move(args)};
+	return Command{std::move(type), std::move(args)};
 }

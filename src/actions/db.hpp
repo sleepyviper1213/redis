@@ -1,7 +1,9 @@
 #pragma once
 
 #include "command.hpp"
+#include "commands/cmd.hpp"
 #include "error.hpp"
+#include "error/error_or.hpp"
 #include "primitive.hpp"
 
 #include <chrono>
@@ -51,22 +53,20 @@ public:
 
 	bool deleteKV(const std::string &key);
 
-	ErrorOr<std::chrono::seconds> cmdTTL(const std::string &key);
-
+	ErrorOr<std::chrono::seconds> cmdTTL(const Command &command);
 
 	void preCommand(const std::vector<std::string> &keys,
 					bool all_keys = false);
-
+	void preCommand(const std::string &key_to_check, bool all_keys = false);
 
 	ErrorOr<long long> getTTL(const std::string &key);
 
 
-	std::vector<std::string> cmdKeys();
+	ErrorOr<std::vector<std::string>> cmdKeys(const Command &command);
 
-	void cmdFlush();
+	ErrorOr<void> cmdFlush(const Command &command);
 
-	ErrorOr<std::chrono::seconds> cmdExpire(const std::string &key,
-											std::chrono::seconds ttl);
+	ErrorOr<std::chrono::seconds> cmdExpire(const Command &command);
 
 	ErrorOr<std::chrono::seconds> setTTL(const std::string &key,
 										 std::chrono::seconds ttl);
@@ -77,14 +77,13 @@ public:
 	void postAccessCommand(const std::vector<std::string> &keys,
 						   bool all_keys = false);
 
-	size_t cmdPush(const std::string &key, const std::vector<std::string> &vals,
-				   Where where);
+	ErrorOr<size_t> cmdPush(const Command &command, Where where);
 
 	ErrorOr<Ret> execute(const Command &command);
 
-	bool cmdDel(const std::string &key);
+	ErrorOr<bool> cmdDel(const Command &command);
 
-	std::optional<size_t> cmdLlen(const std::string &key);
+	std::optional<size_t> cmdLlen(const Command &command);
 
 	std::optional<size_t> getListLen(const std::string &key);
 

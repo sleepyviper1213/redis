@@ -1,5 +1,8 @@
 #include "db.hpp"
 
+#include "commands/cmd.hpp"
+#include "error/error.hpp"
+#include "error/error_or.hpp"
 #include "primitive/ret.hpp"
 #include "utils/split_by_space.hpp"
 
@@ -10,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
+#include <string>
 #include <vector>
 
 bool Db::isExpired(key_type::iterator key_iter) const {
@@ -41,17 +45,41 @@ bool Db::deleteKV(const std::string &key) {
 	return true;
 }
 
-ErrorOr<std::chrono::seconds> Db::cmdTTL(const std::string &key) {
-	preCommand({key});
+ErrorOr<std::chrono::seconds> Db::cmdTTL(const Command &command) {
+	const auto args = split_by_space(command.args());
+	if (args.size() != 1) return failed("", std::errc::invalid_argument);
+
+	preCommand({args.front()});
 
 	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
-	auto key_iter = keys_.find(key);
+	auto key_iter = keys_.find(args.front());
 	if (key_iter == keys_.end())
 		return failed("Key iter not found", std::errc::invalid_argument);
 	if (!key_iter->second.ttl.has_value())
 		return failed("TTL not found", std::errc::invalid_argument);
 	auto ret = key_iter->second.ttl.value() - std::chrono::system_clock::now();
 	return std::chrono::duration_cast<std::chrono::seconds>(ret);
+}
+
+void Db::preCommand(const std::string &key_to_check, bool all_keys) {
+	std::vector<key_type::iterator> expired_keys;
+
+	{
+		std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
+		if (all_keys) {
+			for (auto it = keys_.begin(); it != keys_.end(); it++)
+				if (isExpired(it)) expired_keys.push_back(it);
+		} else {
+			auto x = keys_.find(key_to_check);
+			if (isExpired(x)) expired_keys.push_back(x);
+		}
+	}
+	if (!expired_keys.empty()) {
+		std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
+		std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
+		std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
+		for (const auto &key : expired_keys) deleteKV(key->first);
+	}
 }
 
 void Db::preCommand(const std::vector<std::string> &keys_to_check,
@@ -78,8 +106,13 @@ void Db::preCommand(const std::vector<std::string> &keys_to_check,
 	}
 }
 
-std::vector<std::string> Db::cmdKeys() {
-	preCommand({}, true);
+ErrorOr<std::vector<std::string>> Db::cmdKeys(const Command &command) {
+	const auto args = split_by_space(command.args());
+	if (!args.empty()) return failed("", std::errc::invalid_argument);
+
+	spdlog::info("{}", command);
+
+	preCommand(args, true);
 	std::shared_lock<std::shared_timed_mutex> _(keys_mtx_);
 
 	std::vector<std::string> keys;
@@ -88,9 +121,13 @@ std::vector<std::string> Db::cmdKeys() {
 	return keys;
 }
 
-ErrorOr<std::chrono::seconds> Db::cmdExpire(const std::string &key,
-											std::chrono::seconds ttl) {
-	preCommand({key});
+ErrorOr<std::chrono::seconds> Db::cmdExpire(const Command &command) {
+	const auto args = split_by_space(command.args());
+	if (args.size() != 2) return failed("", std::errc::invalid_argument);
+
+	const auto key = args[0];
+	const auto ttl = std::chrono::seconds(std::stoull(args[1]));
+	preCommand(key);
 	return setTTL(key, ttl);
 }
 
@@ -155,128 +192,41 @@ void Db::postAccessCommand(const std::vector<std::string> &keys,
 		for (auto &key : keys) process(this->keys_.find(key));
 }
 
-size_t Db::cmdPush(const std::string &key, const std::vector<std::string> &vals,
-				   Where where) {
-	preCommand({key});
+ErrorOr<size_t> Db::cmdPush(const Command &command, Where where) {
+	const auto args = split_by_space(command.args());
+
+	if (args.size() < 2) return failed("", std::errc::invalid_argument);
+	const auto key = args[0];
+	preCommand(key);
+	const std::vector<std::string> vals{args.begin() + 1, args.end()};
 	auto ret = pushList(key, vals, where);
 	postAccessCommand({key});
 	return ret;
 }
 
-ErrorOr<Ret> Db::execute(const Command &command) {
+ErrorOr<Ret> Db::execute(const Command &command) {}
+
+ErrorOr<bool> Db::cmdDel(const Command &command) {
 	const auto args = split_by_space(command.args());
+	if (args.size() != 1) return failed("", std::errc::invalid_argument);
+
 	spdlog::info("{}", command);
-	Ret ret;
-	// TODO:: Pattern matching this Command
-	switch (command.type()) {
-		using enum CommandType;
-	case KEYS:
-		if (!args.empty()) return failed("", std::errc::invalid_argument);
-
-		ret = cmdKeys();
-		break;
-	case DEL:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-
-		ret = cmdDel(args.front());
-		break;
-	case FLUSHDB:
-		if (!args.empty()) return failed("", std::errc::invalid_argument);
-
-		cmdFlush();
-		break;
-	case TTL:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-
-		ret = cmdTTL(args.front()).value_or(std::chrono::seconds(0));
-		break;
-
-	case EXPIRE:
-		if (args.size() != 2) return failed("", std::errc::invalid_argument);
-
-		ret = cmdExpire(args[0], std::chrono::seconds(std::stoull(args[1])))
-				  .value_or(std::chrono::seconds(0));
-		break;
-	case RPUSH:
-		if (args.size() < 2) return failed("", std::errc::invalid_argument);
-
-		ret = cmdPush(args[0], {args.begin() + 1, args.end()}, Where::LBACK);
-		break;
-	case LPUSH:
-		if (args.size() < 2) return failed("", std::errc::invalid_argument);
-
-		ret = cmdPush(args[0], {args.begin() + 1, args.end()}, Where::LFRONT);
-		break;
-	case LLEN:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-
-		ret = cmdLlen(args.front()).value_or(0);
-		break;
-	case LPOP:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-
-		ret = cmdPop(args[0], Where::LFRONT).value_or("Failed");
-		break;
-	case RPOP:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-
-		ret = cmdPop(args[0], Where::LBACK).value_or("Failed");
-		break;
-	case LRANGE:
-		if (args.size() != 3) return failed("", std::errc::invalid_argument);
-
-		ret = cmdLrange(args[0], std::stoi(args[1]), std::stoi(args[2]));
-		break;
-
-	case SADD:
-		if (args.size() < 2) return failed("", std::errc::invalid_argument);
-
-		ret = cmdSadd(args[0], {args.begin() + 1, args.end()});
-		break;
-	case SREM:
-		if (args.size() < 2) return failed("", std::errc::invalid_argument);
-
-		ret = cmdSrem(args[0], {args.begin() + 1, args.end()});
-		break;
-	case SCARD:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-
-		ret = cmdScard(args[0]).value_or(0);
-		break;
-	case SMEMBERS:
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-		ret = cmdSmembers(args[0]);
-		break;
-	case SINTER:
-		if (args.size() < 2) return failed("", std::errc::invalid_argument);
-		ret = cmdSinter({args.begin(), args.end()});
-		break;
-	case SGET: {
-		if (args.size() != 1) return failed("", std::errc::invalid_argument);
-		ret = cmdGet(args[0]).value_or("Failed");
-		break;
-	}
-	case SSET:
-		if (args.size() != 2) return failed("", std::errc::invalid_argument);
-		cmdSet(args[0], args[1]);
-		break;
-	}
-	return ret;
-}
-
-bool Db::cmdDel(const std::string &key) {
-	preCommand({key});
+	preCommand(args);
 	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
 	std::unique_lock<std::shared_timed_mutex> ulock_val(vals_mtx_);
 	std::unique_lock<std::shared_timed_mutex> ulock_la(last_access_mtx_);
-	return deleteKV(key);
+	return deleteKV(args.front());
 }
 
-std::optional<size_t> Db::cmdLlen(const std::string &key) {
-	preCommand({key});
+ErrorOr<size_t> Db::cmdLlen(const Command &command) {
+	const auto args = split_by_space(command.args());
+	if (args.size() != 1) return failed("", std::errc::invalid_argument);
+
+	const auto key = args.front();
+	preCommand(key);
 	auto ret = getListLen(key);
 	postAccessCommand({key});
-	return ret;
+	return ok_or(ret, "No element in list", std::errc::operation_canceled);
 }
 
 std::optional<size_t> Db::getListLen(const std::string &key) {
@@ -288,7 +238,7 @@ std::optional<size_t> Db::getListLen(const std::string &key) {
 }
 
 std::optional<std::string> Db::cmdPop(const std::string &key, Where where) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = popList(key, where);
 	postAccessCommand({key});
 	return ret;
@@ -324,7 +274,7 @@ std::optional<std::string> Db::popList(const std::string &key, Where where) {
 
 std::vector<std::string> Db::cmdLrange(const std::string &key, int start,
 									   int stop) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = rangeList(key, start, stop);
 	postAccessCommand({key});
 	return ret;
@@ -377,7 +327,7 @@ size_t Db::insertSet(const std::string &key,
 
 size_t Db::cmdSadd(const std::string &key,
 				   const std::vector<std::string> &vals) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = insertSet(key, vals);
 	postAccessCommand({key});
 	return ret;
@@ -385,7 +335,7 @@ size_t Db::cmdSadd(const std::string &key,
 
 size_t Db::cmdSrem(const std::string &key,
 				   const std::vector<std::string> &vals) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = removeSet(key, vals);
 	postAccessCommand({key});
 	return ret;
@@ -410,7 +360,7 @@ size_t Db::removeSet(const std::string &key,
 }
 
 std::optional<size_t> Db::cmdScard(const std::string &key) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = getSetLen(key);
 	postAccessCommand({key});
 	return ret;
@@ -426,7 +376,7 @@ std::optional<size_t> Db::getSetLen(const std::string &key) {
 }
 
 std::vector<std::string> Db::cmdSmembers(const std::string &key) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = getSetMems(key);
 	postAccessCommand({key});
 	return ret;
@@ -472,7 +422,7 @@ std::vector<std::string> Db::getSetInter(const std::vector<std::string> &keys) {
 }
 
 std::optional<std::string> Db::cmdGet(const std::string &key) {
-	preCommand({key});
+	preCommand(key);
 	auto ret = getStr(key);
 	postAccessCommand({key});
 	return ret;
@@ -495,12 +445,14 @@ void Db::setStr(const std::string &key, const std::string &val) {
 }
 
 void Db::cmdSet(const std::string &key, const std::string &val) {
-	preCommand({key});
+	preCommand(key);
 	setStr(key, val);
 	postAccessCommand({key});
 }
 
-void Db::cmdFlush() {
+ErrorOr<void> Db::cmdFlush(const Command &command) {
+	if (!command.args().empty()) return failed("", std::errc::invalid_argument);
+
 	std::unique_lock<std::shared_timed_mutex> ulock_key(keys_mtx_);
 	keys_.clear();
 

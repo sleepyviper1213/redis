@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <list>
+#include <memory>
 #include <shared_mutex>
 
 class Db;
@@ -14,11 +15,13 @@ std::filesystem::path createTempFile();
 // TODO: Rename this class. as its main fuctionality is to save log to disk
 class Snapshot {
 public:
+	Snapshot(std::list<Command> list) : commands(std::move(list)) {}
+
 	void clear();
 
 	void addCommand(Command command);
 
-	ErrorOr<void> createSnapshot(Db &db);
+	static ErrorOr<std::unique_ptr<Snapshot>> createFrom(const Db &db);
 
 
 	ErrorOr<std::unique_ptr<Db>> restoreSnapshot();

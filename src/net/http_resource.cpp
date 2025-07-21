@@ -1,9 +1,5 @@
 #include "http_resource.hpp"
 
-#include "utils/visitor_helper_type.hpp"
-
-#include <fmt/chrono.h>
-#include <fmt/std.h>
 #include <spdlog/spdlog.h>
 
 dbQueryResource::dbQueryResource(Gate *db) : db(db) {}
@@ -11,6 +7,7 @@ dbQueryResource::dbQueryResource(Gate *db) : db(db) {}
 http::response<http::string_body>
 dbQueryResource::handle_request(const http::request<http::string_body> &req) {
 	if (req.method() != http::verb::post) {
+		spdlog::error("HTTP method other than POST");
 		http::response<http::string_body> res{http::status::bad_request,
 											  req.version()};
 		res.set(http::field::content_type, "text/plain");
@@ -22,43 +19,7 @@ dbQueryResource::handle_request(const http::request<http::string_body> &req) {
 	const std::string body = req.body();
 	spdlog::info("[REQUEST] Body: " + body);
 
-	const auto x = db->parseAndExecute(body);
-
-	std::string resp;
-
-	// TODO: Move this to custom formatter for std::expected<decltype(x)>
-	if (!x.has_value()) {
-		resp = fmt::format("ERROR: {}", x.error());
-		spdlog::error("[Parse] {}", x.error());
-	} else {
-		std::visit(
-			overloaded{
-				[&resp](bool arg) { resp = fmt::format("{}", arg); },
-				[&resp](size_t arg) {
-					resp = fmt::format("(integer) {}", arg);
-				},
-				[&resp](const std::string &arg) {
-					if (arg.empty()) {
-						resp = "(nil)";
-						return;
-					}
-					resp = fmt::format("\"{}\"", arg);
-				},
-				[&resp](const std::vector<std::string> &arg) {
-					if (arg.empty()) {
-						resp = "(empty list)";
-						return;
-					}
-					resp = fmt::format("\n1) \"{}\"", arg[0]);
-					for (int i = 1; i < arg.size(); ++i)
-						resp += fmt::format("\n{}) \"{}\"", i + 1, arg.at(i));
-				},
-				[&resp](const std::chrono::seconds &arg) {
-					resp = fmt::format("\"{}\"", arg);
-				},
-				[](auto arg) { spdlog::error("Something wrong"); }},
-			x.value());
-	}
+	std::string resp = fmt::format("{}", db->parseAndExecute(body));
 
 	http::response<http::string_body> response{http::status::ok, req.version()};
 	response.set(http::field::server, "Boost.Beast");

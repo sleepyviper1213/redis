@@ -14,6 +14,10 @@ class Command {
 public:
 	Command(CommandType type, std::string args);
 
+	// TODO: default value needed as required by cereal's load from binary
+	// functionality
+	Command() : type_(CommandType::KEYS) {}
+
 	static ErrorOr<Command> fromString(const std::string &line);
 
 	[[nodiscard]] bool isModifiableCommand() const;

@@ -16,3 +16,4 @@ add_executable(
 target_include_directories(redis_server PUBLIC .)
 target_link_libraries(redis_server PUBLIC spdlog::spdlog Boost::system
                                           Boost::thread cereal::cereal)
+target_compile_definitions(redis_server PUBLIC BOOST_ASIO_NO_DEPRECATED)

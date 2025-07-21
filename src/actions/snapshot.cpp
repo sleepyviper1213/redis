@@ -1,6 +1,7 @@
 
 #include "snapshot.hpp"
 
+#include "command.hpp"
 #include "db.hpp"
 #include "utils.hpp"
 
@@ -40,10 +41,11 @@ std::filesystem::path createTempFile() {
 #elif defined(__APPLE__) || defined(__linux__)
 #include <unistd.h>
 
-ErrorOr<void> Snapshot::createSnapshot(Db &db) {
+ErrorOr<std::unique_ptr<Snapshot>> Snapshot::createFrom(const Db &db) {
 	namespace fs            = std::filesystem;
 	const auto tmp_filename = createTempFile();
 
+	// TODO: create snapshot body
 	auto rc = fork();
 	if (rc < 0) return false;
 
@@ -88,22 +90,19 @@ ErrorOr<void> Snapshot::createSnapshot(Db &db) {
 
 	fs::rename(tmp_filename, filename);
 	fs::remove(filename / ".bak");
+
+	return snapshot;
 }
 #endif
 
 ErrorOr<std::unique_ptr<Db>> Snapshot::restoreSnapshot() {
 	std::unique_lock<std::shared_mutex> lck_file(file_mtx);
 
-	std::ifstream ifile(PATH, std::ios::in | std::ios::binary);
-	if (!ifile.is_open())
-		return failed("No snapshot file", std::errc::no_such_file_or_directory);
 
-	cereal::BinaryInputArchive iarchive(ifile);
 	std::list<Command> cmds;
 	auto db = std::make_unique<Db>();
 	while (true) {
-		Command x;
-		iarchive(x);
+		Command x = TRY(load<Command>(PATH));
 		cmds.push_back(x);
 		// TODO: Handle error here
 		TRY(db->execute(x));
