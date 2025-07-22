@@ -17,14 +17,16 @@ class Snapshot {
 public:
 	Snapshot(std::list<Command> list) : commands(std::move(list)) {}
 
+	Snapshot() = default;
+
 	void clear();
 
 	void addCommand(Command command);
 
-	static ErrorOr<std::unique_ptr<Snapshot>> createFrom(const Db &db);
+	ErrorOr<void> createFrom(Db &db);
 
 
-	ErrorOr<std::unique_ptr<Db>> restoreSnapshot();
+	ErrorOr<Db> restoreSnapshot();
 
 private:
 	std::list<Command> commands;

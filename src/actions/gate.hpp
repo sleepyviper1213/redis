@@ -3,16 +3,14 @@
 #include "error.hpp"
 
 #include <expected>
-#include <memory>
-
 
 class Gate {
 public:
 	ErrorOr<Ret> parseAndExecute(const std::string &cmd);
 
 private:
-	std::unique_ptr<Db> db;
-	std::unique_ptr<Snapshot> snapshot;
+	Db db_;
+	Snapshot snapshot_;
 };
 
 // TODO: this function should not be declared here

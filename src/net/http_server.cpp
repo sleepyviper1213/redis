@@ -14,8 +14,7 @@ namespace beast = boost::beast;
 using net::co_spawn;
 using net::detached;
 
-asio::awaitable<void> handle_session(tcp::socket socket,
-									 std::shared_ptr<dbQueryResource> dqr) {
+asio::awaitable<void> handle_session(tcp::socket socket, dbQueryResource dqr) {
 	beast::tcp_stream stream(std::move(socket));
 	beast::flat_buffer buffer;
 
@@ -23,7 +22,7 @@ asio::awaitable<void> handle_session(tcp::socket socket,
 	const auto [read_err, _] =
 		co_await http::async_read(stream, buffer, req, nothrow_awaitable);
 
-	http::response<http::string_body> res = dqr->handle_request(req);
+	http::response<http::string_body> res = dqr.handle_request(req);
 
 	const auto [write_err, _] =
 		co_await http::async_write(stream, res, nothrow_awaitable);
@@ -31,8 +30,7 @@ asio::awaitable<void> handle_session(tcp::socket socket,
 	stream.socket().shutdown(tcp::socket::shutdown_send, ec);
 }
 
-asio::awaitable<void> listener(tcp::endpoint endpoint,
-							   std::shared_ptr<dbQueryResource> dqr) {
+asio::awaitable<void> listener(tcp::endpoint endpoint, dbQueryResource dqr) {
 	auto executor = co_await net::this_coro::executor;
 	tcp::acceptor acceptor(executor, endpoint);
 

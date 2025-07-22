@@ -3,6 +3,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <memory>
+
 
 constexpr int PORT                = 8080;
 constexpr int MAX_THREADS         = 4;
@@ -12,8 +14,8 @@ int main() {
 	try {
 		net::io_context io_ctx(1);
 
-		Gate db;
-		auto dqr = std::make_shared<dbQueryResource>(&db);
+		auto db = std::make_unique<Gate>();
+		dbQueryResource dqr(db.get());
 
 		boost::asio::co_spawn(io_ctx,
 							  listener({tcp::v4(), PORT}, dqr),

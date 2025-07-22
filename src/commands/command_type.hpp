@@ -5,8 +5,7 @@
 #include <string_view>
 
 
-enum class CommandType {
-
+enum class [[nodiscard]] CommandType {
 	DEL,
 	EXPIRE,
 	TTL,
@@ -36,6 +35,6 @@ std::optional<CommandType> fromString(std::string_view sv);
 
 template <>
 struct fmt::formatter<CommandType> : formatter<string_view> {
-	auto format(CommandType c,
-				format_context &ctx) const -> format_context::iterator;
+	auto format(CommandType c, format_context &ctx) const
+		-> format_context::iterator;
 };

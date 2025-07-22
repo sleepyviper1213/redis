@@ -2,12 +2,12 @@
 
 #include <spdlog/spdlog.h>
 
-dbQueryResource::dbQueryResource(Gate *db) : db(db) {}
+dbQueryResource::dbQueryResource([[clang::lifetimebound]] Gate *db) : db(db) {}
 
 http::response<http::string_body>
 dbQueryResource::handle_request(const http::request<http::string_body> &req) {
 	if (req.method() != http::verb::post) {
-		spdlog::error("HTTP method other than POST");
+		spdlog::error("[Query] Received HTTP method {}", req.method_string());
 		http::response<http::string_body> res{http::status::bad_request,
 											  req.version()};
 		res.set(http::field::content_type, "text/plain");
@@ -17,10 +17,9 @@ dbQueryResource::handle_request(const http::request<http::string_body> &req) {
 	}
 
 	const std::string body = req.body();
-	spdlog::info("[REQUEST] Body: " + body);
+	spdlog::info("[Query] Request body: {}", body);
 
 	std::string resp = fmt::format("{}", db->parseAndExecute(body));
-
 	http::response<http::string_body> response{http::status::ok, req.version()};
 	response.set(http::field::server, "Boost.Beast");
 	response.set(http::field::content_type, "text/plain");

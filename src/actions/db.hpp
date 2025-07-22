@@ -1,7 +1,5 @@
 #pragma once
 
-#include "command.hpp"
-#include "commands/cmd.hpp"
 #include "error.hpp"
 #include "error/error_or.hpp"
 #include "primitive.hpp"
@@ -11,6 +9,7 @@
 #include <expected>
 #include <optional>
 #include <shared_mutex>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -23,6 +22,47 @@ public:
 	using key_type   = std::unordered_map<std::string, Key>;
 	using value_type = std::list<Value>;
 
+	ErrorOr<std::vector<std::string>>
+	cmdLrange(const std::vector<std::string> &args);
+
+	ErrorOr<size_t> cmdSadd(const std::vector<std::string> &args);
+
+
+	ErrorOr<size_t> cmdSrem(const std::vector<std::string> &args);
+
+	ErrorOr<size_t> cmdScard(const std::vector<std::string> &args);
+
+	ErrorOr<std::vector<std::string>>
+	cmdSinter(const std::vector<std::string> &keys);
+
+	ErrorOr<std::vector<std::string>>
+	cmdSmembers(const std::vector<std::string> &args);
+
+	ErrorOr<std::string> cmdGet(const std::vector<std::string> &args);
+
+	ErrorOr<void> cmdSet(const std::vector<std::string> &args);
+
+	ErrorOr<std::vector<std::string>>
+	cmdKeys(const std::vector<std::string> &args);
+
+	ErrorOr<size_t> cmdPush(const std::vector<std::string> &args, Where where);
+
+	ErrorOr<std::chrono::seconds> cmdTTL(const std::vector<std::string> &args);
+
+	ErrorOr<void> cmdFlush(const std::vector<std::string> &args);
+
+	ErrorOr<std::chrono::seconds>
+	cmdExpire(const std::vector<std::string> &args);
+
+	ErrorOr<bool> cmdDel(const std::vector<std::string> &args);
+
+	ErrorOr<size_t> cmdLlen(const std::vector<std::string> &args);
+
+
+	ErrorOr<std::string> cmdPop(const std::vector<std::string> &args,
+								Where where);
+
+protected:
 	[[nodiscard]] bool isExpired(key_type::iterator key_iter) const;
 
 	[[nodiscard]] std::optional<value_type::iterator>
@@ -35,7 +75,7 @@ public:
 	writeKV(const std::string &key, const T &val) {
 		// TODO
 		auto it = getValIterFromKey(key);
-		if (!it.has_value()) deleteVal(*it);
+		if (it.has_value()) deleteVal(*it);
 		Key new_key{.key      = key,
 					.val_iter = values_.insert(values_.end(), Value{val})};
 		keys_[key]        = new_key;
@@ -53,7 +93,6 @@ public:
 
 	bool deleteKV(const std::string &key);
 
-	ErrorOr<std::chrono::seconds> cmdTTL(const Command &command);
 
 	void preCommand(const std::vector<std::string> &keys,
 					bool all_keys = false);
@@ -62,67 +101,32 @@ public:
 	ErrorOr<long long> getTTL(const std::string &key);
 
 
-	ErrorOr<std::vector<std::string>> cmdKeys(const Command &command);
-
-	ErrorOr<void> cmdFlush(const Command &command);
-
-	ErrorOr<std::chrono::seconds> cmdExpire(const Command &command);
-
-	ErrorOr<std::chrono::seconds> setTTL(const std::string &key,
-										 std::chrono::seconds ttl);
-
 	size_t pushList(const std::string &key,
 					const std::vector<std::string> &vals, Where where);
 
+	void postAccessCommand(const std::string &key, bool all_keys = false);
 	void postAccessCommand(const std::vector<std::string> &keys,
 						   bool all_keys = false);
 
-	ErrorOr<size_t> cmdPush(const Command &command, Where where);
-
-	ErrorOr<Ret> execute(const Command &command);
-
-	ErrorOr<bool> cmdDel(const Command &command);
-
-	std::optional<size_t> cmdLlen(const Command &command);
 
 	std::optional<size_t> getListLen(const std::string &key);
 
-	std::optional<std::string> cmdPop(const std::string &key, Where where);
-
 	std::optional<std::string> popList(const std::string &key, Where where);
 
-	std::vector<std::string> cmdLrange(const std::string &key, int start,
-									   int stop);
-
-	std::vector<std::string> rangeList(const std::string &key, int start,
-									   int stop);
-
-	size_t cmdSadd(const std::string &key,
-				   const std::vector<std::string> &vals);
-
-	size_t insertSet(const std::string &key,
-					 const std::vector<std::string> &vals);
-
-	size_t cmdSrem(const std::string &key,
-				   const std::vector<std::string> &vals);
-	size_t removeSet(const std::string &key,
-					 const std::vector<std::string> &vals);
-	std::optional<size_t> cmdScard(const std::string &key);
+	size_t insertSet(const std::string &key, std::span<const std::string> vals);
+	size_t removeSet(const std::string &key, std::span<const std::string> vals);
 	std::optional<size_t> getSetLen(const std::string &key);
-	std::vector<std::string> cmdSmembers(const std::string &key);
-	std::vector<std::string> getSetMems(const std::string &key);
-
-	std::vector<std::string> cmdSinter(const std::vector<std::string> &keys);
+	std::optional<std::vector<std::string>> getSetMems(const std::string &key);
 
 	std::vector<std::string> getSetInter(const std::vector<std::string> &keys);
 
-	std::optional<std::string> cmdGet(const std::string &key);
 
 	std::optional<std::string> getStr(const std::string &key);
 
 	void setStr(const std::string &key, const std::string &val);
 
-	void cmdSet(const std::string &key, const std::string &val);
+	ErrorOr<std::chrono::seconds> setTTL(const std::string &key,
+										 std::chrono::seconds ttl);
 
 private:
 	key_type keys_;

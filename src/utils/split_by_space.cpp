@@ -1,4 +1,3 @@
-#pragma once
 #include "split_by_space.hpp"
 
 #include <ranges>

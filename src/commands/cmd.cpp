@@ -1,18 +1,18 @@
 #include "cmd.hpp"
 
 #include "commands/command_type.hpp"
+#include "utils/split_by_space.hpp"
 
-#include <fmt/format.h>
-#include <fmt/std.h>
-#include <spdlog/spdlog.h>
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <cctype>
-#include <expected>
 #include <utility>
 
-Command::Command(CommandType type, std::string args)
+Command::Command(CommandType type, std::vector<std::string> args)
 	: type_(type), args_(std::move(args)) {}
+
+Command::Command() : type_(CommandType::KEYS) {}
 
 std::string format_as(const Command &command) {
 	return fmt::format("[Command] {} {}", command.type(), command.args());
@@ -27,26 +27,21 @@ bool Command::isFlushDatabase() const { return type_ == CommandType::FLUSHDB; }
 
 CommandType Command::type() const { return type_; }
 
-const std::string &Command::args() const { return args_; }
+std::vector<std::string> Command::args() const { return args_; }
 
 ErrorOr<Command> Command::fromString(const std::string &line) {
-	std::istringstream iss{line};
-	std::string cmd;
-	iss >> cmd;
-	std::string args;
-	std::getline(iss, args);
-	if (iss.fail())
-		return failed("String contains invalid arguments",
-					  std::errc::invalid_argument);
+	auto words = split_by_space(line);
 
-	std::ranges::transform(args, args.begin(), [](unsigned char c) {
+	auto &cmd = words.front();
+
+	// TODO: UTF-8 support
+	std::ranges::transform(cmd, cmd.begin(), [](unsigned char c) {
 		return std::tolower(c);
 	});
-
 	auto type = TRY(ok_or(CommandTypeUtil::fromString(cmd),
-						  "String contains invalid command",
+						  fmt::format("[Command] {} is not supported yet", cmd),
 						  std::errc::invalid_argument));
 
 
-	return Command{std::move(type), std::move(args)};
+	return Command{std::move(type), {words.begin() + 1, words.end()}};
 }

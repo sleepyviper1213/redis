@@ -2,10 +2,12 @@
 
 #include <fmt/std.h>
 
+#include <cstring>
+
 std::string format_as(const Error &e) {
-	return fmt::format("{} {}", e.message(), std::make_error_code(e.code()));
+	return fmt::format("[{}] {}", std::make_error_code(e.code()), e.message());
 }
 
-constexpr std::errc Error::code() const { return m_code; }
+constexpr std::errc Error::code() const { return code_; }
 
-constexpr std::string_view Error::message() const { return m_message; }
+constexpr std::string_view Error::message() const { return message_; }

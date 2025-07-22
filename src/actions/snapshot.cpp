@@ -3,14 +3,13 @@
 
 #include "command.hpp"
 #include "db.hpp"
-#include "utils.hpp"
 
 #include <cereal/archives/binary.hpp>
 #include <fmt/chrono.h>
+#include <fmt/std.h>
 #include <spdlog/spdlog.h>
 
 #include <fstream>
-#include <memory>
 #include <mutex>
 #if defined(_WIN32)
 #error "Windows is not supported yet"
@@ -32,53 +31,53 @@ void Snapshot::addCommand(Command command) {
 }
 
 std::filesystem::path createTempFile() {
-	std::filesystem::path filename(
-		fmt::format("{}", std::chrono::system_clock::now()));
-	return filename / PATH.extension();
+	return fmt::format("{}{}",
+					   std::chrono::system_clock::now(),
+					   PATH.extension());
 }
 #if defined(_WIN32)
 #error "Windows is not supported yet"
 #elif defined(__APPLE__) || defined(__linux__)
 #include <unistd.h>
 
-ErrorOr<std::unique_ptr<Snapshot>> Snapshot::createFrom(const Db &db) {
+ErrorOr<void> Snapshot::createFrom(Db &db) {
 	namespace fs            = std::filesystem;
 	const auto tmp_filename = createTempFile();
 
-	// TODO: create snapshot body
+	spdlog::debug(
+		"[Snapshot] Isolate the snapshot-writing logic to child process");
 	auto rc = fork();
-	if (rc < 0) return false;
+	if (rc == -1) return failed("fork failed", std::errc{errno});
 
 	fs::path filename = PATH;
+	spdlog::debug("[Snapshot] Child process writes snapshot");
 	if (rc == 0) {
-		std::ofstream of(tmp_filename,
-						 std::ios::out | std::ios::binary | std::ios::trunc);
+		std::ofstream of(tmp_filename, std::ios::binary);
 		if (!of.is_open())
 			return failed("No snapshot file created",
 						  std::errc::no_such_file_or_directory);
+		cereal::BinaryOutputArchive oarchive(of);
 
 		// Snapshot all TTL at this current time point
-		std::list<Command> expires;
+		std::vector<Command> expires;
 
-		for (const auto &cmd : commands) {
-			auto key = split_by_space(cmd.args()).front();
-			auto ttl = db.cmdTTL(key);
-			if (ttl.has_value()) {
-				expires.emplace_back(KeyspaceCommand::EXPIRE,
-									 fmt::format("{} {}", key, *ttl));
-			} else if (ttl.error() == TTLError::KEY_ITER_NOTFOUND) continue;
-			cmd.binarySerializeTo(of);
+		for (auto &cmd : commands) {
+			auto ttl = db.cmdTTL(cmd.args());
+			if (ttl.has_value()) expires.push_back(cmd);
+			else if (ttl.error().containsErrorMessage("TTL")) continue;
+			oarchive(cmd);
 		}
-		for (auto &cmd : expires) cmd.binarySerializeTo(of);
+		for (auto &cmd : expires) oarchive(cmd);
 		of.close();
-		return;
+		return {};
 	}
 
+	spdlog::debug("[Snapshot] Parent waits for child");
 	int status = 0;
 	waitpid(rc, &status, 0);
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return false;
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		return failed("Something is wrong", std::errc::io_error);
 
-	// rename old snapshot to back up, rename new snapshot, then remove back up
 	std::unique_lock<std::shared_mutex> lck{file_mtx};
 	fs::perms perms = fs::status(filename).permissions();
 	bool can_read   = (perms & fs::perms::owner_read) != fs::perms::none;
@@ -88,28 +87,27 @@ ErrorOr<std::unique_ptr<Snapshot>> Snapshot::createFrom(const Db &db) {
 					  std::errc::permission_denied);
 	}
 
+	spdlog::debug("[Snapshot] Atomic rename to commit snapshot");
 	fs::rename(tmp_filename, filename);
 	fs::remove(filename / ".bak");
-
-	return snapshot;
+	return {};
 }
 #endif
 
-ErrorOr<std::unique_ptr<Db>> Snapshot::restoreSnapshot() {
-	std::unique_lock<std::shared_mutex> lck_file(file_mtx);
-
-
-	std::list<Command> cmds;
-	auto db = std::make_unique<Db>();
-	while (true) {
-		Command x = TRY(load<Command>(PATH));
-		cmds.push_back(x);
-		// TODO: Handle error here
-		TRY(db->execute(x));
-	}
-
-	std::unique_lock<std::shared_mutex> lck_cmd(cmds_mtx);
-	this->clear();
-	commands = std::move(cmds);
-	return db;
-}
+// ErrorOr<Db> Snapshot::restoreSnapshot() {
+// std::unique_lock<std::shared_mutex> lck_file(file_mtx);
+//
+//
+// std::list<Command> cmds;
+// Db db;
+// while (true) {
+// Command x = TRY(load<Command>(PATH));
+// cmds.push_back(x);
+// TODO : Handle error here TRY(db->execute(x));
+//}
+//
+// std::unique_lock<std::shared_mutex> lck_cmd(cmds_mtx);
+// this->clear();
+// commands = std::move(cmds);
+// return ErrorOr<Db>{db};
+//}

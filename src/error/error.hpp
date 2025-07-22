@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <fmt/base.h>
 
 #include <cassert>
@@ -12,7 +11,7 @@
 class [[nodiscard]] Error {
 public:
 	constexpr Error(std::string_view message, std::errc code)
-		: m_message(message), m_code(code) {}
+		: message_(message), code_(code) {}
 
 	constexpr auto operator<=>(const Error &other) const = default;
 
@@ -20,11 +19,15 @@ public:
 
 	[[nodiscard]] constexpr std::string_view message() const;
 
-protected:
-private:
-	std::string_view m_message;
+	[[nodiscard]] constexpr bool
+	containsErrorMessage(std::string_view msg) const {
+		return message_.contains(msg);
+	}
 
-	std::errc m_code;
+private:
+	std::string_view message_;
+
+	std::errc code_{};
 };
 
 template <typename... Args>
@@ -33,8 +36,8 @@ constexpr auto failed(Args &&...args) {
 }
 
 template <typename T>
-constexpr std::expected<T, Error> ok_or(const std::optional<T> &opt,
-										std::string_view msg, std::errc code) {
+constexpr std::expected<T, Error>
+ok_or(const std::optional<T> &opt, const std::string &msg, std::errc code) {
 	if (opt) return *opt;
 	return failed(msg, code);
 }

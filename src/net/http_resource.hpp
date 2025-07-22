@@ -11,7 +11,7 @@ using tcp       = net::ip::tcp;
 
 class dbQueryResource {
 public:
-	explicit dbQueryResource(Gate *db);
+	explicit dbQueryResource([[clang::lifetimebound]] Gate *db);
 
 	http::response<http::string_body>
 	handle_request(const http::request<http::string_body> &req);
