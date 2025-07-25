@@ -14,8 +14,6 @@
   </p>
 </div>
 
-
-
 <!-- TABLE OF CONTENTS -->
 <details>
   <summary>Table of Contents</summary>
@@ -29,19 +27,23 @@
     <li>
       <a href="#getting-started">Getting Started</a>
       <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li>
+          <a href="#prerequisites">Prerequisites</a>
+          <ul>
+            <li><a href="#supported-compilers-and-environments">Supported Compilers and Environments</a></li>
+            <li><a href="#cmake">CMake</a></li>
+            <li><a href="#package-manager">Package Manager</a></li>
+          </ul>
+        </li>
         <li><a href="#installation">Installation</a></li>
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
-
 
 
 <!-- ABOUT THE PROJECT -->
@@ -68,15 +70,12 @@ The goals of this project are:
 This project welcomes contributions, feedback, and discussion. If you're interested in collaborating, improving performance, adding features, or refactoring components, feel free to open issues, submit pull requests, or reach out!
 
 ## Built With
-
-This section should list any major frameworks/libraries used to bootstrap your project. Leave any add-ons/plugins for the acknowledgements section. Here are a few examples.
-
-
-
 [![Boost.Beast](https://img.shields.io/badge/Boost.Beast-1.88-blue)](https://www.boost.org/library/latest/beast/)
 [![spdlog](https://img.shields.io/badge/spdlog-1.15.3-blue)](https://github.com/gabime/spdlog/)
 [![cereal](https://img.shields.io/badge/cereal-1.3.2-blue)](https://github.com/USCiLab/cereal)
-
+* **Boost.Beast** – Used for efficient async network I/O and RESP protocol handling over TCP.
+* **spdlog** – Provides fast, leveled, and async logging for debugging and monitoring.
+* **cereal** – Handles serialization of in-memory data for snapshotting and persistence.
 <!-- GETTING STARTED -->
 # Getting Started
 ## Prerequisites
@@ -100,11 +99,11 @@ Additionally:
 
 ### CMake
 If you want to install this project with **vcpkg** and **CMake Presets**, CMake 3.21+ is required. Otherwise, there is no requirement.
-## Package Manager
+### Package Manager
 A package manager is required to install dependencies. You can use either **Homebrew**(macOS), **apt**(Ubuntu) or 
 **vcpkg**(cross-platform).
 
-### Using vcpkg
+#### Using vcpkg
 
 1. Follow the official installation guide:  
    👉 https://learn.microsoft.com/en-us/vcpkg/get-started/get-started?pivots=shell-powershell
@@ -130,7 +129,7 @@ A package manager is required to install dependencies. You can use either **Home
 
 ---
 
-### Using Homebrew (macOS)
+#### Using Homebrew (macOS)
 
 1. Install **Homebrew**:
 
@@ -148,7 +147,7 @@ A package manager is required to install dependencies. You can use either **Home
 
 
 
-### Using APT (Debian/Ubuntu)
+#### Using APT (Debian/Ubuntu)
 
 > 📌 Note: Some packages may be outdated in the default APT repositories. For full C++23 support, consider using a newer compiler via a PPA or manually built toolchain.
 
@@ -216,8 +215,6 @@ A package manager is required to install dependencies. You can use either **Home
 Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
 
 _For more examples, please refer to the [Documentation](https://example.com)_
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
