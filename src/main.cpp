@@ -1,21 +1,34 @@
 #include "actions/gate.hpp"
 #include "net.hpp"
 
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/io_context.hpp>
+#include <fmt/base.h>
+#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 
-#include <memory>
+#include <chrono>
+#include <exception>
 
+/// @brief Port on which the HTTP server listens.
+constexpr int PORT = 8080;
 
-constexpr int PORT                = 8080;
-constexpr int MAX_THREADS         = 4;
+/// @brief Maximum number of server threads (not used directly here, reserved
+/// for future use).
+constexpr int MAX_THREADS = 4;
+
+/// @brief Connection timeout for inactive clients.
 constexpr auto CONNECTION_TIMEOUT = std::chrono::seconds(180);
 
 int main() {
-	try {
-		net::io_context io_ctx(1);
+	spdlog::set_level(spdlog::level::debug); // Set *global* log level to debug
 
-		auto db = std::make_unique<Gate>();
-		dbQueryResource dqr(db.get());
+	try {
+		net::io_context io_ctx;
+
+		Gate gate;
+		HTTPQueryHandler dqr(&gate);
 
 		boost::asio::co_spawn(io_ctx,
 							  listener({tcp::v4(), PORT}, dqr),
@@ -24,6 +37,6 @@ int main() {
 		spdlog::info("[MAIN] Web server started. Listening on port 8080.");
 		io_ctx.run();
 	} catch (const std::exception &e) {
-		fmt::println(stderr, "Fatal error: {}", e.what());
+		spdlog::error("Fatal error: {}", e.what());
 	}
 }

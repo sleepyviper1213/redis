@@ -1,11 +1,19 @@
-#include "http_resource.hpp"
+#include "http_query_handler.hpp"
 
+#include "actions/gate.hpp"
+#include "utils/error_ret_formatter.hpp" //NOLINT
+
+#include <boost/beast/core.hpp>
+#include <fmt/base.h>
 #include <spdlog/spdlog.h>
 
-dbQueryResource::dbQueryResource([[clang::lifetimebound]] Gate *db) : db(db) {}
+#include <string>
+#include <utility>
+
+HTTPQueryHandler::HTTPQueryHandler(LIFETIMEBOUND Gate *db) : gate_(db) {}
 
 http::response<http::string_body>
-dbQueryResource::handle_request(const http::request<http::string_body> &req) {
+HTTPQueryHandler::handle_request(const http::request<http::string_body> &req) {
 	if (req.method() != http::verb::post) {
 		spdlog::error("[Query] Received HTTP method {}", req.method_string());
 		http::response<http::string_body> res{http::status::bad_request,
@@ -16,10 +24,10 @@ dbQueryResource::handle_request(const http::request<http::string_body> &req) {
 		return res;
 	}
 
-	const std::string body = req.body();
+	const std::string &body = req.body();
 	spdlog::info("[Query] Request body: {}", body);
 
-	std::string resp = fmt::format("{}", db->parseAndExecute(body));
+	std::string resp = fmt::format("{}", gate_->parseAndExecute(body));
 	http::response<http::string_body> response{http::status::ok, req.version()};
 	response.set(http::field::server, "Boost.Beast");
 	response.set(http::field::content_type, "text/plain");

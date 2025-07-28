@@ -17,8 +17,8 @@ endif()
 find_package(Catch2 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(cereal REQUIRED)
-find_package(boost_thread CONFIG REQUIRED)
-find_package(boost_beast CONFIG REQUIRED)
+find_package(Boost CONFIG COMPONENTS thread system)
+
 
 if(PROJECT_IS_TOP_LEVEL)
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

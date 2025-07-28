@@ -1,5 +1,6 @@
 #pragma once
-#include <boost/asio.hpp>
+#include <boost/asio/as_tuple.hpp>
+#include <boost/asio/use_awaitable.hpp>
 
 /**
  * Actually, the error handling style returing a tuple of (ActualValue, Err) is

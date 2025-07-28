@@ -1,13 +1,33 @@
 #pragma once
-#include "http_resource.hpp"
-
-#include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/ip/tcp.hpp>
 
-using namespace boost;
-namespace net = asio;
+
+class HTTPQueryHandler;
+
+namespace net = boost::asio;
 using tcp     = net::ip::tcp;
-// Coroutine session handler
-net::awaitable<void> handle_session(tcp::socket socket, dbQueryResource dqr);
 
-net::awaitable<void> listener(tcp::endpoint endpoint, dbQueryResource dqr);
+/**
+ * @brief Handles a single HTTP session on an accepted TCP socket.
+ *
+ * Reads an HTTP request, delegates it to the provided `HTTPQueryHandler`,
+ * and sends the response back on the same stream.
+ *
+ * @param socket TCP socket connected to the client.
+ * @param dqr The handler used to process incoming HTTP requests.
+ * @return A coroutine that completes after handling the session.
+ */
+net::awaitable<void> handle_session(tcp::socket socket, HTTPQueryHandler dqr);
+
+/**
+ * @brief Starts a TCP listener coroutine that accepts and handles HTTP
+ * sessions.
+ *
+ * Uses `co_spawn` to run `handle_session()` for each incoming connection.
+ *
+ * @param endpoint The local endpoint (IP:port) to bind the listener.
+ * @param dqr The handler used to process each HTTP request.
+ * @return A coroutine that runs indefinitely, accepting connections.
+ */
+net::awaitable<void> listener(tcp::endpoint endpoint, HTTPQueryHandler dqr);

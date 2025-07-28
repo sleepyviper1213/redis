@@ -1,24 +1,28 @@
 #include "db.hpp"
 
+#include "error.hpp"
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <shared_mutex>
 #include <string>
+#include <system_error>
 #include <vector>
+#include <version>
 
-// TODO: Maybe need to add a margin for considerting whether a key is expired
 bool Db::isExpired(key_type::iterator key_iter) const {
 	if (key_iter == keys_.end()) return false;
 
-	const auto ttl = key_iter->second.ttl;
-	if (ttl.has_value()) return false;
-
-	return std::chrono::system_clock::now() >= *ttl;
+	auto ttl = key_iter->second.ttl;
+	if (!ttl.has_value()) return false;
+	return *ttl > std::chrono::system_clock::now();
 }
 
 std::optional<Db::value_type::iterator>
@@ -28,7 +32,10 @@ Db::getValIterFromKey(const std::string &key) const {
 	return key_iter->second.val_iter;
 }
 
-void Db::deleteVal(value_type::iterator val_iter) { values_.erase(val_iter); }
+void Db::deleteVal(value_type::iterator val_iter) {
+	spdlog::debug("[Database] Deleted value: {}", *val_iter);
+	values_.erase(val_iter);
+}
 
 bool Db::deleteKV(const std::string &key) {
 	auto key_iter = keys_.find(key);
@@ -47,7 +54,7 @@ ErrorOr<std::chrono::seconds> Db::cmdTTL(const std::vector<std::string> &args) {
 		return failed("[Database] Redis.TTL command expected no argument",
 					  std::errc::invalid_argument);
 
-	const auto key = args.front();
+	const auto &key = args.front();
 	preCommand(key);
 
 	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
@@ -114,9 +121,14 @@ Db::cmdKeys(const std::vector<std::string> &args) {
 
 	preCommand(args, true);
 	std::shared_lock<std::shared_timed_mutex> _(keys_mtx_);
-
+#if __cpp_lib_ranges_to_container
 	return std::views::keys(keys_) |
 		   std::ranges::to<std::vector<std::string>>();
+#else
+	std::vector<std::string> ret;
+	for (auto &[key, _] : keys_) ret.push_back(key);
+	return ret;
+#endif
 }
 
 ErrorOr<std::chrono::seconds>
@@ -213,7 +225,7 @@ ErrorOr<size_t> Db::cmdPush(const std::vector<std::string> &args, Where where) {
 		return failed(
 			"[Database] Redis.Push command expected a key-value pair argument",
 			std::errc::invalid_argument);
-	const auto key = args[0];
+	const auto &key = args[0];
 	preCommand(key);
 	const std::vector<std::string> vals{args.begin() + 1, args.end()};
 	auto ret = pushList(key, vals, where);
@@ -240,7 +252,7 @@ ErrorOr<size_t> Db::cmdLlen(const std::vector<std::string> &args) {
 			"[Database] Redis.Len command expected key as argument only.",
 			std::errc::invalid_argument);
 
-	const auto key = args.front();
+	const auto &key = args.front();
 	preCommand(key);
 	auto ret = getListLen(key);
 	postAccessCommand(key);
@@ -345,7 +357,11 @@ size_t Db::insertSet(const std::string &key,
 	size_t ret = 0;
 	auto &set  = it.value()->getSet();
 	ret        = set.size();
+#if __cpp_lib_containers_ranges
 	set.insert_range(vals);
+#else
+	set.insert(vals.begin(), vals.end());
+#endif
 	ret = set.size() - ret;
 
 	return ret;
@@ -356,7 +372,7 @@ ErrorOr<size_t> Db::cmdSadd(const std::vector<std::string> &args) {
 		return failed(
 			"[Database] Redis.Add command expected key as argument only.",
 			std::errc::invalid_argument);
-	const auto key = args.front();
+	const auto &key = args.front();
 	preCommand(key);
 	auto ret = insertSet(key, {args.begin() + 1, args.end()});
 	postAccessCommand(key);
@@ -424,7 +440,7 @@ Db::cmdSmembers(const std::vector<std::string> &args) {
 		return failed(
 			"[Database] Redis.Members command expected key as argument only.",
 			std::errc::invalid_argument);
-	const auto key = args.front();
+	const auto &key = args.front();
 	preCommand(key);
 	auto ret = getSetMems(key);
 	postAccessCommand(key);
@@ -486,15 +502,15 @@ ErrorOr<std::string> Db::cmdGet(const std::vector<std::string> &args) {
 	auto ret = getStr(key);
 	postAccessCommand(key);
 	return ok_or(ret,
-				 "[Database] Found no string",
+				 "[Database] Found no such string",
 				 std::errc::operation_canceled);
 }
 
 std::optional<std::string> Db::getStr(const std::string &key) {
 	std::shared_lock<std::shared_timed_mutex> slock_key(keys_mtx_);
 	std::shared_lock<std::shared_timed_mutex> slock_val(vals_mtx_);
-	const auto it = UNWRAP(getValIterFromKey(key));
 
+	const auto it = UNWRAP(getValIterFromKey(key));
 	return it->getString();
 }
 
@@ -510,7 +526,7 @@ ErrorOr<void> Db::cmdSet(const std::vector<std::string> &args) {
 		return failed("[Database] Redis.Set command expected a key-value pair "
 					  "as an argument",
 					  std::errc::invalid_argument);
-	const auto &key = args[0], val = args[1];
+	const auto &key = args[0], &val = args[1];
 	preCommand(key);
 	setStr(key, val);
 	postAccessCommand(key);

@@ -1,45 +1,77 @@
 #pragma once
 
-#include <fmt/base.h>
-
-#include <cassert>
-#include <expected>
-#include <optional>
+#include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 
+/**
+ * @brief Represents an error consisting of a context message and an error code.
+ *
+ * This class is designed to avoid common pitfalls with temporary strings,
+ * such as accidentally binding a `std::string_view` to a temporary
+ * `std::string`.
+ */
 class [[nodiscard]] Error {
 public:
-	constexpr Error(std::string_view message, std::errc code)
-		: message_(message), code_(code) {}
+	/**
+	 * @brief Constructs an Error from a string view and error code.
+	 *
+	 * @param message A descriptive error message (must outlive the Error).
+	 * @param code An error code from `std::errc`.
+	 */
+	Error(std::string_view message, std::errc code);
 
-	constexpr auto operator<=>(const Error &other) const = default;
+	/**
+	 * @brief Deleted constructor to prevent accidental binding to temporaries
+	 * like std::string.
+	 *
+	 * Prevents:
+	 * @code
+	 * Error(fmt::format("..."), std::errc::invalid_argument); // ERROR
+	 * @endcode
+	 *
+	 * Such usage would bind `std::string_view` to a temporary of std::string,
+	 * which is almost always dynamically allocated, resulting in a dangling
+	 * pointer.
+	 */
+	template <typename T>
+		requires std::is_same_v<std::remove_cvref_t<T>, std::string>
+	Error(T message, std::errc code) = delete;
 
-	[[nodiscard]] constexpr std::errc code() const;
+	/**
+	 * @brief Default three-way comparison operator.
+	 */
+	auto operator<=>(const Error &other) const = default;
 
-	[[nodiscard]] constexpr std::string_view message() const;
+	/**
+	 * @brief Gets the error code.
+	 * @return The stored `std::errc` error code.
+	 */
+	[[nodiscard]] std::errc code() const;
 
-	[[nodiscard]] constexpr bool
-	containsErrorMessage(std::string_view msg) const {
-		return message_.contains(msg);
-	}
+	/**
+	 * @brief Gets the context message.
+	 * @return The stored error message as a `std::string_view`.
+	 */
+	[[nodiscard]] std::string_view contextMessage() const;
+
+	/**
+	 * @brief Checks whether the error message contains a given substring.
+	 * @param msg The substring to check for.
+	 * @return True if `msg` is a substring of the error message.
+	 */
+	[[nodiscard]] bool containsErrorMessage(std::string_view msg) const;
 
 private:
-	std::string_view message_;
-
-	std::errc code_{};
+	std::string_view
+		context_message_; ///< View of the error message (must be long-lived).
+	std::errc code_;      ///< Error code value.
 };
 
-template <typename... Args>
-constexpr auto failed(Args &&...args) {
-	return std::unexpected<Error>{std::in_place, std::forward<Args>(args)...};
-}
-
-template <typename T>
-constexpr std::expected<T, Error>
-ok_or(const std::optional<T> &opt, const std::string &msg, std::errc code) {
-	if (opt) return *opt;
-	return failed(msg, code);
-}
-
+/**
+ * @brief Formats the Error for output via fmtlib
+ * @param e The error to format.
+ * @return A string representation of the error.
+ */
 std::string format_as(const Error &e);

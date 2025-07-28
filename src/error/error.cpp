@@ -2,12 +2,21 @@
 
 #include <fmt/std.h>
 
-#include <cstring>
+#include <system_error>
 
-std::string format_as(const Error &e) {
-	return fmt::format("[{}] {}", std::make_error_code(e.code()), e.message());
+Error::Error(std::string_view message, std::errc code)
+	: context_message_(message), code_(code) {}
+
+std::errc Error::code() const { return code_; }
+
+std::string_view Error::contextMessage() const { return context_message_; }
+
+bool Error::containsErrorMessage(std::string_view msg) const {
+	return context_message_.contains(msg);
 }
 
-constexpr std::errc Error::code() const { return code_; }
-
-constexpr std::string_view Error::message() const { return message_; }
+std::string format_as(const Error &e) {
+	return fmt::format("[{}] {}",
+					   std::make_error_code(e.code()),
+					   e.contextMessage());
+}

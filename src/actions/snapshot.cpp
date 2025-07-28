@@ -1,96 +1,129 @@
-
 #include "snapshot.hpp"
 
-#include "command.hpp"
 #include "db.hpp"
+#include "error.hpp"
+#include "utils/create_temp_file.hpp"
 
 #include <cereal/archives/binary.hpp>
-#include <fmt/chrono.h>
 #include <fmt/std.h>
 #include <spdlog/spdlog.h>
 
+#include <sys/errno.h>
+#include <sys/types.h>
+
+#include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <mutex>
+#include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
+
 #if defined(_WIN32)
 #error "Windows is not supported yet"
 #elif defined(__APPLE__) || defined(__linux__)
+#include <sys/wait.h>
+
 #include <unistd.h>
 #endif
-void Snapshot::clear() { commands.clear(); }
+namespace fs = std::filesystem;
+
+Snapshot::Snapshot(std::vector<Command> list) : commands_(std::move(list)) {}
+
+void Snapshot::clear() { commands_.clear(); }
 
 void Snapshot::addCommand(Command command) {
-	if (command.isModifiableCommand()) return;
-	std::unique_lock<std::shared_mutex> _(cmds_mtx);
+	if (!command.isModifiableCommand()) return;
+	std::unique_lock<std::shared_mutex> _(cmds_mtx_);
 	if (command.isFlushDatabase()) {
 		spdlog::info("[Snapshot] Flush log");
 		clear();
 	} else {
-		spdlog::info("[Snapshot] Executing command: {}", command);
-		commands.push_back(command);
+		commands_.push_back(command);
+		spdlog::info("[Snapshot] Executed: {}", command);
 	}
 }
 
-std::filesystem::path createTempFile() {
-	return fmt::format("{}{}",
-					   std::chrono::system_clock::now(),
-					   PATH.extension());
-}
+// void quick_exit_handler() { fmt::println("quick_exit handler"); }
 #if defined(_WIN32)
 #error "Windows is not supported yet"
 #elif defined(__APPLE__) || defined(__linux__)
-#include <unistd.h>
-
 ErrorOr<void> Snapshot::createFrom(Db &db) {
-	namespace fs            = std::filesystem;
-	const auto tmp_filename = createTempFile();
+	const auto tmp_file = createTempFile();
 
-	spdlog::debug(
-		"[Snapshot] Isolate the snapshot-writing logic to child process");
-	auto rc = fork();
-	if (rc == -1) return failed("fork failed", std::errc{errno});
+	const pid_t rc = fork();
+	if (rc == -1) return failed("[Snapshot] fork failed", std::errc{errno});
 
-	fs::path filename = PATH;
-	spdlog::debug("[Snapshot] Child process writes snapshot");
 	if (rc == 0) {
-		std::ofstream of(tmp_filename, std::ios::binary);
-		if (!of.is_open())
-			return failed("No snapshot file created",
-						  std::errc::no_such_file_or_directory);
-		cereal::BinaryOutputArchive oarchive(of);
+		spdlog::debug("[Snapshot] Writing snapshot at child process {}",
+					  getpid());
+		try {
+			std::ofstream file(tmp_file, std::ios::binary);
+			cereal::BinaryOutputArchive oarchive(file);
 
-		// Snapshot all TTL at this current time point
-		std::vector<Command> expires;
+			// Snapshot all TTL at this current time point
+			std::vector<std::reference_wrapper<Command>> expires;
 
-		for (auto &cmd : commands) {
-			auto ttl = db.cmdTTL(cmd.args());
-			if (ttl.has_value()) expires.push_back(cmd);
-			else if (ttl.error().containsErrorMessage("TTL")) continue;
-			oarchive(cmd);
+			for (auto &cmd : commands_) {
+				auto ttl = db.cmdTTL(cmd.args());
+				if (ttl.has_value()) expires.emplace_back(cmd);
+				else if (ttl.error().containsErrorMessage("TTL")) continue;
+				spdlog::debug("writing: {}", cmd);
+				oarchive(cmd);
+			}
+			for (auto &cmd : expires) oarchive(cmd.get());
+		} catch (const std::ofstream::failure &e) {
+			// Handle open error
+			spdlog::error("[Snapshot] Error {} with file: {} ",
+						  e.what(),
+						  tmp_file);
+			std::exit(EXIT_FAILURE);
 		}
-		for (auto &cmd : expires) oarchive(cmd);
-		of.close();
+#if __APPLE__
+		// TODO: undefined behavior in a multithreaded process.
+		// destroys some static variables which are actively being used by
+		// another thread, causing that thread to access freed memory and
+		// destroyed objects, registers an atexit() handler to clean up
+		// global resources,
+		std::exit(EXIT_SUCCESS);
+#elif __linux__
+		// quick_exit does not call C++ static destructors
+		std::quick_exit(EXIT_SUCCESS);
+#endif
+	}
+
+	else {
+		spdlog::debug("[Snapshot] Parent {} waits for child", getpid());
+		int status = 0;
+		waitpid(rc, &status, 0);
+		if (!WIFEXITED(status)) {
+			spdlog::error(
+				"Child failed with status {}. Killing all running children.\n",
+				WEXITSTATUS(status));
+			// TODO: exit immediately or return
+			// std::exit(EXIT_FAILURE);
+			return failed("process failure", std::errc::no_such_process);
+		}
+
+		std::unique_lock<std::shared_mutex> lck{file_mtx_};
+		const std::filesystem::path SNAPSHOT_FILE = "ledis.snap";
+		const fs::path backup_file = SNAPSHOT_FILE.stem().concat(".snap.bak");
+
+		try {
+			spdlog::debug("[Snapshot] Atomic rename to commit snapshot");
+			if (fs::exists(SNAPSHOT_FILE))
+				fs::rename(SNAPSHOT_FILE, backup_file);
+			fs::rename(tmp_file, SNAPSHOT_FILE);
+
+			if (fs::exists(backup_file)) fs::remove(backup_file);
+		} catch (const fs::filesystem_error &e) {
+			spdlog::error("{}", e.what());
+			return failed("[SNAPSHOT] Failed to commit snapshot",
+						  std::errc::io_error);
+		}
 		return {};
 	}
-
-	spdlog::debug("[Snapshot] Parent waits for child");
-	int status = 0;
-	waitpid(rc, &status, 0);
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-		return failed("Something is wrong", std::errc::io_error);
-
-	std::unique_lock<std::shared_mutex> lck{file_mtx};
-	fs::perms perms = fs::status(filename).permissions();
-	bool can_read   = (perms & fs::perms::owner_read) != fs::perms::none;
-	if (can_read) {
-		filename.replace_extension(".bak");
-		return failed("Unable to rename temporary snapshot",
-					  std::errc::permission_denied);
-	}
-
-	spdlog::debug("[Snapshot] Atomic rename to commit snapshot");
-	fs::rename(tmp_filename, filename);
-	fs::remove(filename / ".bak");
-	return {};
 }
 #endif
 

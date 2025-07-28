@@ -1,5 +1,7 @@
 #include "value.hpp"
 
+#include <fmt/std.h>
+
 #include <cassert>
 
 const std::set<std::string> &Value::getSet() const {
@@ -30,4 +32,13 @@ std::list<std::string> &Value::getList() {
 std::string &Value::getString() {
 	assert(std::holds_alternative<std::string>(val_));
 	return std::get<std::string>(val_);
+}
+
+std::string format_as(const Value &value) {
+	return fmt::format("[Value] {}", value.getVal());
+}
+
+const std::variant<std::string, std::set<std::string>, std::list<std::string>> &
+Value::getVal() const {
+	return val_;
 }

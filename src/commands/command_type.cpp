@@ -1,7 +1,11 @@
 #include "command_type.hpp"
 
-auto fmt::formatter<CommandType>::format(
-	CommandType c, format_context &ctx) const -> format_context::iterator {
+#include <string_view>
+#include <utility>
+
+auto fmt::formatter<CommandType>::format(CommandType c,
+										 format_context &ctx) const
+	-> format_context::iterator {
 	using enum CommandType;
 	string_view name = "unknown";
 	switch (c) {

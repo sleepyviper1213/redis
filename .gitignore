@@ -57,10 +57,6 @@ bin
 # CTest temporaries
 Testing
 
-# CMake-Conan preset config
-CMakeUserPresets.json
-conan_provider.cmake
-
 # CLion cache
 .idea
 
@@ -75,3 +71,6 @@ conan_provider.cmake
 #vcpkg config
 vcpkg-configuration.json
 CMakeUserPresets.json
+
+#Doxygen docs
+docs

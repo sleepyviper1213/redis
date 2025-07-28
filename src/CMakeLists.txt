@@ -8,9 +8,11 @@ add_executable(
   commands/command_type.cpp
   error/error.cpp
   net/http_server.cpp
-  net/http_resource.cpp
+  net/http_query_handler.cpp
   main.cpp
   primitive/value.cpp
+  utils/create_temp_file.cpp
+  utils/error_ret_formatter.cpp
   utils/split_by_space.cpp)
 
 target_include_directories(redis_server PUBLIC .)

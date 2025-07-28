@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <system_error>
 #include <utility>
 
 Command::Command(CommandType type, std::vector<std::string> args)
@@ -18,16 +19,19 @@ std::string format_as(const Command &command) {
 	return fmt::format("[Command] {} {}", command.type(), command.args());
 }
 
-bool Command::isModifiableCommand()
-	const { // isstringcommand or iskeyspacecommand
-	return type_ == CommandType::DEL;
+bool Command::isModifiableCommand() const {
+	return type_ == CommandType::DEL || type_ == CommandType::SADD ||
+		   type_ == CommandType::SREM || type_ == CommandType::SSET ||
+		   type_ == CommandType::FLUSHDB || type_ == CommandType::LPUSH ||
+		   type_ == CommandType::LPOP || type_ == CommandType::RPUSH ||
+		   type_ == CommandType::RPOP;
 }
 
 bool Command::isFlushDatabase() const { return type_ == CommandType::FLUSHDB; }
 
 CommandType Command::type() const { return type_; }
 
-std::vector<std::string> Command::args() const { return args_; }
+const std::vector<std::string> &Command::args() const { return args_; }
 
 ErrorOr<Command> Command::fromString(const std::string &line) {
 	auto words = split_by_space(line);
@@ -39,7 +43,7 @@ ErrorOr<Command> Command::fromString(const std::string &line) {
 		return std::tolower(c);
 	});
 	auto type = TRY(ok_or(CommandTypeUtil::fromString(cmd),
-						  fmt::format("[Command] {} is not supported yet", cmd),
+						  "[Command] Not a Redis command",
 						  std::errc::invalid_argument));
 
 
