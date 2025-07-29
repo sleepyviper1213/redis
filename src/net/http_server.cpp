@@ -9,6 +9,8 @@
 
 #include <utility>
 
+namespace redis {
+
 namespace http  = beast::http;
 namespace beast = boost::beast;
 using net::co_spawn;
@@ -30,13 +32,16 @@ net::awaitable<void> handle_session(tcp::socket socket, HTTPQueryHandler dqr) {
 	stream.socket().shutdown(tcp::socket::shutdown_send, ec);
 }
 
-net::awaitable<void> listener(tcp::endpoint endpoint, HTTPQueryHandler dqr) {
+net::awaitable<void> listener(tcp::endpoint endpoint) {
 	auto executor = co_await net::this_coro::executor;
 	tcp::acceptor acceptor(executor, endpoint);
 
+	Gate gate;
+	HTTPQueryHandler dqr(&gate);
 	while (true) {
 		auto [accept_err, socket] =
 			co_await acceptor.async_accept(nothrow_awaitable);
 		co_spawn(executor, handle_session(std::move(socket), dqr), detached);
 	}
 }
+} // namespace redis

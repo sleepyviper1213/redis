@@ -1,4 +1,3 @@
-#include "actions/gate.hpp"
 #include "net.hpp"
 
 #include <boost/asio/co_spawn.hpp>
@@ -9,7 +8,6 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
-#include <exception>
 
 /// @brief Port on which the HTTP server listens.
 constexpr int PORT = 8080;
@@ -27,16 +25,13 @@ int main() {
 	try {
 		net::io_context io_ctx;
 
-		Gate gate;
-		HTTPQueryHandler dqr(&gate);
-
 		boost::asio::co_spawn(io_ctx,
-							  listener({tcp::v4(), PORT}, dqr),
+							  redis::listener({redis::tcp::v4(), PORT}),
 							  boost::asio::detached);
 
 		spdlog::info("[MAIN] Web server started. Listening on port 8080.");
 		io_ctx.run();
-	} catch (const std::exception &e) {
+	} catch (const boost::system::error_code &e) {
 		spdlog::error("Fatal error: {}", e.what());
 	}
 }

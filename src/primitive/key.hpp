@@ -4,6 +4,7 @@
 #include <list>
 #include <optional>
 
+namespace redis {
 class Value;
 
 /**
@@ -16,3 +17,4 @@ struct Key {
 	std::optional<std::chrono::time_point<std::chrono::system_clock>>
 		ttl;         ///< Optional expiration time.
 };
+} // namespace redis

@@ -7,6 +7,8 @@
 #include <boost/beast/http/message_fwd.hpp>
 #include <boost/beast/http/string_body_fwd.hpp>
 
+namespace redis {
+
 class Gate;
 
 namespace beast = boost::beast;
@@ -43,3 +45,4 @@ public:
 private:
 	Gate *gate_;
 };
+} // namespace redis

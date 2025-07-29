@@ -1,14 +1,16 @@
 #include "gate.hpp"
 
 #include "command.hpp"
-#include "primitive/ret.hpp"
+#include "primitive/reply.hpp"
 
 #include <chrono>
 #include <string>
 #include <system_error>
 #include <vector>
 
-ErrorOr<Ret> Gate::parseAndExecute(const std::string &cmd) {
+namespace redis {
+
+ErrorOr<Reply> Gate::parseAndExecute(const std::string &cmd) {
 	auto command = TRY(Command::fromString(cmd));
 	snapshot_.addCommand(command);
 
@@ -20,18 +22,18 @@ ErrorOr<Ret> Gate::parseAndExecute(const std::string &cmd) {
 			return failed("[Snapshot] Save command expected no argument",
 						  std::errc::invalid_argument);
 		TRY(snapshot_.createFrom(db_));
-		return Ret{"Snapshot created"};
+		return Reply{"Snapshot created"};
 	case RESTORE: {
 		// auto tmpDb = TRY(snapshot.restoreSnapshot());
 		// db         = std::move(tmpDb);
 
-		return Ret{"Snapshot restored"};
+		return Reply{"Snapshot restored"};
 	}
 	case KEYS: return db_.cmdKeys(command.args());
 	case DEL: return db_.cmdDel(command.args());
 	case FLUSHDB:
 		TRY(db_.cmdFlush(command.args()));
-		return Ret{"All database was flushed"};
+		return Reply{"All database was flushed"};
 	case TTL:
 		return db_.cmdTTL(command.args()).value_or(std::chrono::seconds(0));
 	case EXPIRE:
@@ -50,7 +52,8 @@ ErrorOr<Ret> Gate::parseAndExecute(const std::string &cmd) {
 	case SGET: return db_.cmdGet(command.args());
 	case SSET:
 		return db_.cmdSet(command.args()).transform([]() {
-			return Ret{"A new string has been set"};
+			return Reply{"A new string has been set"};
 		});
 	}
 }
+} // namespace redis

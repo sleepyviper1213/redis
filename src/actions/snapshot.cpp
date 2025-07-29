@@ -27,6 +27,8 @@
 
 #include <unistd.h>
 #endif
+namespace redis {
+
 namespace fs = std::filesystem;
 
 Snapshot::Snapshot(std::vector<Command> list) : commands_(std::move(list)) {}
@@ -49,6 +51,7 @@ void Snapshot::addCommand(Command command) {
 #if defined(_WIN32)
 #error "Windows is not supported yet"
 #elif defined(__APPLE__) || defined(__linux__)
+
 ErrorOr<void> Snapshot::createFrom(Db &db) {
 	const auto tmp_file = createTempFile();
 
@@ -91,9 +94,7 @@ ErrorOr<void> Snapshot::createFrom(Db &db) {
 		// quick_exit does not call C++ static destructors
 		std::quick_exit(EXIT_SUCCESS);
 #endif
-	}
-
-	else {
+	} else {
 		spdlog::debug("[Snapshot] Parent {} waits for child", getpid());
 		int status = 0;
 		waitpid(rc, &status, 0);
@@ -102,12 +103,12 @@ ErrorOr<void> Snapshot::createFrom(Db &db) {
 				"Child failed with status {}. Killing all running children.\n",
 				WEXITSTATUS(status));
 			// TODO: exit immediately or return
-			// std::exit(EXIT_FAILURE);
-			return failed("process failure", std::errc::no_such_process);
+			std::exit(EXIT_FAILURE);
+			// return failed("process failure", std::errc::no_such_process);
 		}
 
 		std::unique_lock<std::shared_mutex> lck{file_mtx_};
-		const std::filesystem::path SNAPSHOT_FILE = "ledis.snap";
+		const std::filesystem::path SNAPSHOT_FILE = "redis.snap";
 		const fs::path backup_file = SNAPSHOT_FILE.stem().concat(".snap.bak");
 
 		try {
@@ -125,6 +126,7 @@ ErrorOr<void> Snapshot::createFrom(Db &db) {
 		return {};
 	}
 }
+
 #endif
 
 // ErrorOr<Db> Snapshot::restoreSnapshot() {
@@ -144,3 +146,4 @@ ErrorOr<void> Snapshot::createFrom(Db &db) {
 // commands = std::move(cmds);
 // return ErrorOr<Db>{db};
 //}
+} // namespace redis

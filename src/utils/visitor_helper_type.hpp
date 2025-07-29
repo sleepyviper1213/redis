@@ -1,5 +1,7 @@
 #pragma once
 
+namespace redis {
+
 /**
  * @brief Utility type to combine multiple lambda overloads into a single
  * visitor.
@@ -18,3 +20,4 @@ template <class... Ts>
 struct overloaded : Ts... {
 	using Ts::operator()...;
 };
+} // namespace redis

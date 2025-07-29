@@ -6,6 +6,8 @@
 #include <shared_mutex>
 #include <vector>
 
+namespace redis {
+
 class Db;
 
 /**
@@ -50,3 +52,4 @@ private:
 	std::shared_mutex cmds_mtx_;    ///< Protects command list.
 	std::shared_mutex file_mtx_;    ///< Protects file access.
 };
+} // namespace redis

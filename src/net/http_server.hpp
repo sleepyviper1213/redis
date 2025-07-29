@@ -2,6 +2,7 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
+namespace redis {
 
 class HTTPQueryHandler;
 
@@ -27,7 +28,7 @@ net::awaitable<void> handle_session(tcp::socket socket, HTTPQueryHandler dqr);
  * Uses `co_spawn` to run `handle_session()` for each incoming connection.
  *
  * @param endpoint The local endpoint (IP:port) to bind the listener.
- * @param dqr The handler used to process each HTTP request.
  * @return A coroutine that runs indefinitely, accepting connections.
  */
-net::awaitable<void> listener(tcp::endpoint endpoint, HTTPQueryHandler dqr);
+net::awaitable<void> listener(tcp::endpoint endpoint);
+} // namespace redis

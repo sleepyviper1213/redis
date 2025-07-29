@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+namespace redis {
+
 /**
  * \brief Specifies where to insert or remove list elements.
  */
@@ -137,6 +139,7 @@ protected:
 	 */
 	void preCommand(const std::vector<std::string> &keys,
 					bool all_keys = false);
+
 	void preCommand(const std::string &key_to_check, bool all_keys = false);
 
 	/**
@@ -154,6 +157,7 @@ protected:
 	 * \brief Post-processing access hook.
 	 */
 	void postAccessCommand(const std::string &key, bool all_keys = false);
+
 	void postAccessCommand(const std::vector<std::string> &keys,
 						   bool all_keys = false);
 
@@ -215,3 +219,4 @@ private:
 		last_access_;
 	std::shared_timed_mutex vals_mtx_, keys_mtx_, last_access_mtx_;
 };
+} // namespace redis

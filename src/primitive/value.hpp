@@ -4,9 +4,10 @@
 #include <list>
 #include <set>
 #include <string>
-#include <variant>
 #include <utility>
+#include <variant>
 
+namespace redis {
 /**
  * \brief Concept to constrain accepted types for Redis values.
  *
@@ -64,3 +65,4 @@ private:
  * \brief Formats a Value into a printable string.
  */
 std::string format_as(const Value &value);
+} // namespace redis

@@ -17,6 +17,8 @@
 #include <vector>
 #include <version>
 
+namespace redis {
+
 bool Db::isExpired(key_type::iterator key_iter) const {
 	if (key_iter == keys_.end()) return false;
 
@@ -548,3 +550,4 @@ ErrorOr<void> Db::cmdFlush(const std::vector<std::string> &args) {
 	last_access_.clear();
 	return {};
 }
+} // namespace redis

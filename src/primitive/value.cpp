@@ -1,9 +1,11 @@
 #include "value.hpp"
 
+#include <fmt/ranges.h>
 #include <fmt/std.h>
 
 #include <cassert>
 
+namespace redis {
 const std::set<std::string> &Value::getSet() const {
 	assert(std::holds_alternative<std::set<std::string>>(val_));
 	return std::get<std::set<std::string>>(val_);
@@ -34,11 +36,12 @@ std::string &Value::getString() {
 	return std::get<std::string>(val_);
 }
 
-std::string format_as(const Value &value) {
-	return fmt::format("[Value] {}", value.getVal());
-}
-
 const std::variant<std::string, std::set<std::string>, std::list<std::string>> &
 Value::getVal() const {
 	return val_;
 }
+
+std::string format_as(const Value &value) {
+	return fmt::format("[Value] {}", value.getVal());
+}
+} // namespace redis

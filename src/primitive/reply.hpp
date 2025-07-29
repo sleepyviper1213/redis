@@ -5,6 +5,7 @@
 #include <variant>
 #include <vector>
 
+namespace redis {
 /**
  * \brief A unified return type for Redis command responses.
  *
@@ -15,5 +16,6 @@
  * - `std::string`: for single string values
  * - `std::vector<std::string>`: for list/set responses
  */
-using Ret = std::variant<bool, size_t, std::chrono::seconds, std::string,
-						 std::vector<std::string>>;
+using Reply = std::variant<bool, size_t, std::chrono::seconds, std::string,
+						   std::vector<std::string>>;
+} // namespace redis

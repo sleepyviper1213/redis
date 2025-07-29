@@ -3,10 +3,10 @@
 #include <string_view>
 #include <utility>
 
-auto fmt::formatter<CommandType>::format(CommandType c,
+auto fmt::formatter<redis::CommandType>::format(redis::CommandType c,
 										 format_context &ctx) const
 	-> format_context::iterator {
-	using enum CommandType;
+	using enum redis::CommandType;
 	string_view name = "unknown";
 	switch (c) {
 	case DEL: name = "del"; break;
@@ -36,7 +36,7 @@ auto fmt::formatter<CommandType>::format(CommandType c,
 	return formatter<string_view>::format(name, ctx);
 }
 
-std::optional<CommandType> CommandTypeUtil::fromString(std::string_view sv) {
+std::optional<redis::CommandType> redis::CommandTypeUtil::fromString(std::string_view sv) {
 	using enum CommandType;
 
 	if (sv == "del") return DEL;

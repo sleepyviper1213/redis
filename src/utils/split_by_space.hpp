@@ -2,6 +2,8 @@
 #include <string>
 #include <vector>
 
+namespace redis {
+
 /**
  * @brief Splits a string by spaces into a vector of substrings.
  *
@@ -9,3 +11,4 @@
  * @return std::vector<std::string> A vector of substrings split by spaces.
  */
 std::vector<std::string> split_by_space(const std::string &input);
+} // namespace redis
