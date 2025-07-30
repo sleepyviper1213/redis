@@ -73,4 +73,5 @@ vcpkg-configuration.json
 CMakeUserPresets.json
 
 #Doxygen docs
-docs
+docs/doxygen
+/test_logs/
