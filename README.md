@@ -217,11 +217,22 @@ Use this space to show useful examples of how a project can be used. Additional 
 _For more examples, please refer to the [Documentation](https://example.com)_
 
 
+# Documentation
 
+See full analysis and design details in docs/.
+
+Use Cases
+Architecture
+Test Plan
 <!-- ROADMAP -->
 # Roadmap
 
 - [ ] Add README.md
+- [ ] RESP parser
+- [ ] Async server
+- [ ] Memory manager
+- [ ] Snapshot Engine
+- [ ] Profiling
 
 
 See the [open issues](https://github.com/sleepyviper1213/redis/issues) for a full list of proposed features (and known issues).
