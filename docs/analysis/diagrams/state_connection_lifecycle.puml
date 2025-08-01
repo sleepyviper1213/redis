@@ -1,0 +1,16 @@
+@startuml
+title Client Connection State Machine - Redis-like Server
+
+[*] --> Disconnected
+
+Disconnected --> Connected : On TCP connection accepted
+Connected --> Authenticated : On AUTH success (if required)
+Authenticated --> Processing : On successful handshake\nor initial command
+
+Processing --> Closed : On QUIT command\nor fatal error
+Authenticated --> Closed : On authentication failure
+Connected --> Closed : On timeout or malformed request
+
+Closed --> [*]
+
+@enduml

@@ -1,0 +1,32 @@
+@startuml
+title Startup Initialization - Redis-like Server
+
+start
+
+:Load Configuration;
+:Initialize Logger;
+:Bind TCP Port;
+
+partition "Subsystem Initialization" {
+  :Initialize I/O Context (Boost.Asio);
+  :Initialize Command Registry;
+  :Initialize Database Store;
+  :Initialize Snapshot Manager;
+}
+
+:Restore from Snapshot?;
+if (Has valid snapshot?) then (yes)
+  :Load Data from Snapshot;
+else (no)
+  :Initialize Empty DB;
+endif
+
+:Start Listening for Connections;
+
+partition "Monitoring" {
+  :Spawn Metrics Thread;
+  :Spawn Snapshot Auto-save Thread;
+}
+
+stop
+@enduml

@@ -1,0 +1,28 @@
+@startuml
+title Command Execution Pipeline - Redis-like Server
+
+start
+
+:Receive Request from Client;
+:Parse RESP Input String;
+
+if (Valid RESP Format?) then (yes)
+  :Construct Command Object;
+
+  :Lookup Command in Registry;
+
+  if (Command Found?) then (yes)
+    :Execute Command Handler;
+    :Generate Response String;
+  else (no)
+    :Generate Error Response\n("ERR unknown command");
+  endif
+
+else (no)
+  :Generate Error Response\n("ERR protocol error");
+endif
+
+:Send Response to Client;
+
+stop
+@enduml

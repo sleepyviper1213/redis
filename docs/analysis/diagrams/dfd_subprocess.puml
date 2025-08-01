@@ -1,0 +1,32 @@
+@startuml
+title Level 1 DFD - Redis-like Server
+
+' External
+actor "Client" as Client
+
+' Processes
+rectangle "1 Accept & Parse Command" as Parse
+rectangle "2 Validate & Dispatch" as Dispatch
+rectangle "3 Execute Command" as Execute
+rectangle "4 Save Snapshot Periodically" as SnapshotSaver
+
+' Data Stores
+database "D1: In-Memory Store" as MemStore
+database "D2: Snapshot File (redis.snap)" as Snapshot
+
+' Flows
+Client --> Parse : RESP Command
+Parse --> Dispatch : Command Object
+Dispatch --> Execute : Validated Command
+Execute --> MemStore : Read/Write Data
+MemStore --> Execute : Query Result
+Execute --> Dispatch : Execution Result
+Dispatch --> Parse : RESP-formatted Result
+Parse --> Client : RESP Response
+
+' Snapshot flows
+MemStore --> SnapshotSaver : Current State
+SnapshotSaver --> Snapshot : Write Snapshot
+Snapshot --> MemStore : Load on Startup
+
+@enduml

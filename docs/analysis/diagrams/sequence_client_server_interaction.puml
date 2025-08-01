@@ -1,0 +1,21 @@
+@startuml
+title Client-Server Interaction - Redis-like Server
+
+actor Client
+participant "TCP Socket\n(Boost::Asio)" as Socket
+participant "Command Handler\n(Dispatcher)" as Dispatcher
+participant "Database Store\n(Key-Value Map)" as DB
+
+Client -> Socket : Connect (TCP Handshake)
+Client -> Socket : Send RESP Command("*2\\r\\n$3\\r\\nGET\\r\\n$3\\r\\nkey\\r\\n\")
+Socket -> Dispatcher : Parse and Construct Command
+Dispatcher -> DB : Execute Command\n(GET key)
+DB --> Dispatcher : Result ("value")
+Dispatcher -> Socket : Format and Send RESP Response\n($5\\r\\nvalue\\r\\n)
+Socket -> Client : Return Response
+
+Client -> Socket : Disconnect / QUIT
+Socket -> Dispatcher : Cleanup Connection
+Socket --> Client : Close TCP Connection
+
+@enduml

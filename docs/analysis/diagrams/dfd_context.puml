@@ -1,0 +1,22 @@
+@startuml
+' Context-Level DFD for Redis-like Server
+
+title Level 0 DFD - Redis-like Server
+
+' External Entities
+actor "Client" as Client
+
+' Process
+rectangle "Redis-like Server" as Server
+
+' Data Stores
+database "Snapshot File (RDB)" as Snapshot
+
+' Data Flows
+Client --> Server : RESP Command
+Server --> Client : RESP Response
+
+Server --> Snapshot : Save Snapshot
+Snapshot --> Server : Load on Startup
+
+@enduml
