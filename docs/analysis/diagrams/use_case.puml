@@ -1,44 +1,43 @@
 @startuml
-' Adjust spacing parameters
-skinparam dpi 150
+left to right direction
+'skinparam dpi 150
 skinparam Padding 10
 skinparam Margin 10
 skinparam Nodesep 40
 skinparam Ranksep 40
-
-actor Client
-
-package "Redis System" {
-  Client --> (Store Key-Value) : SET
-  (Store Key-Value) -[hidden]-> (Retrieve Value)
-  Client --> (Retrieve Value) : GET
-  (Retrieve Value) -[hidden]-> (Delete Key)
-  Client --> (Delete Key) : DEL
-  (Delete Key) -[hidden]-> (Save to Disk)
-  Client --> (Save to Disk) : SAVE
-
-  (Store Key-Value) .> (Retrieve Value) : <<extend>>
-  (Store Key-Value) .> (Delete Key) : <<extend>>
+' Define use cases
+rectangle "Redis-like Server" {
+  usecase "Store Key-Value Data" as UC1
+  usecase "Retrieve Key-Value Data" as UC2
+  usecase "Send Text-Based Commands (RESP)" as UC4
+  usecase "Connect via TCP" as UC5
+  usecase "Snapshot Data to Disk" as UC6
+  usecase "Configure Server Settings" as UC7
+  usecase "Extend System Features" as UC9
 }
+' Client interactions
+client --> UC1
+client --> UC2
+client --> UC4
+client --> UC5
 
-note left of (Store Key-Value)
-  Client sends SET key value
-  to store a key-value pair
+' Admin interactions
+admin --> UC7
+admin --> UC9
+
+' System on the right
+system --> UC6
+
+
+
+note right of UC4
+  Based on BR-003:
+  Text-based command protocol (RESP)
 end note
 
-note left of (Retrieve Value)
-  Client sends GET key
-  to retrieve a value
-end note
 
-note left of (Delete Key)
-  Client sends DEL key
-  to delete a key
-end note
-
-note left of (Save to Disk)
-  Client sends SAVE
-  to persist data to disk
+note right of UC9
+  BR-009: For future features like Pub/Sub
 end note
 
 @enduml
