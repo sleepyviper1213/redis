@@ -45,9 +45,6 @@ compile_commands.json
 # logs folder
 logs
 
-# Docs generated from Doxygen
-docs
-
 # Qt generated file
 CMakeLists.txt.user
 
@@ -74,4 +71,5 @@ CMakeUserPresets.json
 
 #Doxygen docs
 docs/doxygen
+
 /test_logs/

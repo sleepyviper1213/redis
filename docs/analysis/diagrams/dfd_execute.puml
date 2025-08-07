@@ -1,0 +1,34 @@
+@startuml
+title Level 2 DFD - 3.0 Execute Command (Redis-like Server)
+
+actor "Dispatcher" as Dispatcher
+
+' Sub-processes
+rectangle "3.1 Execute GET" as GET
+rectangle "3.2 Execute SET" as SET
+rectangle "3.3 Execute DEL" as DEL
+
+' Data Store
+database "D1: In-Memory Store" as Store
+
+' Flow from Dispatcher
+Dispatcher --> GET : GET Command
+Dispatcher --> SET : SET Command
+Dispatcher --> DEL : DEL Command
+
+' GET
+GET --> Store : Lookup Key
+Store --> GET : Value or nil
+GET --> Dispatcher : RESP Bulk String or Null
+
+' SET
+SET --> Store : Insert/Update Key
+Store --> SET : OK
+SET --> Dispatcher : RESP Simple String
+
+' DEL
+DEL --> Store : Delete Key
+Store --> DEL : Count Deleted
+DEL --> Dispatcher : RESP Integer
+
+@enduml

@@ -1,0 +1,33 @@
+@startuml
+title Deployment Diagram - Redis-like Server
+
+node "Client Device 1\n(e.g., Redis CLI)" as Client1 {
+  artifact "Client CLI"
+}
+
+node "Client Device 2\n(e.g., Python Script)" as Client2 {
+  artifact "Python Client"
+}
+
+cloud "TCP/IP Network" as Network
+
+node "Linux Server\n(Ubuntu 22.04)" as Server {
+  node "Application Layer" {
+    artifact "Redis-like Server\n(boost::asio + custom RESP)"
+  }
+
+  node "Storage Layer" {
+    artifact "redis.snap\n(Snapshot File)"
+    database "Persistent Volume\n(Mounted Disk or Host FS)" as Volume
+  }
+}
+
+Client1 --> Network
+Client2 --> Network
+Network --> Server : TCP connections
+
+"Redis-like Server\n(boost::asio + custom RESP)" --> "redis.snap\n(Snapshot File)" : Read/Write snapshot
+
+"redis.snap\n(Snapshot File)" --> Volume : Mounted on
+
+@enduml

@@ -1,0 +1,37 @@
+@startuml
+title Redis System Architecture
+
+node "Redis Server" {
+    [TCP Listener]
+    [Command Parser]
+    [Config Manager]
+    [Snapshot Manager]
+    [In-Memory Store]
+}
+
+[Client] --> [TCP Listener] : TCP (port 6379)
+[TCP Listener] --> [Command Parser]
+[Command Parser] --> [In-Memory Store] : e.g., GET/SET
+[Command Parser] --> [Snapshot Manager] : e.g., SAVE
+[In-Memory Store] --> [Snapshot Manager] : snapshot trigger
+[Snapshot Manager] --> [File System] : File I/O
+
+' Notes
+note right of [Client]
+Redis-CLI or Telnet
+end note
+
+note right of [Command Parser]
+Parses RESP protocol
+Maps commands to handlers
+end note
+
+note right of [In-Memory Store]
+Supports strings, lists
+end note
+
+note right of [Snapshot Manager]
+Serializes in RESP format
+end note
+
+@enduml
