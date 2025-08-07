@@ -1,43 +1,39 @@
 @startuml
 left to right direction
-'skinparam dpi 150
-skinparam Padding 10
-skinparam Margin 10
-skinparam Nodesep 40
-skinparam Ranksep 40
-' Define use cases
+
+actor client
+actor admin
+
 rectangle "Redis-like Server" {
+  usecase "Connect via TCP" as UC5
   usecase "Store Key-Value Data" as UC1
   usecase "Retrieve Key-Value Data" as UC2
-  usecase "Send Text-Based Commands (RESP)" as UC4
-  usecase "Connect via TCP" as UC5
   usecase "Snapshot Data to Disk" as UC6
   usecase "Configure Server Settings" as UC7
   usecase "Extend System Features" as UC9
 }
+
 ' Client interactions
 client --> UC1
 client --> UC2
-client --> UC4
 client --> UC5
+client --> UC6
 
 ' Admin interactions
 admin --> UC7
 admin --> UC9
 
-' System on the right
-system --> UC6
+' Extend relationships
+UC1 --> UC6 : <<extend>>
 
-
-
-note right of UC4
-  Based on BR-003:
-  Text-based command protocol (RESP)
+' Notes
+note right of UC6
+  Optional background save based on threshold or interval
 end note
+
 
 
 note right of UC9
-  BR-009: For future features like Pub/Sub
+  BR-009:\nFor future features like Pub/Sub
 end note
-
 @enduml

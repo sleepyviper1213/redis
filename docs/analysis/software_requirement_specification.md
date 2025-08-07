@@ -32,6 +32,10 @@
     * [3.1.3 Software interfaces](#313-software-interfaces)
     * [3.1.4 Communication interfaces](#314-communication-interfaces)
   * [3.2 Design Constraints](#32-design-constraints)
+    * [3.2.1 Standard Compliance](#321-standard-compliance)
+    * [3.2.2 Accounting & Auditing Procedures](#322-accounting--auditing-procedures)
+    * [3.2.3 Legal & Data Privacy Constraints](#323-legal--data-privacy-constraints)
+    * [3.2.4 Resource Constraints](#324-resource-constraints)
   * [3.3 Functional Requirements](#33-functional-requirements)
   * [3.4 Nonfunctional Requirements](#34-nonfunctional-requirements)
     * [[NFR-001] Performance](#nfr-001-performance)
@@ -43,12 +47,14 @@
     * [[NFR-007] Portability](#nfr-007-portability)
     * [[NFR-008] Extensibility](#nfr-008-extensibility)
     * [[NFR-009] Reusability](#nfr-009-reusability)
-  * [3.5 Object Oriented Models](#35-object-oriented-models)
-    * [3.5.1 Architecture specification](#351-architecture-specification)
-    * [3.5.2 Class diagram](#352-class-diagram)
-    * [3.5.3 State diagram](#353-state-diagram)
-    * [3.5.4 Collaboration diagram](#354-collaboration-diagram)
-    * [3.5.1 Activity diagram](#351-activity-diagram)
+  * [3.5 Object-Oriented Models](#35-object-oriented-models)
+    * [3.5.1 Architecture Specification](#351-architecture-specification)
+    * [3.5.2 Data Flow Diagrams](#352-data-flow-diagrams)
+    * [3.5.3 State Diagram](#353-state-diagram)
+    * [3.5.4 Deployment Diagram](#354-deployment-diagram)
+    * [3.5.5 Activity Diagrams](#355-activity-diagrams)
+    * [3.5.6 Use Case Diagram](#356-use-case-diagram)
+    * [3.5.7 Sequence Diagram](#357-sequence-diagram)
 * [4. Appendix](#4-appendix)
 <!-- TOC -->
 
@@ -58,7 +64,7 @@
 
 | Date       | Revision | Author             |
 |------------|----------|--------------------|
-| 6 Aug 2025 | 2        | Khac Truong Nguyen |
+| 7 Aug 2025 | 3        | Khac Truong Nguyen |
 
 ---
 # 1. Introduction
@@ -98,7 +104,7 @@ optimization studies.
 | NFR          | Non-functional Requirement            |
 | Snapshotting |                                       |
 | CRLF         |                                       |
-| GUI| Graphical user interface|
+| GUI          | Graphical user interface              |
 
 
 ## 1.4 References
@@ -264,14 +270,81 @@ The sequence diagram illustrates a client-server interaction, showing a client c
 [See sequence_client_server_interaction.puml in Appendix B for the diagram.]
 
 ## 3.2 Design Constraints
-* **Language**: C++23
-* **Networking**: Boost.Asio
-* **Protocol**: RESP (custom parser)
-* **Persistence**: Snapshot via RDB-like format
-* **Client**: Python script or RESP-compatible tool
+
+### 3.2.1 Standard Compliance
+
+The system must comply with the following technical and platform standards:
+
+* **RESP Protocol Specification**
+  The Redis-like server shall fully comply with the **RESP version 2** protocol, ensuring compatibility with standard Redis clients. This includes correct formatting of bulk strings, arrays, errors, and integers.
+
+* **ISO C++ Standards**
+  The implementation shall follow **ISO/IEC 14882:2024 (C++23)** or later. Code must avoid undefined behavior and adhere to safe memory and concurrency practices.
+
+* **POSIX Compliance**
+  File I/O, process signals, and error handling shall be compatible with **POSIX** to support deployment on Unix-based systems.
+
+* **Filesystem Access**
+  Filesystem operations shall use compatible abstraction for cross-platform snapshot storage.
 * No **external database** or file-based storage engine other than snapshots
 * No use of Redis source code; all components must be implemented from scratch.
-* Must work on macOS and Linux.
+
+### 3.2.2 Accounting & Auditing Procedures
+
+The server shall implement logging and traceability mechanisms to support debugging, usage analytics, and post-mortem analysis.
+
+* **Command Logging**
+  All incoming commands (excluding volatile or noisy ones like `PING`) shall be logged with:
+
+  * Timestamp
+  * Client connection identifier (IP, port)
+  * Command name and sanitized parameters
+  * Execution result (success/failure)
+
+* **Snapshot Logging**
+  Each snapshot event must be logged with:
+
+  * Snapshot trigger source (manual, timer, threshold)
+  * Number of keys serialized
+  * Output file path
+  * Timestamp and hash digest (e.g., SHA-256)
+
+* **Authentication Logging**
+  All authentication attempts (successful or failed) must include:
+
+  * Client IP
+  * Time of attempt
+  * Status (OK/Fail)
+  * Lockout flag if repeated failures exceed threshold
+
+* **Retention & Archiving**
+  All logs shall be retained for a minimum of **30 days**. Old logs may be archived (e.g., GZIP-compressed) automatically based on configurable policy.
+
+* **Audit Readability**
+  Log files shall be stored in a **human-readable** format (e.g., newline-delimited JSON or plain text) for ease of inspection.
+
+---
+
+### 3.2.3 Legal & Data Privacy Constraints
+
+* **User Data Protection**
+  Any sensitive data (e.g., authentication credentials) must never be logged in plaintext. Authentication data should be handled in memory only and never persisted to disk.
+
+* **Third-party Library Licensing**
+  All third-party libraries (e.g., Boost, nlohmann/json) must be used in compliance with their respective licenses (e.g., MIT, Boost Software License 1.0). The project must not integrate non-permissive or GPL-incompatible dependencies without explicit approval.
+
+
+### 3.2.4 Resource Constraints
+
+* The server must be lightweight and runnable on machines with:
+
+  * CPU: 2-core minimum
+  * RAM: ≤ 128 MB for small datasets
+  * Disk: Must not write more than 1 snapshot per 5 seconds
+
+---
+
+
 
 ## 3.3 Functional Requirements
 
@@ -297,25 +370,7 @@ The sequence diagram illustrates a client-server interaction, showing a client c
 | FR-020 | Lua scripting                        | Support Lua script execution (planned)                              | Low      |
 | FR-021 | Clustering or replication            | Support distributed setups (planned)                                | Low      |
 
-Diagram: Command Execution Pipeline (command_execution_pipeline.puml)
-This diagram outlines command processing: receiving a RESP request, parsing, executing, and responding. It supports
-FR-01 and FR-06 by showing command validation and execution.
-[See Appendix B for details.]
 
-Diagram: Level 1 Data Flow Diagram (dfd_subprocess.puml)
-This Level 1 DFD details processes: command parsing, validation, execution, and snapshot saving. It supports FR-01,
-FR-07, and FR-09 by showing data flows.
-[See Appendix B for details.]
-
-Diagram: Level 2 DFD - Execute Command (dfd_execute.puml)
-This Level 2 DFD focuses on GET, SET, and DEL execution, showing interactions with the in-memory store. It supports
-FR-01.
-[See Appendix B for details.]
-
-Diagram: Startup Initialization (startup.puml)
-This diagram shows the startup sequence: loading configuration, initializing subsystems, restoring snapshots, and
-starting monitoring. It supports FR-02, FR-03, FR-09, and FR-014.
-[See Appendix B for details.]
 ---
 
 ## 3.4 Nonfunctional Requirements
@@ -368,31 +423,119 @@ starting monitoring. It supports FR-02, FR-03, FR-09, and FR-014.
 * Reusable modules: command parser, snapshot handler
 * Self-contained logging, error, and HTTP layers
 
-## 3.5 Object Oriented Models
-### 3.5.1 Architecture specification
-Check out [components.puml](diagrams/components.puml) for system architecture.
+Thanks for sharing your diagrams! Based on your uploaded `.puml` files, here’s a **completed and well-written section 3.5 – Object Oriented Models** for your Software Requirements Specification (SRS):
 
-### 3.5.2 Class diagram
-### 3.5.3 State diagram
-### 3.5.4 Collaboration diagram
-### 3.5.1 Activity diagram
+---
 
+## 3.5 Object-Oriented Models
+
+This section presents the design models that describe the structure, behavior, and deployment of the Redis-like server system using object-oriented analysis. Each diagram file is maintained in the `diagrams/` folder and written using PlantUML syntax.
+
+---
+
+### 3.5.1 Architecture Specification
+
+The overall component-based system architecture is defined in:
+
+ [`components.puml`](diagrams/components.puml)
+
+This diagram describes major system components, including:
+
+* Command Parser
+* In-Memory Store
+* Snapshot Manager
+* File System
+* TCP Listener
+* Admin and Client actors
+
+It shows how responsibilities are separated and how components interact over TCP and file I/O.
+
+---
+
+### 3.5.2 Data Flow Diagrams
+
+The system’s data flow is modeled using three levels:
+
+* [`dfd_context.puml`](diagrams/dfd_context.puml)
+  Provides a high-level context of external entities (Client, File System) and their data exchanges with the system.
+
+* [`dfd_execute.puml`](diagrams/dfd_execute.puml)
+  Focuses on how commands flow through parsing, dispatching, execution, and storage.
+
+* [`dfd_subprocess.puml`](diagrams/dfd_subprocess.puml)
+  Breaks down the snapshot subprocess into data interactions between the in-memory store and the file system.
+
+---
+
+### 3.5.3 State Diagram
+
+* [`state_connection_lifecycle.puml`](diagrams/state_connection_lifecycle.puml)
+
+This state diagram models the lifecycle of a client connection, from TCP handshake through authentication, command parsing, execution, and connection closure. It helps identify valid transitions and error conditions in network sessions.
+
+---
+
+### 3.5.4 Deployment Diagram
+
+* [`deployment.puml`](diagrams/deployment.puml)
+
+This diagram shows how the Redis-like server is deployed in a real-world environment. It includes:
+
+* Server binary running on Linux
+* Snapshot storage on disk
+* External clients connecting over TCP
+* Optional admin tools
+
+It is helpful to understand infrastructure and networking setup.
+
+---
+
+### 3.5.5 Activity Diagrams
+
+* [`activity_command_execution_pipeline.puml`](diagrams/activity_command_execution_pipeline.puml)
+  Describes the internal flow from when a command is received to when the result is sent back.
+
+* [`activity_startup.puml`](diagrams/activity_startup.puml)
+  Models the startup sequence: loading configuration, initializing components, opening sockets, etc.
+
+These diagrams emphasize internal operational logic and system behavior.
+
+---
+
+### 3.5.6 Use Case Diagram
+
+* [`use_case.puml`](diagrams/use_case.puml)
+
+This diagram models the primary use cases for both **client** and **admin** actors, including:
+
+* Store and retrieve key-value pairs
+* Configure settings (admin)
+* Trigger snapshots
+* Optional authentication
+* Extensibility hooks for future features like Pub/Sub
+
+
+---
+
+### 3.5.7 Sequence Diagram
+
+* [`sequence_client_server_interaction.puml`](diagrams/sequence_client_server_interaction.puml)
+
+This diagram represents a full client-server interaction sequence:
+
+* TCP connection established
+* RESP command sent
+* Parsed and dispatched
+* Response returned
+
+It is useful for visualizing protocol flow and latency hotspots.
+
+---
 
 # 4. Appendix
 
 * A. Use Case Description
   Use case descriptions are maintained in a separate document for clarity and modularity. See [use_case_descriptions.md](use_case_descriptions.md)
-* B. Diagrams
-  1. **components.puml** (Section 2.1): Shows system components (Client Interface, Server, Command Parser,
-     KeyValueStore, SnapshotEngine) with notes on roles.
-  2. **dfd_context.puml** (Section 2.1): Level 0 DFD showing client-server and snapshot file interactions.
-  3. **deployment.puml** (Section 2.1): Physical deployment of the server and clients.
-  4. **use_case.puml** (Section 2.2): Client use cases for `SET`, `GET`, `DEL`, and `SAVE`.
-  5. **state_connection_lifecycle.puml** (Section 3.1.4): Client connection state transitions.
-  6. **sequence_client_server_interaction.puml** (Section 3.1.4): Client-server command interaction sequence.
-  7. **command_execution_pipeline.puml** (Section 3.2): Command processing flow.
-  8. **dfd_subprocess.puml** (Section 3.2): Level 1 DFD of system processes and data flows.
-  9. **dfd_execute.puml** (Section 3.2): Level 2 DFD for command execution.
-  10. **startup.puml** (Section 3.2): Server startup sequence.
-* C. Test Plan Checklist
+
+* B. Test Plan Checklist
   See [TEST_CHECKLIST.md](../test/TEST_CHECKLIST.md)

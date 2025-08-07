@@ -1,16 +1,22 @@
 @startuml
-title Client Connection State Machine - Redis-like Server
+title Redis-like Server - RESP over TCP Communication Lifecycle
 
-[*] --> Disconnected
+[*] --> Idle : Server started
 
-Disconnected --> Connected : On TCP connection accepted
-Connected --> Authenticated : On AUTH success (if required)
-Authenticated --> Processing : On successful handshake\nor initial command
+Idle --> Listening : Bind & Listen on TCP port
 
-Processing --> Closed : On QUIT command\nor fatal error
-Authenticated --> Closed : On authentication failure
-Connected --> Closed : On timeout or malformed request
+Listening --> Connected : TCP connection accepted
 
-Closed --> [*]
+Connected --> Parsing : On received command
+
+
+Parsing --> Executing : Valid RESP command parsed
+
+Executing --> Parsing : Response sent to client
+Executing --> Closed : Fatal error (e.g., protocol violation)
+
+Parsing --> Closed : Client sent QUIT or error occurs
+
+Closed --> [*] : Connection closed
 
 @enduml
