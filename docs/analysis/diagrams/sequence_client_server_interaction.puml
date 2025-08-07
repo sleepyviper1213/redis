@@ -2,7 +2,7 @@
 title Client-Server Interaction - Redis-like Server
 
 actor Client
-participant "TCP Socket\n(Boost::Asio)" as Socket
+participant "TCP Socket" as Socket
 participant "Command Handler\n(Dispatcher)" as Dispatcher
 participant "Database Store\n(Key-Value Map)" as DB
 

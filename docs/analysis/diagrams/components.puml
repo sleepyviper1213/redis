@@ -1,35 +1,37 @@
 @startuml
-[Client Interface] --> [Server]
-[Server] --> [Command Parser]
-[Command Parser] --> [KeyValueStore]
-[Command Parser] --> [SnapshotEngine]
-[Other RESP-compatible clients] --> [Server]
+title Redis System Architecture
 
-note left of [Client Interface]
-  A Python console receiving client commands
-  (SET, GET, DEL, SAVE)
-end note
-note right of [Other RESP-compatible clients]
-  Official Redis client executable: Redis-cli
-end note
+node "Redis Server" {
+    [TCP Listener]
+    [Command Parser]
+    [Config Manager]
+    [Snapshot Manager]
+    [In-Memory Store]
+}
 
-note right of [Server]
-  Listens for commands via RESP protocol
+[Client] --> [TCP Listener] : TCP (port 6379)
+[TCP Listener] --> [Command Parser]
+[Command Parser] --> [In-Memory Store] : e.g., GET/SET
+[Command Parser] --> [Snapshot Manager] : e.g., SAVE
+[In-Memory Store] --> [Snapshot Manager] : snapshot trigger
+[Snapshot Manager] --> [File System] : File I/O
+
+' Notes
+note right of [Client]
+Redis-CLI or Telnet
 end note
 
 note right of [Command Parser]
-Parses simplified Redis comand in RESP format
+Parses RESP protocol
+Maps commands to handlers
 end note
 
-note right of [KeyValueStore]
-  Manages in-memory storage(database)
-  for SET, GET, DEL
+note right of [In-Memory Store]
+Supports strings, lists
 end note
 
-note right of [SnapshotEngine]
-  Handles saving data to disk (e.g., RDB snapshots, AOF).
-  Writes current DB state to `.snap` file
-  using background child process for SAVE command
+note right of [Snapshot Manager]
+Serializes in RESP format
 end note
 
 @enduml

@@ -8,7 +8,6 @@ start
 :Bind TCP Port;
 
 partition "Subsystem Initialization" {
-  :Initialize I/O Context (Boost.Asio);
   :Initialize Command Registry;
   :Initialize Database Store;
   :Initialize Snapshot Manager;
