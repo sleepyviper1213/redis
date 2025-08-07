@@ -24,7 +24,6 @@
   * [2.5 Assumptions and Dependencies](#25-assumptions-and-dependencies)
   * [2.6 Risk Analysis](#26-risk-analysis)
   * [2.7 Acceptance Criteria](#27-acceptance-criteria)
-  * [TODO](#todo)
 * [3. Specific Requirements](#3-specific-requirements)
   * [3.1 External interface Requirements](#31-external-interface-requirements)
     * [3.1.1 User Interfaces](#311-user-interfaces)
@@ -228,8 +227,10 @@ likelihood, and mitigation strategies to ensure project success.
 
 ## 2.7 Acceptance Criteria
 
-TODO
-- 
+* Unit tests shall cover at least 80% of the core logic (e.g., command dispatching, snapshotting).
+* Integration tests must demonstrate correct behavior under real client connections.-
+* Architecture, use cases, and system behavior must be documented using UML diagrams.
+* A README file must include build instructions, usage examples, and configuration guidance.
 ---
 
 # 3. Specific Requirements
