@@ -6,42 +6,26 @@
 #include <cassert>
 
 namespace redis {
-const std::set<std::string> &Value::getSet() const {
-	assert(std::holds_alternative<std::set<std::string>>(val_));
-	return std::get<std::set<std::string>>(val_);
+RespValue RespValue::from_simple_string(std::string s) {
+	return {Type::SimpleString, std::move(s)};
 }
 
-const std::list<std::string> &Value::getList() const {
-	assert(std::holds_alternative<std::list<std::string>>(val_));
-	return std::get<std::list<std::string>>(val_);
+RespValue RespValue::from_error(std::string s) {
+	return {Type::Error, std::move(s)};
 }
 
-const std::string &Value::getString() const {
-	assert(std::holds_alternative<std::string>(val_));
-	return std::get<std::string>(val_);
+RespValue RespValue::from_integer(long long value) {
+	return {Type::Integer, value};
 }
 
-std::set<std::string> &Value::getSet() {
-	assert(std::holds_alternative<std::set<std::string>>(val_));
-	return std::get<std::set<std::string>>(val_);
+RespValue RespValue::from_bulk_string(std::string s) {
+	return {Type::BulkString, std::move(s)};
 }
 
-std::list<std::string> &Value::getList() {
-	assert(std::holds_alternative<std::list<std::string>>(val_));
-	return std::get<std::list<std::string>>(val_);
+RespValue RespValue::from_array(std::vector<RespValue> arr) {
+	return {Type::ArrayT, std::move(arr)};
 }
 
-std::string &Value::getString() {
-	assert(std::holds_alternative<std::string>(val_));
-	return std::get<std::string>(val_);
-}
-
-const std::variant<std::string, std::set<std::string>, std::list<std::string>> &
-Value::getVal() const {
-	return val_;
-}
-
-std::string format_as(const Value &value) {
-	return fmt::format("[Value] {}", value.getVal());
-}
+// std::string format_as(const RespValue &value) {
+//}
 } // namespace redis

@@ -1,7 +1,7 @@
 #include "cmd.hpp"
 
 #include "commands/command_type.hpp"
-#include "utils/split_by_space.hpp"
+#include "utils/toupper.hpp"
 
 #include <fmt/ranges.h>
 
@@ -36,10 +36,6 @@ ErrorOr<Command> Command::fromString(const std::string &line) {
 
 	auto &cmd = words.front();
 
-	// TODO: UTF-8 support
-	std::ranges::transform(cmd, cmd.begin(), [](unsigned char c) {
-		return std::tolower(c);
-	});
 	auto type = TRY(ok_or(CommandTypeUtil::fromString(cmd),
 						  "[Command] Not a Redis command",
 						  std::errc::invalid_argument));

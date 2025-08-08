@@ -6,7 +6,10 @@
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-		"CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+//		"CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm@19/bin/clang++",
+        "CMAKE_EXE_LINKER_FLAGS":"-L/opt/homebrew/opt/llvm/lib/c++ -L/opt/homebrew/opt/llvm/lib/unwind -lunwind",
+        "CMAKE_LINKER":"/opt/homebrew/opt/lld/bin/lld"
       }
     }
   ]

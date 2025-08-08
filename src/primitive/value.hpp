@@ -1,68 +1,146 @@
 #pragma once
 
-#include <concepts>
-#include <list>
-#include <set>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
 #include <string>
-#include <utility>
 #include <variant>
+#include <vector>
 
 namespace redis {
-/**
- * \brief Concept to constrain accepted types for Redis values.
- *
- * Allows:
- * - std::string
- * - std::set<std::string>
- * - std::list<std::string>
- */
-template <typename T>
-concept isRedisValue = std::convertible_to<T, std::string> ||
-					   std::convertible_to<T, std::set<std::string>> ||
-					   std::convertible_to<T, std::list<std::string>>;
 
-/**
- * \brief Represents a Redis-stored value, which can be string, set, or list.
- */
-class Value {
-public:
-	/**
-	 * \brief Constructs a Value from an accepted Redis type.
-	 */
-	template <isRedisValue T>
-	Value(T &&t) : val_(std::forward<T>(t)) {}
+struct RespValue {
+	using Array = std::vector<RespValue>;
 
-	/** \brief Gets the stored set. */
-	[[nodiscard]] const std::set<std::string> &getSet() const;
+	// using NullT = std::nullptr_t;
 
-	/** \brief Gets the stored set (mutable). */
-	[[nodiscard]] std::set<std::string> &getSet();
 
-	/** \brief Gets the stored list. */
-	[[nodiscard]] const std::list<std::string> &getList() const;
+	enum class Type { SimpleString, Error, Integer, BulkString, ArrayT, Null };
 
-	/** \brief Gets the stored list (mutable). */
-	[[nodiscard]] std::list<std::string> &getList();
+	Type type;
 
-	/** \brief Gets the stored string. */
-	[[nodiscard]] const std::string &getString() const;
+	std::variant<std::string, // SimpleString, Error, BulkString
+				 long long,   // Integer
+				 Array        // Array
+				 // NullT        // Null
+				 >
+		data;
 
-	/** \brief Gets the stored string (mutable). */
-	[[nodiscard]] std::string &getString();
+	// Helper creators
+	static RespValue from_simple_string(std::string s);
 
-	/** \brief Returns the raw variant value. */
-	[[nodiscard]] const std::variant<std::string, std::set<std::string>,
-									 std::list<std::string>> &
-	getVal() const;
+	static RespValue from_error(std::string s);
 
-private:
-	// Underlying variant holding the actual data.
-	std::variant<std::string, std::set<std::string>, std::list<std::string>>
-		val_;
+	static RespValue from_integer(long long value);
+
+	static RespValue from_bulk_string(std::string s);
+
+	static RespValue from_array(std::vector<RespValue> arr);
+
+	// static RespValue null() { return {Null, nullptr}; }
 };
 
-/**
- * \brief Formats a Value into a printable string.
- */
-std::string format_as(const Value &value);
 } // namespace redis
+
+template <>
+struct fmt::formatter<redis::RespValue> {
+	char presentation = 0;
+
+	// Parses format specifiers and stores them in the formatter.
+	//
+	// [ctx.begin(), ctx.end()) is a, possibly empty, character range that
+	// contains a part of the format string starting from the format
+	// specifications to be parsed, e.g. in
+	//
+	//   fmt::format_to(it"{:f} continued", ...);
+	//
+	// the range will contain "f} continued". The formatter should parse
+	// specifiers until '}' or the end of the range. In this example the
+	// formatter should parse the 'f' specifier and return an iterator
+	// pointing to '}'.
+	constexpr auto parse(format_parse_context &ctx)
+		-> format_parse_context::iterator {
+		auto it = ctx.begin(), end = ctx.end();
+		if (it == end) return it;
+		if (*it == '?' || *it == 's') presentation = *it++;
+
+		// Check if reached the end of the range:
+		if (*it != '}') throw format_error("invalid format");
+
+		// Return an iterator past the end of the parsed range:
+		return it;
+	}
+
+	// Formats value using the parsed format specification stored in this
+	// formatter and writes the output to it.
+	auto format(const redis::RespValue &value, format_context &ctx) const
+		-> format_context::iterator {
+		using enum redis::RespValue::Type;
+
+		auto it = ctx.out();
+		if (presentation == '?') {
+			switch (value.type) {
+			case SimpleString:
+				it = fmt::format_to(it,
+									"SimpleString({:?})",
+									std::get<std::string>(value.data));
+				break;
+			case Error:
+				it = fmt::format_to(it,
+									"Error({:?})",
+									std::get<std::string>(value.data));
+				break;
+			case Integer:
+				it = fmt::format_to(it,
+									"Integer({})",
+									std::get<long long>(value.data));
+				break;
+			case BulkString: {
+				const auto &str = std::get<std::string>(value.data);
+				it              = fmt::format_to(it, "BulkString({:?})", str);
+				break;
+			}
+			case ArrayT: {
+				const auto &arr = std::get<redis::RespValue::Array>(value.data);
+				it = fmt::format_to(it, "Array({:?})", fmt::join(arr, ", "));
+				break;
+			}
+			case Null: it = fmt::format_to(it, "Null"); break;
+			default: it = fmt::format_to(it, "Unknown");
+			}
+		} else if (!presentation || presentation == 's') {
+			switch (value.type) {
+			case SimpleString:
+				it = fmt::format_to(it,
+									"+{}\r\n",
+									std::get<std::string>(value.data));
+				break;
+			case Error:
+				it = fmt::format_to(it,
+									"-Err {}\r\n",
+									std::get<std::string>(value.data));
+				break;
+			case Integer:
+				it = fmt::format_to(it,
+									":{}\r\n",
+									std::get<long long>(value.data));
+				break;
+			case BulkString: {
+				auto &str = std::get<std::string>(value.data);
+				it = fmt::format_to(it, "${}\r\n{}\r\n", str.size(), str);
+				break;
+			}
+			case ArrayT: {
+				const auto &arr = std::get<redis::RespValue::Array>(value.data);
+				it              = fmt::format_to(it, "*{}\r\n", arr.size());
+				for (const auto &item : arr)
+					it = fmt::format_to(it, "{}", item);
+				break;
+			}
+			case Null: it = format_to(it, "$-1\r\n"); break;
+			default: it = fmt::format_to(it, "-ERR unknown type\r\n");
+			}
+		}
+		return it;
+	}
+};
