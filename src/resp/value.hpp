@@ -63,6 +63,9 @@ public:
 	[[nodiscard]] const Array &getArray() const;
 
 	[[nodiscard]] const std::string &getString() const;
+
+	[[nodiscard]] double getDouble() const;
+
 	Type type() const;
 
 	/**
@@ -71,22 +74,35 @@ public:
 	[[nodiscard]] bool is_null() const;
 
 	/**
-	 * \brief Returns true if the value is a Error. Returns false otherwise.
+	 * \brief Returns true if the value is an Error. Returns false otherwise.
 	 */
 	[[nodiscard]] bool is_error() const;
 
 	/**
-	 * \brief Returns true if the value is a Error. Returns false otherwise.
+	 * \brief Returns true if the value is an array. Returns false otherwise.
 	 */
 	[[nodiscard]] bool is_array() const;
+
 	/**
-	 * \brief Returns true if the value is a Error. Returns false otherwise.
+	 * \brief Returns true if the value is a bulk string. Returns false
+	 * otherwise.
 	 */
 	[[nodiscard]] bool is_bulk_string() const;
+
 	/**
-	 * \brief Returns true if the value is a Error. Returns false otherwise.
+	 * \brief Returns true if the value is a simple string. Returns false
+	 * otherwise.
 	 */
 	[[nodiscard]] bool is_simple_string() const;
+
+	/**
+	 * \brief Returns true if the value is a double. Returns false otherwise.
+	 */
+	[[nodiscard]] bool is_integer() const;
+	/**
+	 * \brief Returns true if the value is a double. Returns false otherwise.
+	 */
+	[[nodiscard]] bool is_double() const;
 
 private:
 	Type type_;

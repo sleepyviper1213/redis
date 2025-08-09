@@ -77,6 +77,16 @@ Value Value::from_raw_array(std::span<const std::string> list) {
 Value::Type Value::type() const { return type_; }
 
 Value Value::from_array(Array list) { return {Type::Array, std::move(list)}; }
+
+double Value::getDouble() const { return std::get<double>(data_); }
+
+bool Value::is_integer() const {
+	return type_ == Type::Integer && std::holds_alternative<int64_t>(data_);
+}
+
+bool Value::is_double() const {
+	return type_ == Type::Double && std::holds_alternative<double>(data_);
+}
 } // namespace resp
 
 auto fmt::formatter<resp::Value>::format(const resp::Value &value,
@@ -103,10 +113,13 @@ auto fmt::formatter<resp::Value>::format(const resp::Value &value,
 		case Array: {
 			const auto &arr = value.getArray();
 			if (arr.empty()) it = fmt::format_to(it, "(Empty Array)");
-			else it = fmt::format_to(it, "Array({:?})", fmt::join(arr, ", "));
+			else it = fmt::format_to(it, "Array({})", fmt::join(arr, ", "));
 			break;
 		}
 		case Null: it = fmt::format_to(it, "(Null)"); break;
+		case Double:
+			it = fmt::format_to(it, "Double({})", value.getDouble());
+			break;
 		default: std::unreachable();
 		}
 	} else if (presentation == 'e') {
@@ -127,11 +140,16 @@ auto fmt::formatter<resp::Value>::format(const resp::Value &value,
 		}
 		case Array: {
 			const auto &arr = value.getArray();
-			it              = fmt::format_to(it, "*{}\r\n", arr.size());
-			for (const auto &item : arr) it = fmt::format_to(it, "{:e}", item);
+			it              = fmt::format_to(it,
+                                "*{}\r\n{:e}",
+                                arr.size(),
+                                fmt::join(arr, ""));
 			break;
 		}
 		case Null: it = format_to(it, "_\r\n"); break;
+		case Double:
+			it = fmt::format_to(it, ",{}\r\n", value.getDouble());
+			break;
 		default: std::unreachable();
 		}
 	}
