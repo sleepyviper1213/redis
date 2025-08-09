@@ -1,6 +1,5 @@
 #pragma once
 #include "redis_store.hpp"
-#include "resp_parser.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -20,6 +19,5 @@ public:
 private:
 	net::ip::tcp::socket socket_;
 	RedisStore &store_;
-	RespParser parser_;
 };
 } // namespace redis

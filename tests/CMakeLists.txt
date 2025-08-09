@@ -1,5 +1,6 @@
 add_executable(
     redis_unit_test EXCLUDE_FROM_ALL
+	resp/parser.cpp
     test.cpp)
 
 target_link_libraries(

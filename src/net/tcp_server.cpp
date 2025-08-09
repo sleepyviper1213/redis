@@ -1,5 +1,6 @@
 #include "tcp_server.hpp"
 
+#include "formatter.hpp"
 #include "nothrow_awaitable_t.hpp"
 #include "redis_store.hpp"
 #include "session.hpp"
@@ -12,10 +13,9 @@
 #include <utility>
 
 namespace redis {
-
-
 Server::Server(net::ip::port_type port_num)
-	: acceptor_(ctx_, tcp::endpoint(net::ip::address_v4::loopback(), port_num)),
+	: acceptor_(ctx_, net::ip::tcp::endpoint(net::ip::address_v4::loopback(),
+											 port_num)),
 	  signalSet(ctx_, SIGINT, SIGTERM),
 	  work_guard_(net::make_work_guard(ctx_)) {
 	// Capture SIGINT and SIGTERM to perform a clean shutdown
@@ -38,10 +38,9 @@ void Server::start() noexcept {
 	// error_code
 	net::co_spawn(ctx_, accept_incoming_connections(), net::detached);
 
-	const uint32_t MAX_THREADS = std::thread::hardware_concurrency();
+	const uint32_t MAX_THREADS = 4;
 	for (uint32_t i = 0; i < MAX_THREADS; ++i)
 		net::post(thread_pool_, [this]() { ctx_.run(); });
-	ctx_.run();
 }
 
 net::awaitable<void> Server::accept_incoming_connections() noexcept {
@@ -57,7 +56,8 @@ net::awaitable<void> Server::accept_incoming_connections() noexcept {
 		}
 		spdlog::info("[Server] Accepted: {}", client.remote_endpoint());
 
-		auto session = std::make_shared<Session>(std::move(client), store);
+		const auto session =
+			std::make_shared<Session>(std::move(client), store);
 		co_await session->run();
 	}
 }

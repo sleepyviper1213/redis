@@ -8,13 +8,13 @@ add_library(
     # commands/command_type.cpp
     error/error.cpp
     net/redis_store.cpp
-    net/resp_parser.cpp
+
     net/session.cpp
     net/tcp_server.cpp
-    primitive/value.cpp
+    resp/resp_parser.cpp
+    resp/value.cpp
     utils/create_temp_file.cpp
-    utils/error_ret_formatter.cpp
-    utils/toupper.cpp)
+        utils/toupper.cpp)
 
 
 target_include_directories(redis_server_lib PUBLIC .)
