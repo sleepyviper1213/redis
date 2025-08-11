@@ -1,0 +1,50 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+class KeyValueStore {
+    + store: unordered_map<string, RedisValue>
+}
+
+class RedisValue {
+    + type: Type
+    + value: variant<string, list<string>, unordered_set<string>,
+             unordered_map<string, string>, map<float, string>>
+    + expiry: optional<time_point>
+}
+
+enum Type {
+    STRING
+    LIST
+    SET
+    HASH
+    ZSET
+}
+
+class StringValue {
+    + value: string
+}
+
+class ListValue {
+    + elements: list<string>
+}
+
+class SetValue {
+    + members: unordered_set<string>
+}
+
+class HashValue {
+    + fields: unordered_map<string, string>
+}
+
+class ZSetValue {
+    + scored_members: map<float, string>
+}
+
+KeyValueStore --> RedisValue : *
+RedisValue --> Type
+RedisValue <|-- StringValue
+RedisValue <|-- ListValue
+RedisValue <|-- SetValue
+RedisValue <|-- HashValue
+RedisValue <|-- ZSetValue
+@enduml

@@ -1,0 +1,34 @@
+@startuml
+start
+
+:Receive SAVE command from client;
+
+:Parse command;
+
+if (Command valid?) then (yes)
+  :Access in-memory key-value store;
+  
+  :Serialize key-value data;
+  note right
+    Convert in-memory store to a
+    format suitable for disk storage
+    (e.g., key-value pairs to file)
+  end note
+
+  :Write serialized data to disk;
+  note right
+    Save data to a persistent file
+    (e.g., similar to Redis RDB)
+  end note
+
+  if (Write successful?) then (yes)
+    :Send "OK" response to client;
+  else (no)
+    :Send error response to client;
+  endif
+else (no)
+  :Send error response to client;
+endif
+
+stop
+@enduml

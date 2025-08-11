@@ -1,0 +1,27 @@
+@startuml
+class KeyValueStore {
+  -store: Map<String, String>
+  +set(key: String, value: String)
+  +get(key: String): String
+  +del(key: String): Integer
+  +save()
+}
+
+class SnapshotEngine {
+  -filePath: String
+  +writeToDisk()
+}
+
+KeyValueStore --> SnapshotEngine : uses for SAVE
+
+note right of KeyValueStore
+  Manages in-memory key-value storage
+  for SET, GET, DEL commands
+end note
+
+note right of SnapshotEngine
+  Handles persistence to disk
+  for SAVE command
+end note
+
+@enduml

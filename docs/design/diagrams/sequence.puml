@@ -1,0 +1,48 @@
+@startuml
+autonumber
+
+actor User
+boundary PythonClient
+control TcpServer
+control CommandParser
+control KeyValueStore
+control SnapshotEngine
+
+alt SET Command
+  User -> PythonClient: input "SET key value"
+  PythonClient -> TcpServer: send_request("SET key value")
+  TcpServer -> CommandParser: handle_request("SET key value")
+  CommandParser -> KeyValueStore: set(key, value)
+  KeyValueStore --> CommandParser: OK
+  CommandParser --> TcpServer: OK
+  TcpServer --> PythonClient: OK
+else GET Command
+  User -> PythonClient: input "SET key value"
+  PythonClient -> TcpServer: send_request("Get key")
+  TcpServer -> CommandParser: Parse "GET key"
+  CommandParser -> KeyValueStore: get(key)
+  KeyValueStore --> CommandParser: value
+  CommandParser --> TcpServer: value
+  TcpServer --> PythonClient: value
+else DEL Command
+  User -> PythonClient: input "DEl key"
+  PythonClient -> TcpServer: send_request("DEL key")
+  TcpServer -> CommandParser: Parse "DEL key"
+  CommandParser -> KeyValueStore: del(key)
+  KeyValueStore --> CommandParser: 1
+  CommandParser --> TcpServer: 1
+  TcpServer --> PythonClient: 1
+else SAVE Command
+  User -> PythonClient: input "SAVE"
+
+  PythonClient -> TcpServer: send_request("SAVE")
+  TcpServer -> CommandParser: Parse "SAVE"
+  CommandParser -> KeyValueStore: save()
+  KeyValueStore -> SnapshotEngine: writeToDisk()
+  SnapshotEngine --> KeyValueStore: OK
+  KeyValueStore --> CommandParser: OK
+  CommandParser --> TcpServer: OK
+  TcpServer --> PythonClient: OK
+end alt
+
+@enduml
