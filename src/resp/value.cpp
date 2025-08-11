@@ -22,19 +22,17 @@ Value Value::from_bulk_string(std::string s) {
 	return {Type::BulkString, std::move(s)};
 }
 
-// std::string format_as(const Value &value) {
-//}
-int64_t Value::getInteger() const {
+int64_t Value::as_integer() const {
 	assert(type_ == Type::Integer);
 	return std::get<int64_t>(data_);
 }
 
-const Value::Array &Value::getArray() const {
+const Value::Array &Value::as_array() const {
 	assert(type_ == Type::Array);
 	return std::get<Array>(data_);
 }
 
-const std::string &Value::getString() const {
+const std::string &Value::as_string() const {
 	assert(type_ == Type::SimpleString || type_ == Type::BulkString ||
 		   type_ == Type::SimpleError);
 	return std::get<std::string>(data_);
@@ -78,7 +76,7 @@ Value::Type Value::type() const { return type_; }
 
 Value Value::from_array(Array list) { return {Type::Array, std::move(list)}; }
 
-double Value::getDouble() const { return std::get<double>(data_); }
+double Value::as_double() const { return std::get<double>(data_); }
 
 bool Value::is_integer() const {
 	return type_ == Type::Integer && std::holds_alternative<int64_t>(data_);
@@ -95,51 +93,54 @@ auto fmt::formatter<resp::Value>::format(const resp::Value &value,
 	using enum resp::Value::Type;
 
 	auto it = ctx.out();
-	if (!presentation || presentation == '?') {
+	switch (presentation) {
+	case '?':
 		switch (value.type()) {
 		case SimpleString:
-			it = fmt::format_to(it, "{}", value.getString());
+			it = fmt::format_to(it, "{}", value.as_string());
 			break;
 		case SimpleError:
-			it = fmt::format_to(it, "SimpleError({:?})", value.getString());
+			it = fmt::format_to(it, "(error) {}", value.as_string());
 			break;
 		case Integer:
-			it = fmt::format_to(it, "Integer({})", value.getInteger());
+			it = fmt::format_to(it, "(integer) {}", value.as_integer());
 			break;
 		case BulkString: {
-			it = fmt::format_to(it, "{:?}", value.getString());
+			it = fmt::format_to(it, "{:?}", value.as_string());
 			break;
 		}
 		case Array: {
-			const auto &arr = value.getArray();
-			if (arr.empty()) it = fmt::format_to(it, "(Empty Array)");
-			else it = fmt::format_to(it, "Array({})", fmt::join(arr, ", "));
+			const auto &arr = value.as_array();
+			if (arr.empty()) it = fmt::format_to(it, "(empty array)");
+			else it = fmt::format_to(it, "(array) {:?}", fmt::join(arr, " "));
 			break;
 		}
-		case Null: it = fmt::format_to(it, "(Null)"); break;
+		case Null: it = fmt::format_to(it, "(null)"); break;
 		case Double:
-			it = fmt::format_to(it, "Double({})", value.getDouble());
+			it = fmt::format_to(it, "(double) {}", value.as_double());
 			break;
 		default: std::unreachable();
 		}
-	} else if (presentation == 'e') {
+		break;
+	case 'e':
+	case 0:
 		switch (value.type()) {
 		case SimpleString:
-			it = fmt::format_to(it, "+{}\r\n", value.getString());
+			it = fmt::format_to(it, "+{}\r\n", value.as_string());
 			break;
 		case SimpleError:
-			it = fmt::format_to(it, "-{}\r\n", value.getString());
+			it = fmt::format_to(it, "-{}\r\n", value.as_string());
 			break;
 		case Integer:
-			it = fmt::format_to(it, ":{}\r\n", value.getInteger());
+			it = fmt::format_to(it, ":{}\r\n", value.as_integer());
 			break;
 		case BulkString: {
-			const auto &str = value.getString();
+			const auto &str = value.as_string();
 			it = fmt::format_to(it, "${}\r\n{}\r\n", str.size(), str);
 			break;
 		}
 		case Array: {
-			const auto &arr = value.getArray();
+			const auto &arr = value.as_array();
 			it              = fmt::format_to(it,
                                 "*{}\r\n{:e}",
                                 arr.size(),
@@ -148,10 +149,11 @@ auto fmt::formatter<resp::Value>::format(const resp::Value &value,
 		}
 		case Null: it = format_to(it, "_\r\n"); break;
 		case Double:
-			it = fmt::format_to(it, ",{}\r\n", value.getDouble());
+			it = fmt::format_to(it, ",{}\r\n", value.as_double());
 			break;
 		default: std::unreachable();
 		}
+		break;
 	}
 	return it;
 }

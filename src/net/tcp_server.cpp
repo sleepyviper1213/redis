@@ -41,6 +41,7 @@ void Server::start() noexcept {
 	const uint32_t MAX_THREADS = 4;
 	for (uint32_t i = 0; i < MAX_THREADS; ++i)
 		net::post(thread_pool_, [this]() { ctx_.run(); });
+	ctx_.run();
 }
 
 net::awaitable<void> Server::accept_incoming_connections() noexcept {

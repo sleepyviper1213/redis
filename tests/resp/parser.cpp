@@ -75,7 +75,7 @@ TEST_CASE("Decode Simple string", "[Decode][RESP2][RESP3][SimpleString]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_simple_string());
-	REQUIRE(decoded->getString() == "OK");
+	REQUIRE(decoded->as_string() == "OK");
 }
 
 TEST_CASE("Decode Bulk string", "[Decode][RESP2][BulkString]") {
@@ -85,7 +85,7 @@ TEST_CASE("Decode Bulk string", "[Decode][RESP2][BulkString]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_bulk_string());
-	REQUIRE(decoded->getString() == "Hello");
+	REQUIRE(decoded->as_string() == "Hello");
 }
 
 TEST_CASE("Decode Array", "[Decode][RESP2][Array]") {
@@ -96,8 +96,9 @@ TEST_CASE("Decode Array", "[Decode][RESP2][Array]") {
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_array());
 
-	const std::string_view expected_str = R"(["Set", "a", "1"])";
-	REQUIRE(fmt::format("{}", decoded->getArray()) == expected_str);
+	const auto expected_str = R"((array) "Set" "a" "1")";
+	const auto formatted    = fmt::format("{:?}", *decoded);
+	REQUIRE(formatted == expected_str);
 }
 
 TEST_CASE("Decode Simple error", "[Decode][RESP2][SimpleError]") {
@@ -107,7 +108,7 @@ TEST_CASE("Decode Simple error", "[Decode][RESP2][SimpleError]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->type() == Value::Type::SimpleError);
-	REQUIRE(decoded->getString() == "ERR unknown command");
+	REQUIRE(decoded->as_string() == "ERR unknown command");
 }
 
 TEST_CASE("Decode Integer", "[Decode][RESP2][RESP3][Integer]") {
@@ -117,7 +118,7 @@ TEST_CASE("Decode Integer", "[Decode][RESP2][RESP3][Integer]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_integer());
-	REQUIRE(decoded->getInteger() == 42);
+	REQUIRE(decoded->as_integer() == 42);
 }
 
 TEST_CASE("Decode Null", "[Decode][RESP3][Null]") {
@@ -136,7 +137,7 @@ TEST_CASE("Decode RESP3 Double", "[Decode][RESP3][Double]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_double());
-	REQUIRE_THAT(decoded->getDouble(), WithinAbs(3.141592, 0.1));
+	REQUIRE_THAT(decoded->as_double(), WithinAbs(3.141592, 0.1));
 }
 
 TEST_CASE("Decode Empty Simple string",
@@ -147,7 +148,7 @@ TEST_CASE("Decode Empty Simple string",
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_simple_string());
-	REQUIRE(decoded->getString().empty());
+	REQUIRE(decoded->as_string().empty());
 }
 
 TEST_CASE("Decode Empty Bulk string", "[Decode][RESP2][BulkString][Edge]") {
@@ -158,7 +159,7 @@ TEST_CASE("Decode Empty Bulk string", "[Decode][RESP2][BulkString][Edge]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_bulk_string());
-	REQUIRE(decoded->getString().empty());
+	REQUIRE(decoded->as_string().empty());
 }
 
 TEST_CASE("Decode Negative Integer", "[Decode][RESP2][RESP3][Integer][Edge]") {
@@ -168,7 +169,7 @@ TEST_CASE("Decode Negative Integer", "[Decode][RESP2][RESP3][Integer][Edge]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_integer());
-	REQUIRE(decoded->getInteger() == -42);
+	REQUIRE(decoded->as_integer() == -42);
 }
 
 TEST_CASE("Decode Large Integer", "[Decode][RESP2][RESP3][Integer][Edge]") {
@@ -178,7 +179,7 @@ TEST_CASE("Decode Large Integer", "[Decode][RESP2][RESP3][Integer][Edge]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_integer());
-	REQUIRE(decoded->getInteger() == 9'223'372'036'854'775'807LL);
+	REQUIRE(decoded->as_integer() == 9'223'372'036'854'775'807LL);
 }
 
 TEST_CASE("Decode Special Double Values", "[Decode][RESP3][Double][Edge]") {
@@ -189,7 +190,7 @@ TEST_CASE("Decode Special Double Values", "[Decode][RESP3][Double][Edge]") {
 		auto decoded                 = parser.parse(input);
 		REQUIRE(decoded.has_value());
 		REQUIRE(decoded->is_double());
-		REQUIRE(std::isinf(decoded->getDouble()));
+		REQUIRE(std::isinf(decoded->as_double()));
 	}
 
 	SECTION("-Infinity") {
@@ -197,8 +198,8 @@ TEST_CASE("Decode Special Double Values", "[Decode][RESP3][Double][Edge]") {
 		auto decoded                 = parser.parse(input);
 		REQUIRE(decoded.has_value());
 		REQUIRE(decoded->is_double());
-		REQUIRE(std::isinf(decoded->getDouble()));
-		REQUIRE(decoded->getDouble() < 0);
+		REQUIRE(std::isinf(decoded->as_double()));
+		REQUIRE(decoded->as_double() < 0);
 	}
 
 	SECTION("NaN") {
@@ -206,7 +207,7 @@ TEST_CASE("Decode Special Double Values", "[Decode][RESP3][Double][Edge]") {
 		auto decoded                 = parser.parse(input);
 		REQUIRE(decoded.has_value());
 		REQUIRE(decoded->is_double());
-		REQUIRE(std::isnan(decoded->getDouble()));
+		REQUIRE(std::isnan(decoded->as_double()));
 	}
 }
 
@@ -217,7 +218,7 @@ TEST_CASE("Decode Null Bulk String",
 
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
-	REQUIRE(decoded->is_bulk_string());
+	REQUIRE(decoded->is_null());
 }
 
 TEST_CASE("Decode Null Array", "[Decode][RESP2][Array][Null][Edge]") {
@@ -236,7 +237,7 @@ TEST_CASE("Decode Empty Array", "[Decode][RESP2][Array][Edge]") {
 	auto decoded = parser.parse(input);
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_array());
-	REQUIRE(decoded->getArray().empty());
+	REQUIRE(decoded->as_array().empty());
 }
 
 TEST_CASE("Decode Array with Mixed Types",
@@ -249,10 +250,10 @@ TEST_CASE("Decode Array with Mixed Types",
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->is_array());
 
-	auto arr = decoded->getArray();
+	auto arr = decoded->as_array();
 	REQUIRE(arr.size() == 3);
-	REQUIRE(arr[0].getString() == "OK");
-	REQUIRE(arr[1].getInteger() == 42);
+	REQUIRE(arr[0].as_string() == "OK");
+	REQUIRE(arr[1].as_integer() == 42);
 	REQUIRE(arr[2].is_null());
 }
 
@@ -263,4 +264,35 @@ TEST_CASE("Decode string with missing CRLF",
 
 	auto decoded = parser.parse(input);
 	REQUIRE_FALSE(decoded.has_value());
+}
+
+TEST_CASE("Decode nested array", "[RESP][RESP2][Array]") {
+	Parser parser;
+
+	// Example: *2\r\n*3\r\n:1\r\n:2\r\n:3\r\n+OK\r\n
+	// Meaning: Array of 2 elements:
+	//   1. Array of 3 integers: 1, 2, 3
+	//   2. Simple String "OK"
+	const auto input = "*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n+OK\r\n";
+
+	const auto result = parser.parse(input);
+
+	REQUIRE(result.has_value());
+	const Value &root = result.value();
+
+	REQUIRE(root.is_array());
+	const auto &outer = root.as_array();
+	REQUIRE(outer.size() == 2);
+
+	// First element: nested array
+	REQUIRE(outer[0].is_array());
+	const auto &inner = outer[0].as_array();
+	REQUIRE(inner.size() == 3);
+	REQUIRE(inner[0].as_integer() == 1);
+	REQUIRE(inner[1].as_integer() == 2);
+	REQUIRE(inner[2].as_integer() == 3);
+
+	// Second element: simple string
+	REQUIRE(outer[1].type() == Value::Type::SimpleString);
+	REQUIRE(outer[1].as_string() == "OK");
 }

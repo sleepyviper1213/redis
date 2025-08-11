@@ -1,6 +1,6 @@
 #pragma once
 
-#include <fmt/format.h>
+#include <fmt/base.h>
 
 #include <span>
 #include <string>
@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace resp {
-class Value {
+class [[nodiscard]] Value {
 public:
 	using Array = std::vector<Value>;
 
@@ -58,13 +58,13 @@ public:
 	template <typename T>
 	Value(Type type, T t) : type_(type), data_(std::move(t)) {}
 
-	[[nodiscard]] int64_t getInteger() const;
+	[[nodiscard]] int64_t as_integer() const;
 
-	[[nodiscard]] const Array &getArray() const;
+	[[nodiscard]] const Array &as_array() const;
 
-	[[nodiscard]] const std::string &getString() const;
+	[[nodiscard]] const std::string &as_string() const;
 
-	[[nodiscard]] double getDouble() const;
+	[[nodiscard]] double as_double() const;
 
 	Type type() const;
 
@@ -132,15 +132,11 @@ struct fmt::formatter<resp::Value> {
 		if (it == end) return it;
 		if (*it == '?' || *it == 'e') presentation = *it++;
 
-		// Check if reached the end of the range:
 		if (*it != '}') report_error("invalid format specifier");
 
-		// Return an iterator past the end of the parsed range:
 		return it;
 	}
 
-	// Formats value using the parsed format specification stored in this
-	// formatter and writes the output to it.
 	auto format(const resp::Value &value, format_context &ctx) const
 		-> format_context::iterator;
 };
