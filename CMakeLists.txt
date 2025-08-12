@@ -27,7 +27,8 @@ if(PROJECT_IS_TOP_LEVEL)
   # Let's ensure -std=g++xx instead of -std=c++xx
   set(CMAKE_CXX_STANDARD 23)
   set(CMAKE_CXX_EXTENSIONS ON)
-  # Testing only available if this is the main app. add_subdirectory(tests)
+  # Testing only available if this is the main app.
+  add_subdirectory(tests)
 endif()
 
 # configure files based on CMake configuration options
