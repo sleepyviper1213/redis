@@ -7,15 +7,15 @@
 namespace resp {
 ErrorOr<Value> Parser::parse(std::string_view data) {
 	size_t pos = 0;
-	return Parser::parseRecursive(data, pos);
+	return Parser::parse_recursive(data, pos);
 }
 
-ErrorOr<Value> Parser::parseRecursive(std::string_view data, size_t &pos) {
+ErrorOr<Value> Parser::parse_recursive(std::string_view data, size_t &pos) {
 	if (pos >= data.size())
-		return failed("unexpected EOF", std::errc::result_out_of_range);
+		return failed("unexpected EOF", std::errc::protocol_error);
 
 	// Read a line
-	auto line_end = data.find('\n', pos);
+	const auto line_end = data.find('\n', pos);
 	if (line_end == std::string_view::npos)
 		return failed("missing LF", std::errc::invalid_argument);
 
@@ -28,7 +28,7 @@ ErrorOr<Value> Parser::parseRecursive(std::string_view data, size_t &pos) {
 
 	if (line.empty()) return failed("empty line", std::errc::invalid_argument);
 
-	char prefix              = line[0];
+	const char prefix        = line[0];
 	std::string_view payload = line.substr(1);
 
 	switch (prefix) {
@@ -39,7 +39,7 @@ ErrorOr<Value> Parser::parseRecursive(std::string_view data, size_t &pos) {
 		return Value::from_integer(i);
 	}
 	case '$': {
-		auto len = TRY(parse_integer(payload));
+		const auto len = TRY(parse_integer(payload));
 		if (len == -1) return Value::from_null();
 		if (len < -1 || len >= RESP_MAX_SIZE)
 			return failed("invalid bulk length",
@@ -57,7 +57,7 @@ ErrorOr<Value> Parser::parseRecursive(std::string_view data, size_t &pos) {
 		return Value::from_bulk_string(std::string(bulk_data));
 	}
 	case '*': {
-		auto len = TRY(parse_integer(payload));
+		const auto len = TRY(parse_integer(payload));
 		if (len == -1) return Value::from_null();
 		if (len < -1 || len >= RESP_MAX_SIZE)
 			return failed("invalid array length",
@@ -66,7 +66,7 @@ ErrorOr<Value> Parser::parseRecursive(std::string_view data, size_t &pos) {
 		std::vector<Value> arr;
 		arr.reserve(len);
 		for (int i = 0; i < len; ++i) {
-			auto v = TRY(parseRecursive(data, pos));
+			auto v = TRY(parse_recursive(data, pos));
 			arr.push_back(std::move(v));
 		}
 		return Value::from_array(std::move(arr));
@@ -80,7 +80,7 @@ ErrorOr<Value> Parser::parseRecursive(std::string_view data, size_t &pos) {
 		auto number = TRY(parse_double(payload));
 		return Value::from_double(number);
 	}
-	default: return failed("invalid RESP type", std::errc::not_supported);
+	default: return failed("invalid RESP type", std::errc::protocol_error);
 	}
 }
 
@@ -88,7 +88,7 @@ bool Parser::is_crlf(std::string_view s) { return s == CRLF; }
 
 ErrorOr<int64_t> Parser::parse_integer(std::string_view s) {
 	int64_t val{};
-	auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+	auto [ptr, ec] = std::from_chars(s.begin(), s.end(), val);
 	if (ec != std::errc()) return failed("integer parse failed", ec);
 	return val;
 }
