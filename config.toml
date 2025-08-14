@@ -1,0 +1,7 @@
+# Redis connection configuration
+use_ssl = false
+
+[addr]
+host = "127.0.0.1"
+port = "6379"
+

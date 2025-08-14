@@ -4,19 +4,23 @@
 #include "utils/toupper.hpp"
 
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include <cctype>
 
 using resp::Value;
 
 namespace redis {
-Value RedisStore::handle_command(const Value::Array &command) {
-	const auto &res       = command[0].as_string();
+Value RedisStore::handle_command(const Value &command) {
+	spdlog::info("[Store] Received command {:?}", command);
+
+	const auto &args      = command.as_array();
+	const auto &res       = args[0].as_string();
 	const std::string cmd = toupper(res);
-	if (cmd == "PING") return handle_ping(command);
-	else if (cmd == "SET") return handle_set(command);
-	else if (cmd == "GET") return handle_get(command);
-	else if (cmd == "DEL") return handle_del(command);
+	if (cmd == "PING") return handle_ping(args);
+	else if (cmd == "SET") return handle_set(args);
+	else if (cmd == "GET") return handle_get(args);
+	else if (cmd == "DEL") return handle_del(args);
 	else
 		return Value::from_simple_error(
 			fmt::format("unknown command '{}'", res));

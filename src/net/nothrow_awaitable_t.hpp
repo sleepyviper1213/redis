@@ -1,6 +1,8 @@
 #pragma once
 #include <boost/asio/as_tuple.hpp>
+#include <boost/asio/default_completion_token.hpp>
 #include <boost/asio/use_awaitable.hpp>
+namespace net = boost::asio;
 
 /**
  * Actually, the error handling style returing a tuple of (ActualValue, Err) is
@@ -10,9 +12,10 @@
  * Or implement my own TRY macro to mimic Rust's Result error propagation.
  * Otherwise, check out C++26's P0963 Structured binding declaration as a
  * condition
- * */
-
-namespace net = boost::asio;
-
+ */
 using nothrow_awaitable_t = net::as_tuple_t<net::use_awaitable_t<>>;
-BOOST_ASIO_INLINE_VARIABLE constexpr nothrow_awaitable_t nothrow_awaitable;
+
+template <>
+struct net::default_completion_token<net::any_io_executor> {
+	using type = nothrow_awaitable_t;
+};

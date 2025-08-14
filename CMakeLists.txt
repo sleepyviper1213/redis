@@ -17,6 +17,7 @@ endif()
 find_package(Catch2 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(cereal REQUIRED)
+find_package(CLI11 REQUIRED)
 find_package(Boost CONFIG COMPONENTS thread system)
 
 

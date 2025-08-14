@@ -1,16 +1,22 @@
-#include "net.hpp"
+#include "net/co_main.hpp"
+#include "config.hpp"
 
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/io_context.hpp>
 #include <spdlog/spdlog.h>
 
-#include <chrono>
+int main(int argc, char **argv) {
+	try {
+		auto cfg = redis::read(argc, argv);
 
-/// @brief Connection timeout for inactive clients.
-constexpr auto CONNECTION_TIMEOUT = std::chrono::seconds(180);
+		boost::asio::io_context ioc;
+		boost::asio::co_spawn(ioc, co_main(cfg), [](std::exception_ptr p) {
+			if (p) std::rethrow_exception(p);
+		});
+		ioc.run();
 
-int main() {
-	spdlog::set_level(spdlog::level::debug); // Set *global* log level to debug
-	/// @brief Port on which the HTTP server listens.
-	constexpr int PORT = 6379;
-	redis::Server server(PORT);
-	server.start();
+	} catch (const std::exception &e) {
+		spdlog::error("(main) {}", e.what());
+		return 1;
+	}
 }

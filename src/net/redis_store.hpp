@@ -9,7 +9,7 @@ namespace redis {
 
 class RedisStore {
 public:
-	resp::Value handle_command(const resp::Value::Array &command);
+	resp::Value handle_command(const resp::Value &command);
 
 private:
 	std::unordered_map<std::string, std::string> store_;
