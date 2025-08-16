@@ -1,7 +1,7 @@
 #include "config.hpp"
 
 namespace redis {
-redis::Config read(int argc, char **argv) {
+redis::Config configure_from_cli(int argc, char **argv) {
 	redis::Config cfg;
 
 	CLI::App app{"Redis server"};

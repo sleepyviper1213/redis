@@ -7,8 +7,8 @@ add_library(
     # commands/cmd.cpp
     # commands/command_type.cpp
     error/error.cpp
-    net/redis_store.cpp
-	net/co_main.cpp
+		net/database.cpp
+		utils/get_class_logger.cpp
         config.cpp
     net/session.cpp
     net/tcp_server.cpp

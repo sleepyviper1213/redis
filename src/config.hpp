@@ -27,5 +27,5 @@ struct Config {
 	address addr;
 };
 
-redis::Config read(int argc, char **argv);
+redis::Config configure_from_cli(int argc, char **argv);
 } // namespace redis

@@ -1,18 +1,13 @@
-/**
- * \file
- * \brief Session interface handling a single client connection.
- */
-
 #pragma once
+#include "database.hpp"
 #include "nothrow_awaitable_t.hpp"
-#include "redis_store.hpp"
+#include "utils/get_class_logger.hpp"
 #include "utils/time.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
 #include <chrono>
-#include <memory>
 
 namespace net = boost::asio;
 
@@ -35,7 +30,7 @@ public:
 	 * \note Ownership of \p socket is moved to the Session. The caller remains
 	 * responsible for ensuring that \p store outlives this Session.
 	 */
-	Session(net::ip::tcp::socket socket, RedisStore &store);
+	Session(net::ip::tcp::socket socket, Database &store);
 
 	/**
 	 * \name Non-copyable, movable
@@ -53,9 +48,7 @@ public:
 	 * or an unrecoverable error occurs.
 	 * \return An awaitable that completes when the session finishes.
 	 */
-	net::awaitable<void> run();
-	net::awaitable<void> loop(timestamp_t &deadline);
-	net::awaitable<void> watchdog(timestamp_t &deadline);
+	net::awaitable<void> loop();
 
 	void close();
 
@@ -66,6 +59,8 @@ private:
 	timestamp_t last_active;
 
 	timespan_t idle_timeout = std::chrono::seconds(10);
-	RedisStore &store_;
+	Database &store_;
+
+	CLASS_LOGGER(Session);
 };
 } // namespace redis

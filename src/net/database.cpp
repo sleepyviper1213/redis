@@ -1,18 +1,19 @@
-#include "redis_store.hpp"
+#include "database.hpp"
 
 #include "resp/value.hpp"
 #include "utils/toupper.hpp"
 
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
+#include <spdlog/logger.h>
 
 #include <cctype>
 
 using resp::Value;
 
 namespace redis {
-Value RedisStore::handle_command(const Value &command) {
-	spdlog::info("[Store] Received command {:?}", command);
+
+Value Database::handle_command(const Value &command) {
+	logger_->info("Received command {:?}", command);
 
 	const auto &args      = command.as_array();
 	const auto &res       = args[0].as_string();
@@ -26,13 +27,13 @@ Value RedisStore::handle_command(const Value &command) {
 			fmt::format("unknown command '{}'", res));
 }
 
-Value RedisStore::handle_ping(const Value::Array &args) const {
+Value Database::handle_ping(const Value::Array &args) const {
 	if (args.size() == 1) return Value::from_simple_string("PONG");
 	if (args.size() == 2) return Value::from_bulk_string(args[1].as_string());
 	return Value::from_simple_error("wrong number of arguments for PING");
 }
 
-Value RedisStore::handle_set(const Value::Array &args) {
+Value Database::handle_set(const Value::Array &args) {
 	if (args.size() != 3)
 		return Value::from_simple_error("wrong number of arguments for SET");
 
@@ -42,7 +43,7 @@ Value RedisStore::handle_set(const Value::Array &args) {
 	return Value::from_simple_string("OK");
 }
 
-Value RedisStore::handle_get(const Value::Array &args) const {
+Value Database::handle_get(const Value::Array &args) const {
 	if (args.size() != 2)
 		return Value::from_simple_error("wrong number of arguments for GET");
 
@@ -52,7 +53,7 @@ Value RedisStore::handle_get(const Value::Array &args) const {
 	return Value::from_bulk_string(it->second);
 }
 
-Value RedisStore::handle_del(const Value::Array &args) {
+Value Database::handle_del(const Value::Array &args) {
 	if (args.size() < 2)
 		return Value::from_simple_error("wrong number of arguments for DEL");
 
@@ -63,4 +64,7 @@ Value RedisStore::handle_del(const Value::Array &args) {
 	}
 	return Value::from_integer(count);
 }
+
+void Database::save() const { logger_->info("DB saved"); }
+
 } // namespace redis

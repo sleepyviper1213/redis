@@ -1,18 +1,18 @@
 #include "tcp_server.hpp"
 
-#include "formatter.hpp"
 #include "config.hpp"
-#include "redis_store.hpp"
+#include "database.hpp"
+#include "formatter.hpp"
 #include "session.hpp"
 
-#include <spdlog/spdlog.h>
+#include <spdlog/logger.h>
 
 #include <memory>
 #include <utility>
 
 namespace redis {
 
-Server Server::from(net::any_io_executor &ioc, const Config &cfg) {
+Server Server::from(net::io_context &ioc, const Config &cfg) {
 	net::ip::tcp::endpoint endpoint(net::ip::make_address_v4(cfg.addr.host),
 									cfg.addr.port);
 
@@ -23,27 +23,29 @@ Server::Server(net::ip::tcp::acceptor acceptor)
 	: acceptor_(std::move(acceptor)) {}
 
 net::awaitable<void> Server::start() noexcept {
-	spdlog::info("[Server] Starting at {}", acceptor_.local_endpoint());
+	logger_->info("Starting at {}", acceptor_.local_endpoint());
 
-	spdlog::info("[Server] Accepting TCP connections");
-	for (RedisStore store;;) {
+	logger_->info("Accepting TCP connections");
+	while (true) {
 		auto [err, client] = co_await acceptor_.async_accept();
-		if (err) spdlog::error("[Server] Accept failed", err);
+		if (err) logger_->error("Accept failed", err);
 
 		const auto session =
-			std::make_shared<Session>(std::move(client), store);
-		co_await session->run();
+			std::make_shared<Session>(std::move(client), database_);
+		co_await session->loop();
 	}
 }
 
-void Server::stop() noexcept {
-	spdlog::info("[Server] Stopping server...");
-	boost::system::error_code err;
-	if (acceptor_.cancel(err); err)
-		return spdlog::error("[Server] Stop: {}", err);
+void Server::saveDB() const {
+	logger_->info("Saving the final RDB snapshot before exiting");
+	database_.save();
+}
 
+void Server::stop() noexcept {
+	logger_->info("Stopping server...");
+	saveDB();
 	acceptor_.close();
-	spdlog::info("[Server] Stopped!");
+	logger_->info("Redis is now ready to exit");
 	// thread_pool_.stop();
 }
 

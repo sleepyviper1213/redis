@@ -19,7 +19,8 @@ public:
 	 * \brief Enumerates RESP value kinds.
 	 *
 	 * Notes:
-	 * - RESP2 core types: SimpleString, SimpleError, Integer, BulkString, Array, Null
+	 * - RESP2 core types: SimpleString, SimpleError, Integer, BulkString,
+	 * Array, Null
 	 * - RESP3 extends with typed Null, Boolean, Double, BulkError, etc.
 	 */
 	enum class [[nodiscard]] Type {
@@ -66,7 +67,8 @@ public:
 	/** \brief Create an array value by taking ownership of elements. */
 	static Value from_array(Array list);
 
-	/** \brief Create an array value from a span of strings (converted to bulk strings). */
+	/** \brief Create an array value from a span of strings (converted to bulk
+	 * strings). */
 	static Value from_raw_array(std::span<const std::string> list);
 
 	/** \brief Create a RESP null value. */
@@ -91,16 +93,25 @@ public:
 	 * \brief Typed getters; call only when the corresponding is_*() is true.
 	 * @{
 	 */
-	/** \return The integer payload. Requires is_integer(). */
+	/**
+	 * \return The integer payload.
+	 * \note is_integer().
+	 */
 	[[nodiscard]] int64_t as_integer() const;
 
-	/** \return The array payload. Requires is_array(). */
+	/** \return The array payload.
+	 * \note is_array(). */
 	[[nodiscard]] const Array &as_array() const;
 
-	/** \return The string payload (simple, error, or bulk). Requires is_simple_string(), is_bulk_string(), or is_error(). */
+	/** \return The string payload (simple, error, or bulk).
+	 * \note
+	 * is_simple_string(), is_bulk_string(), or is_error().
+	 */
 	[[nodiscard]] const std::string &as_string() const;
 
-	/** \return The double payload. Requires is_double(). */
+	/** \return The double payload.
+	 * \note is_double().
+	 */
 	[[nodiscard]] double as_double() const;
 	/** @} */
 
@@ -115,7 +126,8 @@ public:
 	/** \brief Returns true if the value is Null; false otherwise. */
 	[[nodiscard]] bool is_null() const;
 
-	/** \brief Returns true if the value is a simple or bulk error; false otherwise. */
+	/** \brief Returns true if the value is a simple or bulk error; false
+	 * otherwise. */
 	[[nodiscard]] bool is_error() const;
 
 	/** \brief Returns true if the value is an array; false otherwise. */
