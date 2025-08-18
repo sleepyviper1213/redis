@@ -1,15 +1,12 @@
 {
-  "version": 2,
+  "version": 3,
   "configurePresets": [
     {
       "name": "vcpkg",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-//		"CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm@19/bin/clang++",
-        "CMAKE_EXE_LINKER_FLAGS":"-L/opt/homebrew/opt/llvm/lib/c++ -L/opt/homebrew/opt/llvm/lib/unwind -lunwind",
-        "CMAKE_LINKER":"/opt/homebrew/opt/lld/bin/lld"
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       }
     }
   ]
