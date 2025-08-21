@@ -3,22 +3,23 @@ add_library(
     # actions/db.cpp
     # actions/snapshot.cpp
     # actions/gate.cpp
-    # commands/cmd.cpp
-    # commands/cmd.cpp
-    # commands/command_type.cpp
+    commands/cmd.cpp
+    commands/cmd.cpp
+    commands/command_type.cpp
+    config.cpp
     error/error.cpp
     net/database.cpp
-    utils/get_class_logger.cpp
-    config.cpp
     net/session.cpp
     net/tcp_server.cpp
     resp/resp_parser.cpp
     resp/value.cpp
     utils/create_temp_file.cpp
+    utils/get_class_logger.cpp
     utils/toupper.cpp)
 
 target_include_directories(redis_server_lib PUBLIC .)
-target_link_libraries(redis_server_lib PUBLIC spdlog::spdlog CLI11::CLI11)
+target_link_libraries(redis_server_lib PUBLIC spdlog::spdlog CLI11::CLI11
+                                              magic_enum::magic_enum)
 
 if(boost_asio_FOUND)
     target_link_libraries(redis_server_lib PUBLIC Boost::asio)
