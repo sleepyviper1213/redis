@@ -67,6 +67,28 @@ TEST_CASE("Encode RESP3 Double", "[Encode][RESP3][Double]") {
 	REQUIRE(encoded == expected);
 }
 
+TEST_CASE("Encode nested value", "[Encode][nested]") {
+	const auto val =
+		Value::from_array({Value::from_bulk_string("SET"),
+						   Value::from_bulk_string("anotherkey"),
+						   Value::from_bulk_string("will expire in a minute"),
+						   Value::from_bulk_string("EX"),
+						   Value::from_bulk_string("60")});
+
+	// clang-format off
+	const auto *expected_str = "*5\r\n"
+							   "$3\r\nSET\r\n"
+							   "$10\r\nanotherkey\r\n"
+							   "$23\r\nwill expire in a minute\r\n"
+							   "$2\r\nEX\r\n"
+							   "$2\r\n60\r\n";
+
+	// clang-format on
+	const auto encoded = fmt::format("{:e}", val);
+
+	REQUIRE(encoded == expected_str);
+}
+
 TEST_CASE("Decode Simple string", "[Decode][RESP2][RESP3][SimpleString]") {
 	const std::string_view input = "+OK\r\n";
 
@@ -102,7 +124,7 @@ TEST_CASE("Decode Simple error", "[Decode][RESP2][SimpleError]") {
 
 	auto decoded = Parser::parse(input);
 	REQUIRE(decoded.has_value());
-	REQUIRE(decoded->type() == Value::Type::SimpleError);
+	REQUIRE(decoded->is_error());
 	REQUIRE(decoded->as_string() == "ERR unknown command");
 }
 
@@ -247,7 +269,7 @@ TEST_CASE("Decode string with missing CRLF",
 	REQUIRE_FALSE(decoded.has_value());
 }
 
-TEST_CASE("Decode nested array", "[RESP][RESP2][Array]") {
+TEST_CASE("Decode nested array", "[Decode][nested]") {
 	// Example: *2\r\n*3\r\n:1\r\n:2\r\n:3\r\n+OK\r\n
 	// Meaning: Array of 2 elements:
 	//   1. Array of 3 integers: 1, 2, 3
@@ -272,6 +294,6 @@ TEST_CASE("Decode nested array", "[RESP][RESP2][Array]") {
 	REQUIRE(inner[2].as_integer() == 3);
 
 	// Second element: simple string
-	REQUIRE(outer[1].type() == Value::Type::SimpleString);
+	REQUIRE(outer[1].is_simple_string());
 	REQUIRE(outer[1].as_string() == "OK");
 }

@@ -1,5 +1,7 @@
 #include "value.hpp"
 
+#include "parser.hpp"
+
 #include <fmt/ranges.h>
 
 #include <cassert>
@@ -23,36 +25,44 @@ Value Value::from_bulk_string(std::string s) {
 }
 
 int64_t Value::as_integer() const {
-	assert(type_ == Type::Integer);
+	assert(is_integer());
 	return std::get<int64_t>(data_);
 }
 
+ErrorOr<int64_t> Value::try_as_integer() const {
+	if (is_integer()) return std::get<int64_t>(data_);
+	return Parser::parse_integer(as_string());
+}
+
 const Value::Array &Value::as_array() const {
-	assert(type_ == Type::Array);
+	assert(is_array());
 	return std::get<Array>(data_);
 }
 
 const std::string &Value::as_string() const {
 	assert(type_ == Type::SimpleString || type_ == Type::BulkString ||
 		   type_ == Type::SimpleError);
+
+	assert(is_string());
 	return std::get<std::string>(data_);
 }
 
 bool Value::is_null() const { return type_ == Type::Null; }
 
 bool Value::is_error() const {
-	return type_ == Type::SimpleError &&
-		   std::holds_alternative<std::string>(data_);
+	return type_ == Type::SimpleError && is_string();
+}
+
+bool Value::is_string() const {
+	return std::holds_alternative<std::string>(data_);
 }
 
 bool Value::is_bulk_string() const {
-	return type_ == Type::BulkString &&
-		   std::holds_alternative<std::string>(data_);
+	return type_ == Type::BulkString && is_string();
 }
 
 bool Value::is_simple_string() const {
-	return type_ == Type::SimpleString &&
-		   std::holds_alternative<std::string>(data_);
+	return type_ == Type::SimpleString && is_string();
 }
 
 bool Value::is_array() const {
@@ -154,6 +164,7 @@ auto fmt::formatter<resp::Value>::format(const resp::Value &value,
 		default: std::unreachable();
 		}
 		break;
+	default: std::unreachable();
 	}
 	return it;
 }

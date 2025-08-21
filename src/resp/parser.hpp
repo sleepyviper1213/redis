@@ -18,16 +18,6 @@ public:
 	 */
 	static ErrorOr<Value> parse(std::string_view data);
 
-protected:
-	/**
-	 * \brief Internal recursive descent entry to parse a RESP value.
-	 * \param data The full input buffer being parsed.
-	 * \param pos Current read position within \p data; advanced as bytes are
-	 * consumed.
-	 * \return The parsed Value on success; an error on failure.
-	 */
-	static ErrorOr<Value> parse_recursive(std::string_view data, size_t &pos);
-
 	/**
 	 *  \brief Check if the given view starts with a CRLF sequence.
 	 *  \param s The string view to test.
@@ -52,6 +42,16 @@ protected:
 	 * \return The parsed double on success; an error on malformed input.
 	 */
 	static ErrorOr<double> parse_double(std::string_view s);
+
+protected:
+	/**
+	 * \brief Internal recursive descent entry to parse a RESP value.
+	 * \param data The full input buffer being parsed.
+	 * \param pos Current read position within \p data; advanced as bytes are
+	 * consumed.
+	 * \return The parsed Value on success; an error on failure.
+	 */
+	static ErrorOr<Value> parse_recursive(std::string_view data, size_t &pos);
 
 private:
 	/**

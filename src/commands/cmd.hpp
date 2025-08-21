@@ -1,71 +1,33 @@
 #pragma once
 
-#include "command_type.hpp"
-#include "error.hpp"
+#include "database.hpp"
+#include "resp/value.hpp"
 
-#include <cereal/types/string.hpp>
-#include <cereal/types/vector.hpp>
+#include <fmt/format.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace redis {
+struct Db; // forward declaration
 
-/**
- * \brief Represents a parsed command and its arguments.
- */
-class Command {
+class RedisCommand {
 public:
-	/**
-	 * \brief Constructs a Command with type and arguments.
-	 */
-	Command(CommandType type, std::vector<std::string> args);
+	using CommandHandler = std::function<resp::Value(
+		Database &, const std::vector<std::string> &)>;
 
-	/**
-	 * \brief Default constructor required by cereal.
-	 */
-	Command();
+	RedisCommand(std::string n, CommandHandler h, int a, std::string f);
 
-	/**
-	 * \brief Parses a Command from a raw line.
-	 */
-	static ErrorOr<Command> fromString(const std::string &line);
+	resp::Value execute(Database &db,
+						const std::vector<std::string> &argv) const;
 
-	/**
-	 * \brief Checks if command modifies database state.
-	 */
-	[[nodiscard]] bool isModifiableCommand() const;
-
-	/**
-	 * \brief Checks if command flushes the entire DB.
-	 */
-	[[nodiscard]] bool isFlushDatabase() const;
-
-	/**
-	 * \brief Returns the command type.
-	 */
-	CommandType type() const;
-
-	/**
-	 * \brief Returns the command arguments.
-	 */
-	[[nodiscard]] const std::vector<std::string> &args() const;
-
-	/**
-	 * \brief Serializes the command using cereal.
-	 */
-	template <class Archive>
-	void serialize(Archive &ar) {
-		ar(type_, args_);
-	}
+	[[nodiscard]] const std::string &name() const { return name_; }
 
 private:
-	CommandType type_;              ///< The command's type.
-	std::vector<std::string> args_; ///< The command's arguments.
+	std::string name_;      // Command name ("SET", "GET")
+	CommandHandler handler; // Function to execute
+	int arity;              // Required arity (negative = min args)
+	std::string flags;      // "write", "readonly", "fast"...
 };
-
-/**
- * \brief String formatter for Command.
- */
-std::string format_as(const Command &command);
 } // namespace redis

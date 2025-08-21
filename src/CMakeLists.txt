@@ -8,10 +8,10 @@ add_library(
     commands/command_type.cpp
     config.cpp
     error/error.cpp
-    net/database.cpp
+        database.cpp
     net/session.cpp
     net/tcp_server.cpp
-    resp/resp_parser.cpp
+        resp/parser.cpp
     resp/value.cpp
     utils/create_temp_file.cpp
     utils/get_class_logger.cpp

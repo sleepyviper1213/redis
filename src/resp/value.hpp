@@ -1,5 +1,7 @@
 #pragma once
 
+#include "error/error_or.hpp"
+
 #include <fmt/base.h>
 
 #include <span>
@@ -133,6 +135,9 @@ public:
 	/** \brief Returns true if the value is an array; false otherwise. */
 	[[nodiscard]] bool is_array() const;
 
+	/** \brief Returns true if the value is a string; false otherwise. */
+	[[nodiscard]] bool is_string() const;
+
 	/** \brief Returns true if the value is a bulk string; false otherwise. */
 	[[nodiscard]] bool is_bulk_string() const;
 
@@ -145,6 +150,12 @@ public:
 	/** \brief Returns true if the value is a double; false otherwise. */
 	[[nodiscard]] bool is_double() const;
 	/** @} */
+
+	/**
+	 * \return The integer payload.
+	 * \note is_integer().
+	 */
+	[[nodiscard]] ErrorOr<int64_t> try_as_integer() const;
 
 private:
 	/// Active type tag.

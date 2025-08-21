@@ -1,5 +1,6 @@
 #pragma once
 #include "database.hpp"
+#include "net/tcp_server.hpp"
 #include "nothrow_awaitable_t.hpp"
 #include "utils/get_class_logger.hpp"
 #include "utils/time.hpp"
@@ -50,6 +51,7 @@ public:
 	 */
 	net::awaitable<void> loop();
 
+	void run();
 	void close();
 
 private:
@@ -59,8 +61,10 @@ private:
 	timestamp_t last_active;
 
 	timespan_t idle_timeout = std::chrono::seconds(10);
-	Database &store_;
+	Database &database_;
 
 	CLASS_LOGGER(Session);
 };
+
+std::string_view buffers_to_string(net::const_buffer buf);
 } // namespace redis

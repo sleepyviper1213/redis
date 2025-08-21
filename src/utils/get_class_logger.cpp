@@ -9,7 +9,6 @@ std::shared_ptr<spdlog::logger> make_logger(const std::string &name) {
 	if (!logger) {
 		logger = spdlog::stdout_color_mt(name);
 		logger->set_pattern("[%Y-%m-%d %H:%M:%S] [%n] [%^%l%$] %v");
-		logger->set_level(spdlog::level::debug);
 	}
 	return logger;
 }

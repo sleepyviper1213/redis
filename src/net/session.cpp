@@ -1,15 +1,17 @@
 #include "session.hpp"
 
 #include "formatter.hpp"
-#include "resp/resp_parser.hpp"
-#include "utils/get_class_logger.hpp"
+#include "resp/parser.hpp"
 
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
 #include <fmt/chrono.h>
 #include <spdlog/logger.h>
 
+#include <chrono>
+#include <ctime>
 #include <memory>
 #include <string_view>
 
@@ -20,14 +22,21 @@ std::string_view buffers_to_string(net::const_buffer buf) {
 	return {static_cast<const char *>(buf.data()), buf.size()};
 }
 
-Session::Session(tcp::socket socket, Database &store)
+Session::Session(tcp::socket socket, Database &database)
 	: socket_(std::move(socket)),
-	  store_(store),
+	  database_(database),
 	  connect_time(std::chrono::system_clock::now()),
 	  last_active(connect_time) {
-	logger_->info("Accepted from {} at {:%F %R %Z}",
-				  socket_.remote_endpoint(),
-				  connect_time);
+	logger_->debug("Accepted from {}", socket_.remote_endpoint());
+}
+
+void Session::run() {
+	net::co_spawn(
+		socket_.get_executor(),
+		[self = shared_from_this()]() -> net::awaitable<void> {
+			co_await self->loop();
+		},
+		net::detached);
 }
 
 net::awaitable<void> Session::loop() {
@@ -38,7 +47,7 @@ net::awaitable<void> Session::loop() {
 			co_await socket_.async_read_some(buf.prepare(1024));
 
 		if (ec == net::error::eof)
-			co_return logger_->info("Client disconnected normally");
+			co_return logger_->debug("Client disconnected normally");
 		if (ec) {
 			logger_->error("Read:{}", ec);
 			co_return;
@@ -50,17 +59,17 @@ net::awaitable<void> Session::loop() {
 		buf.consume(bytes_transferred);
 		assert(command.has_value());
 		const auto response =
-			fmt::format("{:e}", store_.handle_command(*command));
+			fmt::format("{:e}", database_.handle_command(*command));
 		const auto [write_err, _] =
 			co_await net::async_write(socket_, net::buffer(response));
-		if (write_err) logger_->error("Write: {}", write_err);
+		if (write_err) co_return logger_->error("Write: {}", write_err);
+		logger_->trace("Sent: {:?}", response);
 	}
-	close();
 }
 
 void Session::close() {
 	socket_.shutdown(tcp::socket::shutdown_both);
 	socket_.close();
-	logger_->info("Closed");
+	logger_->debug("Closed");
 }
 } // namespace redis
