@@ -1,12 +1,12 @@
 #pragma once
-#include "database.hpp"
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
+#include "core/database.hpp"
 #include "net/tcp_server.hpp"
 #include "nothrow_awaitable_t.hpp"
 #include "utils/get_class_logger.hpp"
 #include "utils/time.hpp"
-
-#include <boost/asio/awaitable.hpp>
-#include <boost/asio/ip/tcp.hpp>
 
 #include <chrono>
 
@@ -31,7 +31,8 @@ public:
 	 * \note Ownership of \p socket is moved to the Session. The caller remains
 	 * responsible for ensuring that \p store outlives this Session.
 	 */
-	Session(net::ip::tcp::socket socket, Database &store);
+	Session(net::ip::tcp::socket socket, Database &store,
+			const CommandHandler &handler);
 
 	/**
 	 * \name Non-copyable, movable
@@ -62,6 +63,7 @@ private:
 
 	timespan_t idle_timeout = std::chrono::seconds(10);
 	Database &database_;
+	const CommandHandler &handler_;
 
 	CLASS_LOGGER(Session);
 };

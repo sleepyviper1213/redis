@@ -1,7 +1,7 @@
 #include "session.hpp"
 
+#include "commands/handler.hpp"
 #include "formatter.hpp"
-#include "resp/parser.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
@@ -22,11 +22,13 @@ std::string_view buffers_to_string(net::const_buffer buf) {
 	return {static_cast<const char *>(buf.data()), buf.size()};
 }
 
-Session::Session(tcp::socket socket, Database &database)
+Session::Session(tcp::socket socket, Database &database,
+				 const CommandHandler &handler)
 	: socket_(std::move(socket)),
-	  database_(database),
 	  connect_time(std::chrono::system_clock::now()),
-	  last_active(connect_time) {
+	  last_active(connect_time),
+	  database_(database),
+	  handler_(handler) {
 	logger_->debug("Accepted from {}", socket_.remote_endpoint());
 }
 
@@ -54,16 +56,12 @@ net::awaitable<void> Session::loop() {
 		}
 
 		buf.commit(bytes_transferred);
-		auto data          = buffers_to_string(buf.data());
-		const auto command = resp::Parser::parse(data);
+		auto data = buffers_to_string(buf.data());
 		buf.consume(bytes_transferred);
-		assert(command.has_value());
-		const auto response =
-			fmt::format("{:e}", database_.handle_command(*command));
+		const auto response = handler_.handle_query(database_, data);
 		const auto [write_err, _] =
 			co_await net::async_write(socket_, net::buffer(response));
 		if (write_err) co_return logger_->error("Write: {}", write_err);
-		logger_->trace("Sent: {:?}", response);
 	}
 }
 

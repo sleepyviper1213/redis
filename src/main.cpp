@@ -1,16 +1,17 @@
-#include "config.hpp"
-#include "net.hpp"
-
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <spdlog/spdlog.h>
 
+#include "core.hpp"
+#include "net.hpp"
+
 #include <csignal>
+#include <exception>
 
 int main(int argc, char **argv) {
 	const auto logger = redis::make_logger("main");
-	const auto app    = redis::configure_from_cli(argc, argv);
+	const auto app    = redis::setup_cli_options_from(argc, argv);
 	try {
 		app->parse(argc, argv);
 		if (!app->count("--config"))
@@ -23,7 +24,7 @@ int main(int argc, char **argv) {
 
 		boost::asio::io_context ioc;
 		boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
-		auto server = redis::Server::from(ioc, app.get());
+		auto server = redis::TcpServer::from(ioc, app.get());
 		signals.async_wait([&](auto, auto last_sig_received) {
 			logger->info("Received {}", strsignal(last_sig_received));
 			server.stop();
