@@ -1,10 +1,12 @@
 #pragma once
 
+#include <expected>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
 
+namespace redis {
 /**
  * @brief Represents an error consisting of a context message and an error code.
  *
@@ -12,7 +14,7 @@
  * such as accidentally binding a `std::string_view` to a temporary
  * `std::string`.
  */
-class [[nodiscard]] Error {
+class [[nodiscard]] SimpleMessage {
 public:
 	/**
 	 * @brief Constructs an Error from a string view and error code.
@@ -20,7 +22,7 @@ public:
 	 * @param message A descriptive error message (must outlive the Error).
 	 * @param code An error code from `std::errc`.
 	 */
-	Error(std::string_view message, std::errc code);
+	SimpleMessage(std::string_view message, std::errc code);
 
 	/**
 	 * @brief Deleted constructor to prevent accidental binding to temporaries
@@ -37,12 +39,12 @@ public:
 	 */
 	template <typename T>
 		requires std::is_same_v<std::remove_cvref_t<T>, std::string>
-	Error(T message, std::errc code) = delete;
+	SimpleMessage(T message, std::errc code) = delete;
 
 	/**
 	 * @brief Default three-way comparison operator.
 	 */
-	auto operator<=>(const Error &other) const = default;
+	auto operator<=>(const SimpleMessage &other) const = default;
 
 	/**
 	 * @brief Gets the error code.
@@ -74,4 +76,9 @@ private:
  * @param e The error to format.
  * @return A string representation of the error.
  */
-std::string format_as(const Error &e);
+std::string format_as(const SimpleMessage &e);
+
+template <typename T>
+using ErrorOr = std::expected<T, SimpleMessage>;
+} // namespace redis::error
+

@@ -1,22 +1,36 @@
 #pragma once
-#include "error.hpp"
+#include "convert/from.hpp"
+#include "utils/error_enum_formatter.hpp"
 #include "value.hpp"
 
 #include <string_view>
 
-namespace resp {
+namespace redis {
 
+namespace resp {
 /**
  * \brief Parser for RESP-formatted data.
  */
 class Parser {
 public:
+	enum class RespError {
+		UNEXPECTED_EOF,
+		MISSING_CRLF,
+		EMPTY_LINE,
+		INVALID_BULK_LENGTH,
+		TRUNCATED_BULK_STRING,
+		INVALID_ARRAY_LENGTH,
+		PARSE_NUMBER,
+		NOT_SUPPORTED,
+		SYNTAX_ERROR
+	};
+
 	/**
 	 * \brief Parse a single RESP value from the provided buffer.
 	 * \param data The input buffer containing RESP-encoded bytes.
 	 * \return The parsed Value on success; an error on failure.
 	 */
-	static ErrorOr<Value> parse(std::string_view data);
+	static std::expected<Value, RespError> parse(std::string_view data);
 
 	/**
 	 *  \brief Check if the given view starts with a CRLF sequence.
@@ -33,7 +47,7 @@ public:
 	 * \return The parsed integer on success; an error on malformed input or
 	 * out-of-range value.
 	 */
-	static ErrorOr<int64_t> parse_integer(std::string_view s);
+	static std::expected<int64_t, std::errc> parse_integer(std::string_view s);
 
 	/**
 	 * \brief Parse a double-precision floating-point number from ASCII.
@@ -41,7 +55,7 @@ public:
 	 * CRLF).
 	 * \return The parsed double on success; an error on malformed input.
 	 */
-	static ErrorOr<double> parse_double(std::string_view s);
+	static std::expected<double, std::errc> parse_double(std::string_view s);
 
 protected:
 	/**
@@ -51,7 +65,8 @@ protected:
 	 * consumed.
 	 * \return The parsed Value on success; an error on failure.
 	 */
-	static ErrorOr<Value> parse_recursive(std::string_view data, size_t &pos);
+	static std::expected<Value, RespError>
+	parse_recursive(std::string_view data, size_t &pos);
 
 private:
 	/**
@@ -65,4 +80,14 @@ private:
 	 */
 	static constexpr std::string_view CRLF = "\r\n";
 };
+
 } // namespace resp
+
+template <>
+struct From<std::errc, resp::Parser::RespError> {
+	static resp::Parser::RespError convert(std::errc ec);
+};
+
+} // namespace redis
+
+ENUM_DEBUG_FORMATTER(redis::resp::Parser::RespError);

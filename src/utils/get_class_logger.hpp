@@ -1,9 +1,7 @@
 #pragma once
-#include <memory>
+#include <spdlog/logger.h>
 
-namespace spdlog {
-class logger;
-} // namespace spdlog
+#include <memory>
 
 namespace redis {
 std::shared_ptr<spdlog::logger> make_logger(const std::string &name);

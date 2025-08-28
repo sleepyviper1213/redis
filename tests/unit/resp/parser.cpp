@@ -6,8 +6,8 @@
 
 #include <string_view>
 using Catch::Matchers::WithinAbs;
-using resp::Parser;
-using resp::Value;
+using redis::resp::Parser;
+using redis::resp::Value;
 
 TEST_CASE("Encode Simple string", "[Encode][RESP2][RESP3][SimpleString]") {
 	const auto val     = Value::from_simple_string("OK");

@@ -1,15 +1,16 @@
 #include "value.hpp"
 
-#include "parser.hpp"
-
 #include <fmt/ranges.h>
+
+#include "error.hpp"
+#include "parser.hpp"
 
 #include <cassert>
 #include <utility>
 #include <variant>
 #include <vector>
 
-namespace resp {
+namespace redis::resp {
 Value Value::from_simple_string(std::string s) {
 	return {Type::SimpleString, std::move(s)};
 }
@@ -29,9 +30,9 @@ int64_t Value::as_integer() const {
 	return std::get<int64_t>(data_);
 }
 
-ErrorOr<int64_t> Value::try_as_integer() const {
+std::expected<int64_t, std::errc> Value::try_as_integer() const {
 	if (is_integer()) return std::get<int64_t>(data_);
-	return Parser::parse_integer(as_string());
+	return TRY(Parser::parse_integer(as_string()));
 }
 
 const Value::Array &Value::as_array() const {
@@ -95,12 +96,14 @@ bool Value::is_integer() const {
 bool Value::is_double() const {
 	return type_ == Type::Double && std::holds_alternative<double>(data_);
 }
-} // namespace resp
+} // namespace redis::resp
 
-auto fmt::formatter<resp::Value>::format(const resp::Value &value,
-										 format_context &ctx) const
+using redis::resp::Value;
+
+auto fmt::formatter<Value>::format(const Value &value,
+								   format_context &ctx) const
 	-> format_context::iterator {
-	using enum resp::Value::Type;
+	using enum Value::Type;
 
 	auto it = ctx.out();
 	switch (presentation) {

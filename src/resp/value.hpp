@@ -1,15 +1,15 @@
 #pragma once
 
-#include "error/error_or.hpp"
-
 #include <fmt/base.h>
 
-#include <span>
+#include "error.hpp"
+
 #include <string>
+#include <span>
 #include <variant>
 #include <vector>
 
-namespace resp {
+namespace redis::resp {
 /**
  * \brief Internal low-level redis value enum.
  */
@@ -155,7 +155,7 @@ public:
 	 * \return The integer payload.
 	 * \note is_integer().
 	 */
-	[[nodiscard]] ErrorOr<int64_t> try_as_integer() const;
+	std::expected<int64_t, std::errc> try_as_integer() const;
 
 private:
 	/// Active type tag.
@@ -173,7 +173,7 @@ private:
 		data_;
 };
 
-} // namespace resp
+} // namespace redis::resp
 
 /**
  * \brief Formatter specialization for resp::Value with fmtlib.
@@ -184,8 +184,8 @@ private:
  * - none: same as 'e'
  */
 template <>
-struct fmt::formatter<resp::Value> {
-	/// Selected presentation specifier ('?' or 'e'); 0 means default ('e').
+struct fmt::formatter<redis::resp::Value> {
+	/// Selected presentation specifier ('?' or 'e');
 	char presentation = 0;
 
 	/**
@@ -210,6 +210,6 @@ struct fmt::formatter<resp::Value> {
 	 * \param ctx   The formatting context.
 	 * \return Iterator to the end of the formatted output.
 	 */
-	auto format(const resp::Value &value, format_context &ctx) const
+	auto format(const redis::resp::Value &value, format_context &ctx) const
 		-> format_context::iterator;
 };
