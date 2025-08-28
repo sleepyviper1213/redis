@@ -21,6 +21,7 @@ find_package(cereal REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(boost_asio QUIET)
 find_package(magic_enum REQUIRED)
+find_package(FastFloat REQUIRED)
 
 if (boost_asio_FOUND)
     message(STATUS "Using standalone Boost asio")

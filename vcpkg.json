@@ -3,6 +3,9 @@
     "boost-asio",
     "spdlog",
     "cereal",
-    "catch2"
+    "catch2",
+    "magic_enum",
+    "fast_float",
+	"cli11"
   ]
 }
