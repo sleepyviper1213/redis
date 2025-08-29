@@ -1,7 +1,7 @@
 #pragma once
 
-#include "error.hpp"
-#include "resp.hpp"
+#include "core/error.hpp"
+#include "core/resp.hpp"
 
 #include <chrono>
 #include <concepts>

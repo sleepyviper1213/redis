@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(Redis LANGUAGES CXX)
+project(Redis LANGUAGES CXX VERSION 1.0)
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Debug")
+  set(CMAKE_BUILD_TYPE Debug)
 endif()
 
 # guard against in-source builds
@@ -29,14 +29,20 @@ else()
 	find_package(Boost CONFIG COMPONENTS system thread)
     message(STATUS "Using classic Boost")
 endif()
+# --- Options / Macros ---
+option(REDIS_BUILD_TESTS "Build tests" OFF)
+
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Let's ensure -std=g++xx instead of -std=c++xx
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_EXTENSIONS ON)
+# --- Package export setup ---
+include(CMakePackageConfigHelpers)
 
 if(PROJECT_IS_TOP_LEVEL)
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-  # Let's ensure -std=g++xx instead of -std=c++xx
-  set(CMAKE_CXX_STANDARD 23)
-  set(CMAKE_CXX_EXTENSIONS ON)
   # Testing only available if this is the main app.
   add_subdirectory(tests)
 endif()
@@ -44,4 +50,21 @@ endif()
 # configure files based on CMake configuration options
 # add_subdirectory(configured_files)
 
+write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/redis_serverConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY AnyNewerVersion
+)
+
+configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackageConfigHelpers.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/redis_serverConfig.cmake"
+        INSTALL_DESTINATION lib/cmake/redis_server
+)
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/redis_serverConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/redis_serverConfigVersion.cmake"
+        DESTINATION lib/cmake/redis_server
+)
 add_subdirectory(src)
