@@ -1,28 +1,19 @@
-add_library(
-    redis_server_lib
-    # actions/db.cpp
-    # actions/snapshot.cpp
-    # actions/gate.cpp
-    # commands/cmd.cpp
-    # commands/cmd.cpp
-    # commands/command_type.cpp
-    error/error.cpp
-    net/redis_store.cpp
+add_subdirectory(core)
+add_subdirectory(server)
 
-    net/session.cpp
-    net/tcp_server.cpp
-    resp/resp_parser.cpp
-    resp/value.cpp
-    utils/create_temp_file.cpp
-        utils/toupper.cpp)
+# --- Installation ---
+install(
+    TARGETS redis_core redis_server
+    EXPORT redisTargets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
 
-
-target_include_directories(redis_server_lib PUBLIC .)
-target_link_libraries(redis_server_lib PUBLIC spdlog::spdlog Boost::system
-                                              Boost::thread cereal::cereal)
-target_compile_definitions(redis_server_lib PUBLIC BOOST_ASIO_NO_DEPRECATED)
-target_compile_options(redis_server_lib PUBLIC -fsanitize=address)
-target_link_options(redis_server_lib PUBLIC -fsanitize=address)
-
-add_executable(redis_server main.cpp)
-target_link_libraries(redis_server PUBLIC redis_server_lib)
+# --- Export Targets ---
+install(
+    EXPORT redisTargets
+    FILE redisTargets.cmake
+    NAMESPACE redis::
+    DESTINATION lib/cmake/redis)

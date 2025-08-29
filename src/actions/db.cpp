@@ -1,6 +1,6 @@
 #include "db.hpp"
 
-#include "error.hpp"
+#include "core/error.hpp"
 
 #include <spdlog/spdlog.h>
 

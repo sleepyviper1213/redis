@@ -1,7 +1,7 @@
 #include "gate.hpp"
 
-#include "command.hpp"
 #include "primitive/reply.hpp"
+#include "server/commands.hpp"
 
 #include <chrono>
 #include <string>

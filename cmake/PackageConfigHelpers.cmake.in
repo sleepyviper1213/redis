@@ -1,0 +1,18 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/redisTargets.cmake")
+
+# Define components
+set(redis_FIND_COMPONENTS core server)
+
+if(NOT redis_FIND_COMPONENTS)
+set(redis_FIND_COMPONENTS server)
+endif()
+
+foreach(comp ${redis_FIND_COMPONENTS})
+if(comp STREQUAL "core")
+set(redis_core_FOUND TRUE)
+elseif(comp STREQUAL "server")
+set(redis_server_FOUND TRUE)
+endif()
+endforeach()

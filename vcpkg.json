@@ -1,9 +1,11 @@
 {
   "dependencies": [
+    "boost-asio",
     "spdlog",
-    "catch2",
     "cereal",
-    "boost-beast",
-    "boost-thread"
+    "catch2",
+    "magic_enum",
+    "fast_float",
+	"cli11"
   ]
 }

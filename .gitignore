@@ -68,6 +68,7 @@ Testing
 #vcpkg config
 vcpkg-configuration.json
 CMakeUserPresets.json
+vcpkg_installed
 
 #Doxygen docs
 docs/doxygen

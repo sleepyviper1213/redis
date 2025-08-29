@@ -1,6 +1,6 @@
 #pragma once
-#include "actions.hpp"
-#include "error.hpp"
+#include "core.hpp"
+#include "core/error.hpp"
 #include "primitive/reply.hpp"
 
 #include <string>

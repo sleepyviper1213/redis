@@ -1,0 +1,25 @@
+@startuml
+actor Client
+participant Server
+
+== Normal Flow ==
+Client -> Server: PING
+Server --> Client: PONG
+== Normal Flow ==
+
+Client -> Server: PING "message"
+Server --> Client: "message"
+== Alternate Flow A1: Invalid Command Format ==
+Client -> Server: PING extra_args
+Server --> Client: ERR wrong number of arguments
+
+== Alternate Flow A2: Connection Lost ==
+Client -> Server: PING
+... no response ...
+Client -> Client: Mark connection as broken
+
+== Alternate Flow A3: Server Overloaded ==
+Client -> Server: PING
+Server --> Client: (delayed PONG)
+Client -> Client: Retry or Reconnect
+@enduml
