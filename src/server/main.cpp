@@ -12,15 +12,17 @@
 int main(int argc, char **argv) {
 	const auto logger = redis::make_logger("main");
 	const auto app    = redis::setup_cli_options_from(argc, argv);
+
 	try {
 		app->parse(argc, argv);
-		if (!app->count("--config"))
-			spdlog::warn("No config file specified. Using default config");
-		else
-			spdlog::warn("Using config file: {}",
-						 app->get_option("--config")->as<std::string_view>());
 		spdlog::set_level(spdlog::level::from_str(
 			app->get_option("--loglevel")->as<std::string>()));
+
+		if (!app->count("--config"))
+			logger->warn("No config file specified. Using default config");
+		else
+			logger->warn("Using config file: {}",
+						 app->get_option("--config")->as<std::string_view>());
 
 		boost::asio::io_context ioc;
 		boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);

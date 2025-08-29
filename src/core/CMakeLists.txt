@@ -1,5 +1,5 @@
 add_library(
-    core SHARED
+    redis_core SHARED
     error/simple_message.cpp
     resp/parser.cpp
     resp/value.cpp
@@ -8,13 +8,13 @@ add_library(
     utils/create_temp_file.cpp
     utils/toupper.cpp)
 
-add_library(redis::core ALIAS core)
+add_library(redis::core ALIAS redis_core)
 
-target_compile_options(core PUBLIC -fsanitize=address)
-target_link_options(core PUBLIC -fsanitize=address)
-target_link_libraries(core PUBLIC spdlog::spdlog magic_enum::magic_enum
+target_compile_options(redis_core PUBLIC -fsanitize=address)
+target_link_options(redis_core PUBLIC -fsanitize=address)
+target_link_libraries(redis_core PUBLIC spdlog::spdlog magic_enum::magic_enum
                                   FastFloat::fast_float)
 
 target_include_directories(
-    core PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    redis_core PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 	$<INSTALL_INTERFACE:${CMAKE_INCLUDE_DIR}>)

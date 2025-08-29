@@ -3,7 +3,7 @@ add_subdirectory(server)
 
 # --- Installation ---
 install(
-    TARGETS core server
+    TARGETS redis_core redis_server
     EXPORT redisTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

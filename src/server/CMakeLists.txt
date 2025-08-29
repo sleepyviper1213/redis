@@ -1,5 +1,5 @@
 add_executable(
-    server
+    redis_server
     main.cpp
     database.cpp
     setup_cli_options.cpp
@@ -12,13 +12,13 @@ add_executable(
     net/session.cpp
     net/tcp_server.cpp)
 
-target_compile_definitions(server PUBLIC BOOST_ASIO_NO_DEPRECATED)
+target_compile_definitions(redis_server PUBLIC BOOST_ASIO_NO_DEPRECATED)
 
-target_link_libraries(server PRIVATE redis::core CLI11::CLI11)
+target_link_libraries(redis_server PRIVATE redis::core CLI11::CLI11)
 if(boost_asio_FOUND)
-    target_link_libraries(server PUBLIC Boost::asio)
+    target_link_libraries(redis_server PUBLIC Boost::asio)
 else()
-    target_link_libraries(server PUBLIC Boost::thread Boost::system)
+    target_link_libraries(redis_server PUBLIC Boost::thread Boost::system)
 endif()
-add_executable(redis::server ALIAS server)
+add_executable(redis::server ALIAS redis_server)
 
