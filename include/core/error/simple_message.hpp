@@ -80,5 +80,4 @@ std::string format_as(const SimpleMessage &e);
 
 template <typename T>
 using ErrorOr = std::expected<T, SimpleMessage>;
-} // namespace redis::error
-
+} // namespace redis

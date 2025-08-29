@@ -3,7 +3,7 @@
 #define BAIL(...)                                                              \
 	return std::unexpected { std::in_place, __VA_ARGS__ }
 
-#define FAILED(error)                                                            \
+#define FAILED(error)                                                          \
 	return std::unexpected { error }
 
 // Check optional and unwrap or return error
@@ -14,4 +14,3 @@
 		}                                                                      \
 		*(opt);                                                                \
 	})
-

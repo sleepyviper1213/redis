@@ -1,14 +1,15 @@
-#include "core/resp/value.hpp"
 #include "core/resp/parser.hpp"
+
+#include "core/error.hpp"
+#include "core/resp/value.hpp"
 
 #include <fast_float/fast_float.h>
 
 #include <string_view>
 #include <utility>
 
-
-namespace redis{
-namespace resp{
+namespace redis {
+namespace resp {
 std::expected<Value, Parser::RespError> Parser::parse(std::string_view data) {
 	size_t pos             = 0;
 	size_t recursive_depth = 0;
@@ -99,10 +100,10 @@ std::expected<double, std::errc> Parser::parse_double(std::string_view s) {
 	return val;
 }
 
-} // namespace redis::resp
+} // namespace resp
 
 resp::Parser::RespError
-From<std::errc, resp::Parser::RespError>::convert(std::errc ec) {
+From<std::errc, resp::Parser::RespError>::convert(std::errc ec) noexcept {
 	switch (ec) {
 	case std::errc::result_out_of_range:
 	case std::errc::invalid_argument:
@@ -110,4 +111,4 @@ From<std::errc, resp::Parser::RespError>::convert(std::errc ec) {
 	default: std::unreachable();
 	}
 }
-}
+} // namespace redis

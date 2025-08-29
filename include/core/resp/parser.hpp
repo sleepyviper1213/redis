@@ -1,6 +1,6 @@
 #pragma once
-#include "core/utils/error_enum_formatter.hpp"
 #include "core/convert/from.hpp"
+#include "core/utils/error_enum_formatter.hpp"
 #include "value.hpp"
 
 #include <string_view>
@@ -87,7 +87,7 @@ private:
 
 template <>
 struct From<std::errc, resp::Parser::RespError> {
-	static resp::Parser::RespError convert(std::errc ec);
+	static resp::Parser::RespError convert(std::errc ec) noexcept;
 };
 
 } // namespace redis

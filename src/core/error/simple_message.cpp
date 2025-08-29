@@ -1,6 +1,6 @@
-#include "../../../include/core/error/simple_message.hpp"
+#include "core/error/simple_message.hpp"
 
-#include "../../../include/core/error/errc_formatter.hpp"
+#include "core/error/errc_formatter.hpp"
 
 namespace redis {
 SimpleMessage::SimpleMessage(std::string_view message, std::errc code)
@@ -19,4 +19,4 @@ bool SimpleMessage::containsErrorMessage(std::string_view msg) const {
 std::string format_as(const SimpleMessage &e) {
 	return fmt::format("[{}] {}", e.code(), e.contextMessage());
 }
-} // namespace redis::error
+} // namespace redis

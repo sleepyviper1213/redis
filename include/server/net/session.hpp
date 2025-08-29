@@ -1,18 +1,18 @@
 #pragma once
-#include "../../core/utils/get_class_logger.hpp"
-#include "../../core/utils/time.hpp"
-#include "../database.hpp"
+#include "core/utils/get_class_logger.hpp"
+#include "core/utils/time.hpp"
 #include "nothrow_awaitable_t.hpp"
-#include "tcp_server.hpp"
+#include "server/commands/handler.hpp"
+#include "server/memory/database.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
 #include <chrono>
 
-namespace net = boost::asio;
-
 namespace redis {
+
+namespace net = boost::asio;
 
 /**
  * \brief Represents one TCP client session.

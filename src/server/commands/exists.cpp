@@ -1,5 +1,7 @@
 #include "server/commands/exists.hpp"
 
+#include "server/memory/database.hpp"
+
 namespace redis {
 using resp::Value;
 

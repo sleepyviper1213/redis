@@ -1,5 +1,6 @@
 #pragma once
 #include "core/resp/value.hpp"
+#include "core/utils/deadline_timer.hpp"
 #include "core/utils/error_enum_formatter.hpp"
 
 #include <cstdlib>

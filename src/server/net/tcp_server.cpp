@@ -1,8 +1,8 @@
-#include "../../../include/server/net/tcp_server.hpp"
+#include "server/net/tcp_server.hpp"
 
-#include "../../../include/server/database.hpp"
-#include "../../../include/server/net/formatter.hpp"
-#include "../../../include/server/net/session.hpp"
+#include "server/memory/database.hpp"
+#include "server/net/formatter.hpp"
+#include "server/net/session.hpp"
 
 #include <CLI/App.hpp>
 #include <spdlog/logger.h>

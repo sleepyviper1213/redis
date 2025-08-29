@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/resp/value.hpp"
-#include "server/database.hpp"
+#include "server/memory/database.hpp"
 
 #include <string_view>
 

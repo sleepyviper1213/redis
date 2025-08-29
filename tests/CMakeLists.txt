@@ -4,4 +4,4 @@ add_executable(
 )
 target_link_libraries(
     redis_unit_test PUBLIC
-    Catch2::Catch2WithMain core)
+    Catch2::Catch2WithMain redis::core)

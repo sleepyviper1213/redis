@@ -1,6 +1,9 @@
 #include "server/commands/crud.hpp"
 
+#include "core/error.hpp"
+#include "core/utils/get_class_logger.hpp"
 #include "core/utils/toupper.hpp"
+#include "server/memory/database.hpp"
 
 #include <magic_enum/magic_enum_flags.hpp>
 

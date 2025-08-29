@@ -1,5 +1,9 @@
 #include "server/commands/ttl.hpp"
 
+#include "core/error/try.hpp"
+#include "core/utils/get_class_logger.hpp"
+#include "server/memory/database.hpp"
+
 namespace redis {
 using resp::Value;
 

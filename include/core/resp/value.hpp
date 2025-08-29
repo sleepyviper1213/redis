@@ -1,9 +1,8 @@
 #pragma once
 
-#include "core/error.hpp"
-
 #include <fmt/base.h>
 
+#include <expected>
 #include <span>
 #include <string>
 #include <variant>
@@ -155,7 +154,7 @@ public:
 	 * \return The integer payload.
 	 * \note is_integer().
 	 */
-	std::expected<int64_t, std::errc> try_as_integer() const;
+	[[nodiscard]] std::expected<int64_t, std::errc> try_as_integer() const;
 
 private:
 	/// Active type tag.
