@@ -9,10 +9,8 @@ target_link_libraries(redis_server_test PRIVATE Catch2::Catch2WithMain hiredis)
 target_compile_definitions(redis_server_test
 	PRIVATE REDIS_SERVER_PATH="$<TARGET_FILE:redis::server>")
 if(REDIS_SERVER_LOGS)
-    target_compile_definitions(redis_server_test PRIVATE REDIS_SERVER_LOGS=1)
-else()
-    target_compile_definitions(redis_server_test PRIVATE REDIS_SERVER_LOGS=0)
-endif()
+    target_compile_definitions(redis_server_test PRIVATE REDIS_SERVER_LOGS)
+endif ()
 
 
 include(Catch)

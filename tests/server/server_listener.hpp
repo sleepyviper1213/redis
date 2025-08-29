@@ -21,10 +21,10 @@ public:
 
 		// Start server
 		const std::string cmd =
-#if REDIS_SERVER_LOGS
-			std::string(REDIS_SERVER_PATH) + " &";
+#ifdef REDIS_SERVER_LOGS
+			std::string(REDIS_SERVER_PATH) + " --loglevel trace > redis_test.log 2>&1 &";
 #else
-			std::string(REDIS_SERVER_PATH) + " >redis_test.log 2>&1 &";
+			std::string(REDIS_SERVER_PATH) + " --loglevel trace &";
 #endif
 		REQUIRE(std::system(cmd.c_str()) == 0);
 
