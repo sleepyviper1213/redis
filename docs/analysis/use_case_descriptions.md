@@ -239,3 +239,75 @@ Client (Python console or CLI)
 ## Notes
 
 * The command is idempotent. Missing keys do not cause failure.
+  Here’s the **use case description** for a client connection ping-pong, following the same structure and formatting as your example:
+
+---
+
+# Use Case: Client Connection Ping-Pong
+
+## Use Case ID
+
+UC-005
+
+## Description
+
+Client maintains an active connection with the server by periodically sending `PING` commands and receiving `PONG` responses to verify liveness.
+
+## Primary Actor
+
+Client (e.g., Redis CLI, custom client application)
+
+## Preconditions
+
+* Server is running and listening on the configured port
+* Client is connected to the server via TCP socket
+* Command syntax is valid: `PING`
+
+## Postconditions
+
+* Server responds with `PONG` for each `PING`
+* Connection health is verified
+* If server does not respond, client detects connection failure
+
+## Flow of Events
+
+| Step | Actor  | Description                           |
+| ---- | ------ | ------------------------------------- |
+| 1    | Client | Sends `PING` command over connection  |
+| 2    | Server | Validates the command                 |
+| 3    | Server | Responds with `PONG`                  |
+| 4    | Client | Receives `PONG` and confirms liveness |
+
+## Alternate Flows
+
+### A1: Invalid Command Format
+
+* Server replies: `ERR wrong number of arguments for 'PING'`
+
+### A2: Connection Lost
+
+* Server does not respond
+* Client times out and marks connection as broken
+
+### A3: Server Overloaded
+
+* Response is delayed or dropped
+* Client retries or reconnects based on configuration
+
+## Related Functional Requirements
+
+* FR-1: Command Execution
+* FR-2: Connection Handling
+* FR-3: Health Check (PING/PONG)
+
+## Related Nonfunctional Requirements
+
+* NFR-2.1: Latency (PING round-trip ≤ 10ms under normal load)
+* NFR-2.2: Availability (Server responds to PING during normal operation)
+* NFR-2.3: Reliability (Client detects failure on missing response)
+
+## Notes
+
+* `PING` is often used as a heartbeat mechanism to keep idle connections alive
+* Future versions may allow `PING <message>` returning `<message>` instead of `PONG` for debugging purposes
+
