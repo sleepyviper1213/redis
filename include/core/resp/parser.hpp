@@ -22,8 +22,7 @@ public:
 		INVALID_ARRAY_LENGTH,
 		PARSE_NUMBER,
 		NOT_SUPPORTED,
-		SYNTAX_ERROR,
-		RECURSIVE_DEPTH_EXCEEDED,
+		SYNTAX_ERROR
 	};
 
 	/**
@@ -62,12 +61,6 @@ public:
 	parse_recursive(std::string_view data, size_t &pos);
 
 private:
-	/**
-	 * \brief Maximum allowed nested array number.
-	 * \details Used to limit allocation/processing of array data
-	 */
-	static constexpr size_t DEPTH_LIMIT = 5;
-
 	/**
 	 * \brief Carriage-return and line-feed delimiter used by RESP.
 	 */
