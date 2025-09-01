@@ -1,4 +1,3 @@
-#include "server_listener.hpp"
 #include "test_client.hpp"
 
 #include <catch2/catch_test_macros.hpp>

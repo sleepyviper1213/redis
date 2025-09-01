@@ -1,6 +1,6 @@
 #pragma once
+#include "core/logging.hpp"
 #include "core/resp.hpp"
-#include "core/utils/get_class_logger.hpp"
 #include "server/commands/info.hpp"
 
 #include <string>
