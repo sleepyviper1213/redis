@@ -58,17 +58,8 @@ public:
 	 */
 	static std::expected<double, std::errc> parse_double(std::string_view s);
 
-protected:
-	/**
-	 * \brief Internal recursive descent entry to parse a RESP value.
-	 * \param data The full input buffer being parsed.
-	 * \param pos Current read position within \p data ; advanced as bytes are
-	 * consumed.
-	 * \return The parsed Value on success; an error on failure.
-	 */
 	static std::expected<Value, RespError>
-	parse_recursive(std::string_view data, size_t &recursive_depth,
-					size_t &pos);
+	parse_recursive(std::string_view data, size_t &pos);
 
 private:
 	/**
