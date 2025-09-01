@@ -4,17 +4,13 @@
 #include "server/net/formatter.hpp"
 #include "server/net/session.hpp"
 
-#include <CLI/App.hpp>
-#include <spdlog/logger.h>
-
 #include <utility>
 
 namespace redis {
 
-TcpServer TcpServer::from(net::io_context &ioc, const CLI::App *cfg) {
-	net::ip::tcp::endpoint endpoint(
-		net::ip::make_address_v4(cfg->get_option("--host")->as<std::string>()),
-		cfg->get_option("--port")->as<int>());
+TcpServer TcpServer::from(net::io_context &ioc, const std::string &host,
+						  net::ip::port_type port) {
+	net::ip::tcp::endpoint endpoint(net::ip::make_address_v4(host), port);
 
 	return TcpServer{net::ip::tcp::acceptor(ioc, endpoint)};
 }
@@ -25,7 +21,7 @@ TcpServer::TcpServer(net::ip::tcp::acceptor acceptor)
 }
 
 net::awaitable<void> TcpServer::start() noexcept {
-	logger_->info("Starting at {}", acceptor_.local_endpoint());
+	logger_->info("Listening at {}", acceptor_.local_endpoint());
 	logger_->info("Accepting TCP connections");
 
 	while (true) {

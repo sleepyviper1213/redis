@@ -3,16 +3,12 @@
 #include "server/commands/handler.hpp"
 #include "server/memory/database.hpp"
 // #include "saveparam.hpp"
-#include "core/utils/get_class_logger.hpp"
+#include "core/logging.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
 #include <vector>
-
-namespace CLI {
-class App;
-} // namespace CLI
 
 namespace redis {
 namespace net = boost::asio;
@@ -22,8 +18,8 @@ namespace net = boost::asio;
  */
 class [[nodiscard]] TcpServer {
 public:
-	static TcpServer from(net::io_context &ioc, const CLI::App *cfg);
-
+	static TcpServer from(net::io_context &ioc, const std::string &host,
+						  net::ip::port_type port);
 	/**
 	 * \brief Construct the server listening to port \a port_num one the local
 	 * host using IPv4 address

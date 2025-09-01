@@ -7,7 +7,6 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
-#include <fmt/chrono.h>
 #include <spdlog/logger.h>
 
 #include <chrono>
@@ -35,8 +34,8 @@ Session::Session(tcp::socket socket, Database &database,
 void Session::run() {
 	net::co_spawn(
 		socket_.get_executor(),
-		[self = shared_from_this()]() -> net::awaitable<void> {
-			co_await self->loop();
+		[self = shared_from_this()] -> net::awaitable<void> {
+			co_return co_await self->loop();
 		},
 		net::detached);
 }
@@ -56,9 +55,9 @@ net::awaitable<void> Session::loop() {
 		}
 
 		buf.commit(bytes_transferred);
-		auto data = buffers_to_string(buf.data());
+		auto network_message = buffers_to_string(buf.data());
 		buf.consume(bytes_transferred);
-		const auto response = handler_.handle_query(database_, data);
+		const auto response = handler_.handle_query(database_, network_message);
 		const auto [write_err, _] =
 			co_await net::async_write(socket_, net::buffer(response));
 		if (write_err) co_return logger_->error("Write: {}", write_err);
