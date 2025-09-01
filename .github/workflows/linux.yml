@@ -11,9 +11,16 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        cxx: [g++-13]
-        preset: [vcpkg-debug]
-
+        preset: [vcpkg-debug, vcpkg-release]
+        include: 
+          - cxx: clang++-14
+            cxxflags: -stdlib=libc++
+            install: sudo apt install libc++-14-dev libc++abi-14-dev
+          - cxx: g++-13
+            install: |
+              sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+              sudo apt update
+              sudo apt install -y g++-13
     steps:
       - uses: actions/checkout@v4
 
@@ -34,22 +41,21 @@ jobs:
             "s~http://azure.archive.ubuntu.com/ubuntu/~mirror+file:$mirrors~" \
             /etc/apt/sources.list
 
-      - name: Add repositories for newer GCC
-        run: |
-          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          sudo apt update
-          sudo apt install -y g++-13
-        if: ${{ matrix.cxx == 'g++-13' }}
-
       - name: Bootstrap vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg
           sh $HOME/vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
 
+      - name: Create build environment
+        run: |
+          sudo apt update
+          ${{matrix.install}}
+
       - name: Configure
         env:
           CXX: ${{matrix.cxx}}
+          CXXFLAGS: ${{matrix.cxxflags}}
         run: cmake --preset vcpkg
 
       - name: CMake Build
