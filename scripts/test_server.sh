@@ -1,18 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-PRESET="vcpkg"
-BUILD_TYPE="debug"
-BUILD_TYPE_CAP="$(echo "$BUILD_TYPE" | cut -c1 | tr '[:lower:]' '[:upper:]')$(echo "$BUILD_TYPE" | cut -c2-)"
+PRESET="${1:-vcpkg-debug}"
+
+# Split preset into name and build type
+PRESET_NAME="${PRESET%-*}"        # before last '-'
+BUILD_TYPE="${PRESET##*-}"        # after last '-'
+
+# Capitalize first letter of BUILD_TYPE for Ninja Multi-Config
+BUILD_TYPE="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
 
 # Configurable paths and port
 ROOT_DIR="$(pwd)"
-REDIS_TEST="${REDIS_TEST:-$ROOT_DIR/build/$PRESET/tests/$BUILD_TYPE_CAP/redis_server}"
-REDIS_SERVER="${REDIS_SERVER:-$ROOT_DIR/build/$PRESET/src/$BUILD_TYPE_CAP/redis_server}"
-PORT="${PORT:-6380}"
+REDIS_TEST="$ROOT_DIR/build/$PRESET_NAME/tests/$BUILD_TYPE/redis_server_test"
+REDIS_SERVER="$ROOT_DIR/build/$PRESET_NAME/src/$BUILD_TYPE/redis_server"
+PORT="${2:-6380}"
 
 # Build the project
-cmake --build --preset "${PRESET}-${BUILD_TYPE}"
+cmake --build --preset $PRESET
 
 # Clean old logs
 rm -f server_test.log server_test.err

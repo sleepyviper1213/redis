@@ -1,61 +1,64 @@
-name: CI Linux
+name: Linux
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
     strategy:
-      fail-fast: false
       matrix:
-        build-type: [debug, release]
+        cxx: [g++-13]
+        preset: [vcpkg-debug]
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt update
+          sudo apt install -y build-essential cmake ninja-build 
 
-      # Cache vcpkg installed packages
-      - name: Cache vcpkg
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/vcpkg
-            ${VCPKG_ROOT}/installed
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-${{ runner.os }}-
+      - name: Add Ubuntu mirrors
+        run: |
+          # GitHub Actions caching proxy is at times unreliable
+          # see https://github.com/actions/runner-images/issues/7048.
+          mirrors=/etc/apt/mirrors.txt
+          printf 'http://azure.archive.ubuntu.com/ubuntu\tpriority:1\n' | \
+            sudo tee $mirrors
+          curl http://mirrors.ubuntu.com/mirrors.txt | sudo tee --append $mirrors
+          sudo sed -i \
+            "s~http://azure.archive.ubuntu.com/ubuntu/~mirror+file:$mirrors~" \
+            /etc/apt/sources.list
 
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: "master"
+      - name: Add repositories for newer GCC
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt update
+          sudo apt install -y g++-13
+        if: ${{ matrix.cxx == 'g++-13' }}
 
-      # Cache CMake build artifacts
-      - name: Cache CMake build
-        uses: actions/cache@v4
-        with:
-          path: build/vcpkg
-          key: cmake-${{ runner.os }}-${{ matrix.build-type }}-${{ hashFiles('**/CMakePresets.json', '**/CMakeLists.txt') }}
-          restore-keys: |
-            cmake-${{ runner.os }}-${{ matrix.build-type }}-
+      - name: Bootstrap vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg
+          sh $HOME/vcpkg/bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
 
-      - name: Configure (CMakePresets)
+      - name: Configure
+        env:
+          CXX: ${{matrix.cxx}}
         run: cmake --preset vcpkg
 
-      - name: Build
-        run: cmake --build --preset vcpkg-${{ matrix.build-type }}
+      - name: CMake Build
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        run: cmake --build --preset ${{matrix.preset}} -j8
 
-      - name: Run tests (custom script)
-        run: |
-          chmod +x ./scripts/run_tests.sh
-          ./scripts/run_tests.sh ${{ matrix.build-type }}
+      - name: Unit test
+        run: sh scripts/unit_test.sh
+      - name: Test server
+        run: sh scripts/test_server.sh ${{matrix.preset}}
 
