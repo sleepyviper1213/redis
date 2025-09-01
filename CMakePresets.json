@@ -1,13 +1,52 @@
 {
   "version": 3,
+
   "configurePresets": [
     {
       "name": "vcpkg",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
+      "displayName": "Configure with vcpkg toolchain (Ninja Multi-Config)",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/vcpkg",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       }
     }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "vcpkg-debug",
+      "displayName": "Build Debug (vcpkg, Ninja Multi-Config)",
+      "configurePreset": "vcpkg",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vcpkg-release",
+      "displayName": "Build Release (vcpkg, Ninja Multi-Config)",
+      "configurePreset": "vcpkg",
+      "configuration": "Release"
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "vcpkg-debug",
+      "displayName": "Run tests Debug (vcpkg)",
+      "configurePreset": "vcpkg",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vcpkg-release",
+      "displayName": "Run tests Release (vcpkg)",
+      "configurePreset": "vcpkg",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }
+

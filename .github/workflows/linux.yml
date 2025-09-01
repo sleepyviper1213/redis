@@ -1,0 +1,61 @@
+name: CI Linux
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [debug, release]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # Cache vcpkg installed packages
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg
+            ${VCPKG_ROOT}/installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "master"
+
+      # Cache CMake build artifacts
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/vcpkg
+          key: cmake-${{ runner.os }}-${{ matrix.build-type }}-${{ hashFiles('**/CMakePresets.json', '**/CMakeLists.txt') }}
+          restore-keys: |
+            cmake-${{ runner.os }}-${{ matrix.build-type }}-
+
+      - name: Configure (CMakePresets)
+        run: cmake --preset vcpkg
+
+      - name: Build
+        run: cmake --build --preset vcpkg-${{ matrix.build-type }}
+
+      - name: Run tests (custom script)
+        run: |
+          chmod +x ./scripts/run_tests.sh
+          ./scripts/run_tests.sh ${{ matrix.build-type }}
+

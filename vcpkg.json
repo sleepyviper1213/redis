@@ -4,8 +4,9 @@
     "spdlog",
     "cereal",
     "catch2",
-    "magic_enum",
-    "fast_float",
+    "hiredis",
+    "magic-enum",
+    "fast-float",
 	"cli11"
   ]
 }
