@@ -8,38 +8,23 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         preset: [vcpkg-debug, vcpkg-release]
-        include: 
-          - cxx: clang++-14
+        include:
+          - cxx: clang++-17
             cxxflags: -stdlib=libc++
-            install: sudo apt install libc++-14-dev libc++abi-14-dev
+            install: sudo apt install libc++-17-dev libc++abi-17-dev
           - cxx: g++-13
-            install: |
-              sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-              sudo apt update
-              sudo apt install -y g++-13
+            install: sudo apt install -y g++-13
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential cmake ninja-build 
-
-      - name: Add Ubuntu mirrors
-        run: |
-          # GitHub Actions caching proxy is at times unreliable
-          # see https://github.com/actions/runner-images/issues/7048.
-          mirrors=/etc/apt/mirrors.txt
-          printf 'http://azure.archive.ubuntu.com/ubuntu\tpriority:1\n' | \
-            sudo tee $mirrors
-          curl http://mirrors.ubuntu.com/mirrors.txt | sudo tee --append $mirrors
-          sudo sed -i \
-            "s~http://azure.archive.ubuntu.com/ubuntu/~mirror+file:$mirrors~" \
-            /etc/apt/sources.list
+          sudo apt install -y build-essential cmake ninja-build
 
       - name: Bootstrap vcpkg
         run: |
