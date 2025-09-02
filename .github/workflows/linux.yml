@@ -15,7 +15,13 @@ jobs:
         preset: [vcpkg-debug, vcpkg-release]
         include:
           - cxx: clang++-17
+            install: sudo apt install libc++-17-dev libc++abi-17-dev
             cxxflags: -stdlib=libc++
+          - cxx: g++-13
+            install: sudo apt install g++-13
+          - cxx: g++-14
+            install: sudo apt install g++-14
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +35,12 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg
           sh $HOME/vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+
+      - name: Create build environment
+        run: |
+          sudo apt update
+          ${{matrix.install}}
+          sudo apt install locales-all
 
       - name: Configure
         env:
