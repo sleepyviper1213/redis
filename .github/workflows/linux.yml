@@ -2,22 +2,20 @@ name: Linux
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
+        cxx: [clang++-17, g++-13, g++-14]
         preset: [vcpkg-debug, vcpkg-release]
         include:
           - cxx: clang++-17
             cxxflags: -stdlib=libc++
-            install: sudo apt install libc++-17-dev libc++abi-17-dev
-          - cxx: g++-13
-            install: sudo apt install -y g++-13
     steps:
       - uses: actions/checkout@v4
 
@@ -32,11 +30,6 @@ jobs:
           sh $HOME/vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
 
-      - name: Create build environment
-        run: |
-          sudo apt update
-          ${{matrix.install}}
-
       - name: Configure
         env:
           CXX: ${{matrix.cxx}}
@@ -44,12 +37,10 @@ jobs:
         run: cmake --preset vcpkg
 
       - name: CMake Build
-        env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         run: cmake --build --preset ${{matrix.preset}} -j8
 
       - name: Unit test
         run: sh scripts/unit_test.sh
+
       - name: Test server
         run: sh scripts/test_server.sh ${{matrix.preset}}
-
