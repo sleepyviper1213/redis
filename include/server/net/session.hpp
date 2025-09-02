@@ -1,6 +1,5 @@
 #pragma once
 #include "core/logging.hpp"
-#include "core/utils/time.hpp"
 #include "nothrow_awaitable_t.hpp"
 #include "server/commands/handler.hpp"
 #include "server/memory/database.hpp"
@@ -9,10 +8,11 @@
 #include <boost/asio/ip/tcp.hpp>
 
 #include <chrono>
+#include <memory>
 
 namespace redis {
-
 namespace net = boost::asio;
+using net::ip::tcp;
 
 /**
  * \brief Represents one TCP client session.
@@ -31,8 +31,7 @@ public:
 	 * \note Ownership of \p socket is moved to the Session. The caller remains
 	 * responsible for ensuring that \p store outlives this Session.
 	 */
-	Session(net::ip::tcp::socket socket, Database &store,
-			const CommandHandler &handler);
+	Session(tcp::socket socket, Database &store, const CommandHandler &handler);
 
 	/**
 	 * \name Non-copyable, movable
@@ -56,10 +55,10 @@ public:
 	void close();
 
 private:
-	net::ip::tcp::socket socket_;
+	tcp::socket socket_;
 
-	timestamp_t connect_time;
-	timestamp_t last_active;
+	std::chrono::system_clock::time_point connect_time_;
+	std::chrono::system_clock::time_point last_active_;
 
 	Database &database_;
 	const CommandHandler &handler_;

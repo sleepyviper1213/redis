@@ -2,6 +2,7 @@
 
 #include "core/error.hpp"
 #include "core/logging.hpp"
+#include "core/resp/value.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/memory/database.hpp"
 
@@ -35,7 +36,7 @@ bool has_single_flag(SetFlag value, SetFlag mask) {
 }
 
 std::expected<std::pair<SetFlag, DeadlineTimer>, ParseSetError>
-parseSetOptions(const Value::Array &argv) {
+parse_set_options(const Value::Array &argv) {
 	using enum SetFlag;
 	using namespace magic_enum::bitwise_operators;
 
@@ -92,7 +93,7 @@ resp::Value handle_set(Database &db, const resp::Value::Array &argv) {
 	const std::string &key   = argv[1].as_string();
 	const std::string &value = argv[2].as_string();
 
-	const auto opts = TRY_VALUE(parseSetOptions(argv));
+	const auto opts = TRY_VALUE(parse_set_options(argv));
 
 	const auto [set_flag, deadline] = opts;
 	// --- Apply NX/XX semantics ---

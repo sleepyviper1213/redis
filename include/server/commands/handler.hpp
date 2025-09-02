@@ -16,15 +16,15 @@ public:
 	std::string handle_query(Database &db, std::string_view command) const;
 
 
-	void registerCommand(std::string_view name,
-						 CommandInfo::handle_func handler, int arity);
+	void register_command(std::string_view name,
+						  CommandInfo::handle_func handler, int arity);
 
 protected:
-	resp::Value executeCommand(Database &db, const std::string &command,
-							   const resp::Value::Array &args) const;
+	resp::Value execute_command(Database &db, const std::string &command,
+								const resp::Value::Array &args) const;
 
 private:
-	std::vector<CommandInfo> command_map;
+	std::vector<CommandInfo> command_map_;
 	CLASS_LOGGER(CommandHandler);
 };
 } // namespace redis

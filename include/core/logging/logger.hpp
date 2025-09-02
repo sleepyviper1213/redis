@@ -1,5 +1,5 @@
 #pragma once
-#include "core/utils/meyers_singletone.hpp"
+#include "core/utils/meyers_singleton.hpp"
 
 #include <spdlog/common.h>
 #include <spdlog/logger.h>

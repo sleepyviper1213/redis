@@ -3,6 +3,7 @@
 #include "core/utils/toupper.hpp"
 #include "server/commands/crud.hpp"
 #include "server/commands/exists.hpp"
+#include "server/commands/list.hpp"
 #include "server/commands/ping.hpp"
 #include "server/commands/ttl.hpp"
 
@@ -12,18 +13,19 @@ namespace redis {
 using namespace resp;
 
 CommandHandler::CommandHandler()
-	: command_map{{"SET", handle_set, 3},
-				  {"GET", handle_get, 2},
-				  {"PING", handle_ping, 1},
-				  {"DEL", handle_del, 2},
-				  {"EXISTS", handle_exists, 2},
-				  {"TTL", handle_ttl, 2},
-				  {"PTTL", handle_pttl, 2}} {}
+	: command_map_{{"SET", handle_set, 3},
+				   {"GET", handle_get, 2},
+				   {"PING", handle_ping, 1},
+				   {"DEL", handle_del, 2},
+				   {"EXISTS", handle_exists, 2},
+				   {"TTL", handle_ttl, 2},
+				   {"PTTL", handle_pttl, 2},
+				   {"RPUSH", handle_list, 2}} {}
 
-void CommandHandler::registerCommand(std::string_view name,
-									 CommandInfo::handle_func handler,
-									 int arity) {
-	command_map.emplace_back(name, handler, arity);
+void CommandHandler::register_command(std::string_view name,
+									  CommandInfo::handle_func handler,
+									  int arity) {
+	command_map_.emplace_back(name, handler, arity);
 }
 
 std::string CommandHandler::handle_query(Database &db,
@@ -36,16 +38,16 @@ std::string CommandHandler::handle_query(Database &db,
 	logger_->trace("Query: {:?}", *cmd);
 	auto args                      = cmd->as_array();
 	const std::string command_name = toupper(args[0].as_string());
-	const Value response           = executeCommand(db, command_name, args);
+	const Value response           = execute_command(db, command_name, args);
 	const std::string resp         = fmt::format("{:e}", response);
 	logger_->trace("Response: {:?}", response);
 	return resp;
 }
 
-Value CommandHandler::executeCommand(Database &db, const std::string &command,
-									 const Value::Array &args) const {
-	auto x = std::ranges::find(command_map, command, &CommandInfo::name);
-	if (x == command_map.end())
+Value CommandHandler::execute_command(Database &db, const std::string &command,
+									  const Value::Array &args) const {
+	auto x = std::ranges::find(command_map_, command, &CommandInfo::name);
+	if (x == command_map_.end())
 		return Value::from_simple_error(
 			fmt::format("ERR unknown command '{}'", command));
 	if (args.size() < x->arity)

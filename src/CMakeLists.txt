@@ -35,9 +35,6 @@ add_executable(
 	server/setup_cli_options.cpp)
 
 target_compile_definitions(redis_server PUBLIC BOOST_ASIO_NO_DEPRECATED)
-target_include_directories(
-	redis_server PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-	$<INSTALL_INTERFACE:${CMAKE_INCLUDE_DIR}>)
 
 target_link_libraries(redis_server PRIVATE redis::core CLI11::CLI11)
 if (boost_asio_FOUND)

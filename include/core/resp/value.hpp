@@ -27,24 +27,24 @@ public:
 	enum class [[nodiscard]] Type {
 		// RESP2
 		/** Simple string reply, e.g. +OK\r\n */
-		SimpleString,
+		SIMPLE_STRING,
 		/** Simple error reply, e.g. -ERR message\r\n */
-		SimpleError,
+		SIMPLE_ERROR,
 		/** Integer reply, e.g. :1000\r\n */
-		Integer,
+		INTEGEER,
 		/** Bulk string reply, e.g. $3\r\nfoo\r\n */
-		BulkString,
+		BULK_STRING,
 		// RESP3
 		/** Array reply, e.g. *2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n */
-		Array,
+		ARRAY,
 		/** Null reply, e.g. $-1\r\n or *-1\r\n depending on context */
-		Null,
+		NULLABLE,
 		/** Boolean reply (RESP3), e.g. #t\r\n or #f\r\n */
-		Boolean,
+		BOOLEAN,
 		/** Double reply (RESP3), e.g. ,3.1415\r\n */
-		Double,
+		DOUBLE,
 		/** Bulk error reply (RESP3), e.g. !<len>\r\n<msg>\r\n */
-		BulkError,
+		BULK_ERROR,
 	};
 
 	/**
@@ -185,7 +185,8 @@ private:
 template <>
 struct fmt::formatter<redis::resp::Value> {
 	/// Selected presentation specifier ('?' or 'e');
-	char presentation = 0;
+	char presentation =
+		0; // NOLINT misc-non-private-member-variables-in-classes
 
 	/**
 	 * \brief Parse format specifier.

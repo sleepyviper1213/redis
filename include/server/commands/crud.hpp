@@ -1,7 +1,7 @@
 #pragma once
+#include "core/error/error_enum_formatter.hpp"
 #include "core/resp/value.hpp"
 #include "core/utils/deadline_timer.hpp"
-#include "core/utils/error_enum_formatter.hpp"
 
 #include <cstdlib>
 
@@ -47,7 +47,7 @@ bool has_single_flag(SetFlag value, SetFlag mask);
 bool has_single_key_exist_flag(SetFlag value);
 bool has_single_expiration_flag(SetFlag value);
 std::expected<std::pair<SetFlag, DeadlineTimer>, ParseSetError>
-parseSetOptions(const resp::Value::Array &argv);
+parse_set_options(const resp::Value::Array &argv);
 
 resp::Value handle_set(Database &db, const resp::Value::Array &argv);
 

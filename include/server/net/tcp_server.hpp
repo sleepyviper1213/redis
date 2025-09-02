@@ -39,7 +39,7 @@ public:
 	/**
 	 * \brief Write in-memory cache to disk
 	 */
-	void saveDB();
+	void save_db();
 
 
 private:

@@ -7,16 +7,12 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
-#include <spdlog/logger.h>
 
 #include <chrono>
-#include <ctime>
-#include <memory>
 #include <string_view>
 
-using net::ip::tcp;
-
 namespace redis {
+
 std::string_view buffers_to_string(net::const_buffer buf) {
 	return {static_cast<const char *>(buf.data()), buf.size()};
 }
@@ -24,8 +20,8 @@ std::string_view buffers_to_string(net::const_buffer buf) {
 Session::Session(tcp::socket socket, Database &database,
 				 const CommandHandler &handler)
 	: socket_(std::move(socket)),
-	  connect_time(std::chrono::system_clock::now()),
-	  last_active(connect_time),
+	  connect_time_(std::chrono::system_clock::now()),
+	  last_active_(connect_time_),
 	  database_(database),
 	  handler_(handler) {
 	logger_->debug("Accepted from {}", socket_.remote_endpoint());

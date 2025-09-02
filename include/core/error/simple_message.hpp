@@ -56,14 +56,14 @@ public:
 	 * @brief Gets the context message.
 	 * @return The stored error message as a `std::string_view`.
 	 */
-	[[nodiscard]] std::string_view contextMessage() const;
+	[[nodiscard]] std::string_view context_message() const;
 
 	/**
 	 * @brief Checks whether the error message contains a given substring.
 	 * @param msg The substring to check for.
 	 * @return True if `msg` is a substring of the error message.
 	 */
-	[[nodiscard]] bool containsErrorMessage(std::string_view msg) const;
+	[[nodiscard]] bool contains_error_message(std::string_view msg) const;
 
 private:
 	std::string_view

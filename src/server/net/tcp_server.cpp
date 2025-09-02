@@ -35,7 +35,7 @@ net::awaitable<void> TcpServer::start() noexcept {
 	}
 }
 
-void TcpServer::saveDB() {
+void TcpServer::save_db() {
 	logger_->info("Saving the final RDB snapshot before exiting");
 
 	for (auto &db : database_) db.save();
@@ -43,7 +43,7 @@ void TcpServer::saveDB() {
 
 void TcpServer::stop() noexcept {
 	logger_->info("Stopping server gracefully...");
-	saveDB();
+	save_db();
 	acceptor_.close();
 	logger_->info("Redis is now ready to exit");
 	// thread_pool_.stop();

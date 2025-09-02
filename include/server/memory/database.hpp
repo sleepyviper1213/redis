@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/error/error_enum_formatter.hpp"
 #include "core/logging.hpp"
 #include "core/utils/deadline_timer.hpp"
-#include "core/utils/error_enum_formatter.hpp"
 
 #include <expected>
 #include <string>
@@ -18,7 +18,7 @@ public:
 	using dict_type   = std::unordered_map<key_type, value_type>;
 	using key_pointer = dict_type::iterator;
 
-	Database(int id);
+	explicit Database(int id);
 
 	bool contains_key(const key_type &key);
 
@@ -77,7 +77,7 @@ private:
 	dict_type dict_;
 	std::unordered_map<key_type, DeadlineTimer> expires_;
 	int id_;
-	int64_t avg_ttl = 0;
+	int64_t avg_ttl_ = 0;
 
 
 	CLASS_LOGGER(Database);

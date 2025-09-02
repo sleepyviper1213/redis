@@ -1,11 +1,12 @@
 #include "core/logging.hpp"
 #include "server.hpp"
 
-#include <spdlog/spdlog.h>
+#include <spdlog/common.h>
+
+#include <string_view>
 
 int main(int argc, char **argv) {
-	const auto app = redis::setup_cli_options_from(argc, argv);
-
+	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
 	auto log_level = spdlog::level::from_str(
 		app->get_option("--log-level")->as<std::string>());

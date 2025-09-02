@@ -10,17 +10,17 @@
 
 namespace redis::resp {
 Value Value::from_simple_string(std::string s) {
-	return {Type::SimpleString, std::move(s)};
+	return {Type::SIMPLE_STRING, std::move(s)};
 }
 
 Value Value::from_simple_error(std::string s) {
-	return {Type::SimpleError, std::move(s)};
+	return {Type::SIMPLE_ERROR, std::move(s)};
 }
 
-Value Value::from_integer(int64_t value) { return {Type::Integer, value}; }
+Value Value::from_integer(int64_t value) { return {Type::INTEGEER, value}; }
 
 Value Value::from_bulk_string(std::string s) {
-	return {Type::BulkString, std::move(s)};
+	return {Type::BULK_STRING, std::move(s)};
 }
 
 int64_t Value::as_integer() const {
@@ -39,17 +39,17 @@ const Value::Array &Value::as_array() const {
 }
 
 const std::string &Value::as_string() const {
-	assert(type_ == Type::SimpleString || type_ == Type::BulkString ||
-		   type_ == Type::SimpleError);
+	assert(type_ == Type::SIMPLE_STRING || type_ == Type::BULK_STRING ||
+		   type_ == Type::SIMPLE_ERROR);
 
 	assert(is_string());
 	return std::get<std::string>(data_);
 }
 
-bool Value::is_null() const { return type_ == Type::Null; }
+bool Value::is_null() const { return type_ == Type::NULLABLE; }
 
 bool Value::is_error() const {
-	return type_ == Type::SimpleError && is_string();
+	return type_ == Type::SIMPLE_ERROR && is_string();
 }
 
 bool Value::is_string() const {
@@ -57,42 +57,42 @@ bool Value::is_string() const {
 }
 
 bool Value::is_bulk_string() const {
-	return type_ == Type::BulkString && is_string();
+	return type_ == Type::BULK_STRING && is_string();
 }
 
 bool Value::is_simple_string() const {
-	return type_ == Type::SimpleString && is_string();
+	return type_ == Type::SIMPLE_STRING && is_string();
 }
 
 bool Value::is_array() const {
-	return type_ == Type::Array && std::holds_alternative<Array>(data_);
+	return type_ == Type::ARRAY && std::holds_alternative<Array>(data_);
 }
 
 Value::Value(Type type) : type_(type) {}
 
-Value Value::from_null() { return {Type::Null}; }
+Value Value::from_null() { return {Type::NULLABLE}; }
 
-Value Value::from_double(double d) { return {Type::Double, d}; }
+Value Value::from_double(double d) { return {Type::DOUBLE, d}; }
 
 Value Value::from_raw_array(std::span<const std::string> list) {
 	Array arr;
 	arr.reserve(list.size());
 	for (const auto &s : list) arr.emplace_back(Value::from_bulk_string(s));
-	return {Type::Array, std::move(arr)};
+	return {Type::ARRAY, std::move(arr)};
 }
 
 Value::Type Value::type() const { return type_; }
 
-Value Value::from_array(Array list) { return {Type::Array, std::move(list)}; }
+Value Value::from_array(Array list) { return {Type::ARRAY, std::move(list)}; }
 
 double Value::as_double() const { return std::get<double>(data_); }
 
 bool Value::is_integer() const {
-	return type_ == Type::Integer && std::holds_alternative<int64_t>(data_);
+	return type_ == Type::INTEGEER && std::holds_alternative<int64_t>(data_);
 }
 
 bool Value::is_double() const {
-	return type_ == Type::Double && std::holds_alternative<double>(data_);
+	return type_ == Type::DOUBLE && std::holds_alternative<double>(data_);
 }
 } // namespace redis::resp
 
@@ -107,27 +107,27 @@ auto fmt::formatter<Value>::format(const Value &value,
 	switch (presentation) {
 	case '?':
 		switch (value.type()) {
-		case SimpleString:
+		case SIMPLE_STRING:
 			it = fmt::format_to(it, "{}", value.as_string());
 			break;
-		case SimpleError:
+		case SIMPLE_ERROR:
 			it = fmt::format_to(it, "(error) {}", value.as_string());
 			break;
-		case Integer:
+		case INTEGEER:
 			it = fmt::format_to(it, "(integer) {}", value.as_integer());
 			break;
-		case BulkString: {
+		case BULK_STRING: {
 			it = fmt::format_to(it, "{:?}", value.as_string());
 			break;
 		}
-		case Array: {
+		case ARRAY: {
 			const auto &arr = value.as_array();
 			if (arr.empty()) it = fmt::format_to(it, "(empty array)");
 			else it = fmt::format_to(it, "(array) {:?}", fmt::join(arr, " "));
 			break;
 		}
-		case Null: it = fmt::format_to(it, "(null)"); break;
-		case Double:
+		case NULLABLE: it = fmt::format_to(it, "(null)"); break;
+		case DOUBLE:
 			it = fmt::format_to(it, "(double) {}", value.as_double());
 			break;
 		default: std::unreachable();
@@ -136,21 +136,21 @@ auto fmt::formatter<Value>::format(const Value &value,
 	case 'e':
 	case 0:
 		switch (value.type()) {
-		case SimpleString:
+		case SIMPLE_STRING:
 			it = fmt::format_to(it, "+{}\r\n", value.as_string());
 			break;
-		case SimpleError:
+		case SIMPLE_ERROR:
 			it = fmt::format_to(it, "-{}\r\n", value.as_string());
 			break;
-		case Integer:
+		case INTEGEER:
 			it = fmt::format_to(it, ":{}\r\n", value.as_integer());
 			break;
-		case BulkString: {
+		case BULK_STRING: {
 			const auto &str = value.as_string();
 			it = fmt::format_to(it, "${}\r\n{}\r\n", str.size(), str);
 			break;
 		}
-		case Array: {
+		case ARRAY: {
 			const auto &arr = value.as_array();
 			it              = fmt::format_to(it,
                                 "*{}\r\n{:e}",
@@ -158,8 +158,8 @@ auto fmt::formatter<Value>::format(const Value &value,
                                 fmt::join(arr, ""));
 			break;
 		}
-		case Null: it = format_to(it, "_\r\n"); break;
-		case Double:
+		case NULLABLE: it = format_to(it, "_\r\n"); break;
+		case DOUBLE:
 			it = fmt::format_to(it, ",{}\r\n", value.as_double());
 			break;
 		default: std::unreachable();

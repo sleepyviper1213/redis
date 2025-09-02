@@ -1,8 +1,6 @@
 #include "server/setup_cli_options.hpp"
 
-#include <CLI/CLI.hpp>
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 
 namespace redis {
 struct MyFormatter : public CLI::Formatter {
@@ -37,7 +35,7 @@ struct MyFormatter : public CLI::Formatter {
 	}
 };
 
-CLI::App_p setup_cli_options_from(int argc, char **argv) {
+CLI::App_p setup_cli_options() {
 	auto app = std::make_shared<CLI::App>("Redis-like TcpServer");
 	app->formatter(std::make_shared<MyFormatter>());
 	// Version + config

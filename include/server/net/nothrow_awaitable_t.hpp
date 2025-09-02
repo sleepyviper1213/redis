@@ -1,8 +1,10 @@
 #pragma once
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/as_tuple.hpp>
 #include <boost/asio/default_completion_token.hpp>
 #include <boost/asio/use_awaitable.hpp>
-namespace net = boost::asio;
+
+namespace redis {
 
 /**
  * Actually, the error handling style returing a tuple of (ActualValue, Err) is
@@ -13,9 +15,11 @@ namespace net = boost::asio;
  * Otherwise, check out C++26's P0963 Structured binding declaration as a
  * condition
  */
-using nothrow_awaitable_t = net::as_tuple_t<net::use_awaitable_t<>>;
+using nothrow_awaitable_t =
+	boost::asio::as_tuple_t<boost::asio::use_awaitable_t<>>;
+} // namespace redis
 
 template <>
-struct net::default_completion_token<net::any_io_executor> {
-	using type = nothrow_awaitable_t;
+struct boost::asio::default_completion_token<boost::asio::any_io_executor> {
+	using type = redis::nothrow_awaitable_t;
 };
