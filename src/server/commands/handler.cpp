@@ -1,18 +1,15 @@
-#include "../../../include/server/commands/handler.hpp"
+#include "server/commands/handler.hpp"
 
-#include "../../../include/core/utils/toupper.hpp"
-#include "../../../include/server/commands/crud.hpp"
-#include "../../../include/server/commands/exists.hpp"
-#include "../../../include/server/commands/ping.hpp"
-#include "../../../include/server/commands/ttl.hpp"
-
-#include <spdlog/logger.h>
+#include "core/utils/toupper.hpp"
+#include "server/commands/crud.hpp"
+#include "server/commands/exists.hpp"
+#include "server/commands/ping.hpp"
+#include "server/commands/ttl.hpp"
 
 #include <algorithm>
 
 namespace redis {
-using resp::Parser;
-using resp::Value;
+using namespace resp;
 
 CommandHandler::CommandHandler()
 	: command_map{{"SET", handle_set, 3},

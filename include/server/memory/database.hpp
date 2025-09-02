@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/logging.hpp"
 #include "core/utils/deadline_timer.hpp"
 #include "core/utils/error_enum_formatter.hpp"
-#include "core/utils/get_class_logger.hpp"
 
 #include <expected>
 #include <string>
@@ -10,9 +10,6 @@
 #include <unordered_map>
 
 namespace redis {
-
-enum class SimpleKVError { InvalidKey, InvalidValue };
-
 class Database {
 public:
 	using key_type   = std::string;
@@ -29,8 +26,7 @@ public:
 	void save() const;
 
 
-	std::expected<void, SimpleKVError> set_value(const key_type &key,
-												 const value_type &value);
+	void set_value(const key_type &key, const value_type &value);
 	[[nodiscard]] value_type &get_value_by_key(const key_type &key);
 	[[nodiscard]] const value_type &get_value_by_key(const key_type &key) const;
 
@@ -92,4 +88,3 @@ private:
 std::string_view as_error_string(redis::Database::ExpireError c);
 
 ENUM_DISPLAY_DEBUG_FORMATTER(redis::Database::ExpireError);
-ENUM_DEBUG_FORMATTER(redis::SimpleKVError);

@@ -1,3 +1,4 @@
+#pragma once
 #include "core/resp/value.hpp"
 
 namespace redis {

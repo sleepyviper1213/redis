@@ -4,7 +4,6 @@
 
 #include <fmt/chrono.h>
 #include <fmt/format.h>
-#include <spdlog/logger.h>
 
 namespace redis {
 
@@ -48,14 +47,11 @@ size_t Database::erase_key(const key_type &key) {
 	return dict_.erase(key);
 }
 
-std::expected<void, SimpleKVError>
-Database::set_value(const key_type &key, const value_type &value) {
-	if (key.empty()) FAILED(SimpleKVError::InvalidKey);
-	if (value.empty()) FAILED(SimpleKVError::InvalidValue);
+void Database::set_value(const key_type &key, const value_type &value) {
+
 	const auto [_, y] = dict_.insert_or_assign(key, value);
 	if (y) logger_->trace("Insert key");
 	else logger_->trace("Update key");
-	return {};
 }
 
 void Database::set_expire(const key_type &key, const DeadlineTimer &deadline) {
@@ -89,14 +85,3 @@ std::string_view as_error_string(redis::Database::ExpireError c) {
 	return name;
 }
 
-std::string_view as_error_string(redis::SimpleKVError c) {
-	using enum redis::SimpleKVError;
-	std::string_view name;
-	switch (c) {
-	case InvalidKey:
-		name = "invalid key requested: empty string not allowed for key";
-	case InvalidValue:
-		name = "invalid value: empty string not allowed for value";
-	}
-	return name;
-}

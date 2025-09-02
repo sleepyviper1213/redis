@@ -1,4 +1,4 @@
-#include "../../include/server/setup_cli_options.hpp"
+#include "server/setup_cli_options.hpp"
 
 #include <CLI/CLI.hpp>
 #include <fmt/format.h>
@@ -67,13 +67,12 @@ CLI::App_p setup_cli_options_from(int argc, char **argv) {
 		->envname("REDIS_USE_SSL")
 		->group("Network");
 
-	app->add_option("--logfile", "Log file path")
+	app->add_option("--log-file", "Log file path")
 		->envname("REDIS_LOGFILE")
 		->group("Logging")
-		->default_val(6379)
-		->check(CLI::ExistingFile)
+		->default_val("redis_server.log")
 		->option_text("<file>");
-	app->add_option("--loglevel", "Log level")
+	app->add_option("--log-level", "Log level")
 		->envname("REDIS_LOGLEVEL")
 		->group("Logging")
 		->default_val("info");

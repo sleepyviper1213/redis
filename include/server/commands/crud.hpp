@@ -54,7 +54,9 @@ resp::Value handle_set(Database &db, const resp::Value::Array &argv);
 resp::Value handle_del(Database &db, const resp::Value::Array &v);
 
 resp::Value handle_get(redis::Database &db, const resp::Value::Array &args);
-} // namespace redis
+resp::Value handle_exists(Database &db, const resp::Value::Array &v);
 
 std::string_view as_error_string(redis::ParseSetError c);
+} // namespace redis
+
 ENUM_DISPLAY_DEBUG_FORMATTER(redis::ParseSetError);

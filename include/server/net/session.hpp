@@ -1,5 +1,5 @@
 #pragma once
-#include "core/utils/get_class_logger.hpp"
+#include "core/logging.hpp"
 #include "core/utils/time.hpp"
 #include "nothrow_awaitable_t.hpp"
 #include "server/commands/handler.hpp"
@@ -61,7 +61,6 @@ private:
 	timestamp_t connect_time;
 	timestamp_t last_active;
 
-	timespan_t idle_timeout = std::chrono::seconds(10);
 	Database &database_;
 	const CommandHandler &handler_;
 

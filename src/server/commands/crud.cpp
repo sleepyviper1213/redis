@@ -1,7 +1,7 @@
 #include "server/commands/crud.hpp"
 
 #include "core/error.hpp"
-#include "core/utils/get_class_logger.hpp"
+#include "core/logging.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/memory/database.hpp"
 
@@ -88,7 +88,7 @@ parseSetOptions(const Value::Array &argv) {
 }
 
 resp::Value handle_set(Database &db, const resp::Value::Array &argv) {
-	const auto logger_       = make_logger("CommandHandler");
+	const auto logger_       = Logger::get_instance().get("CommandHandler");
 	const std::string &key   = argv[1].as_string();
 	const std::string &value = argv[2].as_string();
 
@@ -102,7 +102,7 @@ resp::Value handle_set(Database &db, const resp::Value::Array &argv) {
 		return Value::from_null();
 	}
 
-	TRY_VALUE(db.set_value(key, value));
+	db.set_value(key, value);
 
 	if (has_single_expiration_flag(set_flag)) db.set_expire(key, deadline);
 	return Value::from_simple_string("OK");
@@ -128,7 +128,18 @@ Value handle_del(Database &db, const Value::Array &args) {
 	}
 	return Value::from_integer(count);
 }
-} // namespace redis
+
+Value handle_exists(Database &db, const Value::Array &args) {
+	if (args.size() < 2)
+		return Value::from_simple_error("wrong number of arguments for EXISTS");
+
+	int64_t count = 0;
+	for (size_t i = 1; i < args.size(); ++i) {
+		const auto &key = args[i].as_string();
+		if (db.contains_key(key)) ++count;
+	}
+	return Value::from_integer(count);
+}
 
 std::string_view as_error_string(redis::ParseSetError c) {
 	std::string_view name;
@@ -145,3 +156,4 @@ std::string_view as_error_string(redis::ParseSetError c) {
 	}
 	return name;
 }
+} // namespace redis

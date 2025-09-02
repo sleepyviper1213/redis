@@ -11,18 +11,14 @@
 namespace redis {
 namespace resp {
 std::expected<Value, Parser::RespError> Parser::parse(std::string_view data) {
-	size_t pos             = 0;
-	size_t recursive_depth = 0;
-	return Parser::parse_recursive(data, recursive_depth, pos);
+	size_t pos = 0;
+	return Parser::parse_recursive(data, pos);
 }
 
 std::expected<Value, Parser::RespError>
-Parser::parse_recursive(std::string_view data, size_t &recursive_depth,
-						size_t &pos) {
+Parser::parse_recursive(std::string_view data, size_t &pos) {
 	using enum RespError;
 	if (pos >= data.size()) FAILED(UNEXPECTED_EOF);
-	if (recursive_depth == DEPTH_LIMIT) FAILED(RECURSIVE_DEPTH_EXCEEDED);
-	recursive_depth++;
 
 	// Read a line
 	const auto line_end = data.find("\r\n", pos);
@@ -66,10 +62,9 @@ Parser::parse_recursive(std::string_view data, size_t &recursive_depth,
 		arr.reserve(len);
 
 		for (int i = 0; i < len; ++i) {
-			auto v = TRY(parse_recursive(data, recursive_depth, pos));
+			auto v = TRY(parse_recursive(data, pos));
 			arr.push_back(std::move(v));
 		}
-		recursive_depth--;
 
 		return Value::from_array(std::move(arr));
 	}
