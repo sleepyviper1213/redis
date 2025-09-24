@@ -51,9 +51,6 @@ CMakeLists.txt.user
 # binary executable folders
 bin
 
-# CTest temporaries
-Testing
-
 # CLion cache
 .idea
 

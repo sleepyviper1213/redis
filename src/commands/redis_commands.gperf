@@ -1,0 +1,117 @@
+%language=C++
+%define class-name gperf
+%7bit
+%compare-strncmp
+%readonly-tables
+%enum
+%struct-type
+%{
+#include "resp/value.hpp"
+#include "memory/database.hpp"
+
+#include <string_view>
+#include "commands/crud.hpp"
+#include "commands/exists.hpp"
+#include "commands/list.hpp"
+#include "commands/ping.hpp"
+#include "commands/ttl.hpp"
+
+#include <cstddef>
+#include <cstring>
+#include <string_view>
+
+namespace redis {
+%}
+struct CommandInfo {
+	using handle_func = resp::Value (*)(Database &, const resp::Value::Array &);
+
+	const char* name;
+	handle_func func; // Function to execute
+	int arity;        // Required arity (negative = min args)
+};
+
+%%
+GET, handle_get, 2
+SET, handle_set, 3
+DEL, handle_del, 2
+EXISTS, handle_exists, 2
+INCR, 0
+DECR, 0
+EXPIRE, 0
+TTL, handle_ttl, 2
+KEYS, 0
+SCAN, 0
+HSET, 0
+HGET, 0
+HDEL, 0
+HLEN, 0
+HKEYS, 0
+HVALS, 0
+HGETALL, 0
+SADD, 0
+SREM, 0
+SMEMBERS, 0
+SCARD, 0
+SISMEMBER, 0
+SRANDMEMBER, 0
+SPOP, 0
+LPUSH, 0
+RPUSH, handle_list, 3
+LPOP, 0
+RPOP, 0
+LLEN, 0
+LRANGE, 0
+LTRIM, 0
+LSET, 0
+LINDEX, 0
+BLPOP, 0
+BRPOP, 0
+ZADD, 0
+ZREM, 0
+ZSCORE, 0
+ZINCRBY, 0
+ZCARD, 0
+ZRANGE, 0
+ZREVRANGE, 0
+ZREMRANGEBYSCORE, 0
+PUBLISH, 0
+SUBSCRIBE, 0
+UNSUBSCRIBE, 0
+PSUBSCRIBE, 0
+PUNSUBSCRIBE, 0
+FLUSHDB, 0
+FLUSHALL, 0
+SAVE, 0
+BGSAVE, 0
+INFO, 0
+CLIENT, 0
+QUIT, 0
+AUTH, 0
+SELECT, 0
+EVAL, 0
+EVALSHA, 0
+SCRIPT, 0
+LOAD, 0
+FLUSH, 0
+DUMP, 0
+RESTORE, 0
+PTTL, handle_pttl, 2
+PEXPIRE, 0
+INCRBY, 0
+DECRBY, 0
+APPEND, 0
+STRLEN, 0
+ECHO, 0
+PING, handle_ping, 1
+TIME, 0
+RANDOMKEY, 0
+MOVE, 0
+RENAME, 0
+RENAMENX, 0
+SORT, 0
+%%
+
+constexpr bool is_redis_command(std::string_view cmd) noexcept {
+	return gperf::in_word_set(cmd.data(), cmd.size()) != nullptr;
+}
+} // namespace redis 

@@ -1,6 +1,6 @@
-#include "server/net/redis_server.hpp"
+#include "redis_server.hpp"
 
-#include "server/net/tcp_server.hpp"
+#include "tcp_server.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 

@@ -1,8 +1,8 @@
-#include "server/net/tcp_server.hpp"
+#include "tcp_server.hpp"
 
-#include "server/memory/database.hpp"
-#include "server/net/formatter.hpp"
-#include "server/net/session.hpp"
+#include "formatter.hpp"
+#include "memory/database.hpp"
+#include "session.hpp"
 
 #include <utility>
 

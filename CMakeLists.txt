@@ -33,11 +33,12 @@ find_package(CLI11 REQUIRED)
 find_package(boost_asio QUIET)
 find_package(magic_enum REQUIRED)
 find_package(FastFloat REQUIRED)
+find_package(absl REQUIRED)
 
 if(boost_asio_FOUND)
     message(STATUS "Using standalone Boost asio")
 else()
-    find_package(Boost CONFIG COMPONENTS system thread)
+	find_package(Boost CONFIG COMPONENTS thread REQUIRED)
     message(STATUS "Using classic Boost")
 endif()
 # --- Options / Macros ---
@@ -76,6 +77,8 @@ if(REDIS_INSTALL)
 endif()
 
 add_subdirectory(src)
+add_subdirectory(modules)
+add_subdirectory(benchmark)
 
 if(REDIS_MASTER_PROJECT)
     find_package(Hiredis REQUIRED)

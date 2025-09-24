@@ -110,7 +110,7 @@ IntegerLiteralSeparator:
   Binary: 4
   BinaryMinDigits: 7
   Decimal: 3
-  DecimalMinDigits: 8
+  DecimalMinDigits: 6
   Hex: 4
   HexMinDigits: 6
 KeepEmptyLinesAtTheStartOfBlocks: false
@@ -144,7 +144,7 @@ ReferenceAlignment: Pointer
 ReflowComments:  true
 RemoveBracesLLVM: true
 # RemoveParentheses: ReturnStatement
-RemoveSemicolon: true
+RemoveSemicolon: false
 RequiresClausePosition: OwnLine
 RequiresExpressionIndentation: OuterScope
 SeparateDefinitionBlocks: Always
@@ -189,6 +189,8 @@ Standard:        Latest
 StatementAttributeLikeMacros:
   - Q_EMIT
 StatementMacros:
+  - BENCHMARK
+  - BENCHMARK_ADVANCED
   - Q_UNUSED
   - QT_REQUIRE_VERSION
 TabWidth:        4
