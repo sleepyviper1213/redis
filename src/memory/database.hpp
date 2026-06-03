@@ -1,10 +1,10 @@
 #pragma once
 
-#include "resp/value.hpp"
-#include "utils/deadline_timer.hpp"
 #include "core.hpp"
 #include "hash_map.hpp"
 #include "resp.hpp"
+#include "resp/value.hpp"
+#include "utils/deadline_timer.hpp"
 
 #include <expected>
 #include <string>
@@ -33,7 +33,7 @@ public:
 
 	[[nodiscard]] int get_id() const;
 
-	template <std::ranges::input_range Range>
+	/*template <std::ranges::input_range Range>
 	ErrorRefOr<resp::Value> insert_or_append_range(const key_type &key,
 												   Range &&range) {
 		auto result =
@@ -44,7 +44,7 @@ public:
 			BAIL(RedisError::Kind::WRONG_TYPE);
 		}
 		return result;
-	}
+	}*/
 
 	/**
 	 * \brief Get TTL in milliseconds (like Redis PTTL command)
@@ -83,6 +83,7 @@ public:
 	 */
 	[[nodiscard]] std::expected<DeadlineTimer, ExpireError>
 	deadline_timer_of(const std::string &key);
+
 
 private:
 	HashMap<key_type, value_type> dict_;

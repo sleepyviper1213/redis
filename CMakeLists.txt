@@ -2,12 +2,8 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     Redis
-    LANGUAGES CXX
+	LANGUAGES C CXX
     VERSION 1.0)
-
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
-endif()
 
 if(NOT DEFINED REDIS_MASTER_PROJECT)
     set(REDIS_MASTER_PROJECT OFF)
@@ -28,12 +24,11 @@ endif()
 
 find_package(fmt 11 REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(cereal REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(boost_asio QUIET)
 find_package(magic_enum REQUIRED)
 find_package(FastFloat REQUIRED)
-find_package(absl REQUIRED)
+
 
 if(boost_asio_FOUND)
     message(STATUS "Using standalone Boost asio")
@@ -46,6 +41,7 @@ option(REDIS_DOC "Generate the doc target." ${REDIS_MASTER_PROJECT})
 option(REDIS_INSTALL "Generate the install target." ON)
 option(REDIS_TEST "Generate the test target." ${REDIS_MASTER_PROJECT})
 option(REDIS_SERVER_LOGS "Enable redis server logging in tests" ON)
+option(REDIS_ASAN_ENABLED "Enable compiling with address sanitizer" ON)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -76,6 +72,7 @@ if(REDIS_INSTALL)
             DESTINATION lib/cmake/redis)
 endif()
 
+add_subdirectory(third_party)
 add_subdirectory(src)
 add_subdirectory(modules)
 add_subdirectory(benchmark)

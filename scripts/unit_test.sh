@@ -9,6 +9,7 @@ BUILD_TYPE="${PRESET##*-}"        # after last '-'
 
 # Capitalize first letter of BUILD_TYPE for Ninja Multi-Config
 BUILD_TYPE="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
+cmake --build --preset $PRESET
 
 # Configurable paths and port
 ROOT_DIR="$(pwd)"

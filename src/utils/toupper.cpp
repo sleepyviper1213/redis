@@ -5,7 +5,7 @@
 
 namespace redis {
 
-std::string toupper(std::string s) {
+std::string ascii_toupper(std::string s) {
 	std::ranges::transform(s, s.begin(), [](unsigned char c) {
 		return std::toupper(c);
 	});

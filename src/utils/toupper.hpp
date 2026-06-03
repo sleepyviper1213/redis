@@ -3,5 +3,5 @@
 
 namespace redis {
 
-std::string toupper(std::string s);
+std::string ascii_toupper(std::string s);
 } // namespace redis

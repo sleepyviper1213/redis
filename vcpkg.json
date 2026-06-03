@@ -2,7 +2,7 @@
   "dependencies": [
     "boost-asio",
     "spdlog",
-    "cereal",
+    "unordered-dense",
     "catch2",
     "hiredis",
     "magic-enum",

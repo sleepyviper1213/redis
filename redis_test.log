@@ -1,0 +1,10 @@
+[2025-08-31 05:31:17] [main] [warning] No config file specified. Using default config
+[2025-08-31 05:31:17] [TcpServer] [info] Starting at 127.0.0.1:6379
+[2025-08-31 05:31:17] [TcpServer] [info] Accepting TCP connections
+[2025-08-31 05:31:17] [Session] [debug] Accepted from 127.0.0.1:63142
+[2025-08-31 05:31:17] [Session] [debug] Client disconnected normally
+[2025-08-31 05:33:03] [RedisServer] [info] Received Terminated: 15
+[2025-08-31 05:33:03] [RedisServer] [info] Saving the final RDB snapshot before exiting
+[2025-08-31 05:33:03] [Database] [trace] DB saved
+[2025-08-31 05:33:03] [Database] [trace] DB saved
+[2025-08-31 05:33:03] [RedisServer] [info] Redis is now ready to exit

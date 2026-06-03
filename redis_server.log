@@ -1,0 +1,7 @@
+[2025-10-14 22:16:16.930] [main] [warning] No config file specified. Using default config
+[2025-10-14 22:16:16.931] [RedisServer] [info] Server initialized
+[2025-10-14 22:16:16.931] [TcpServer] [info] Listening at 127.0.0.1:6379
+
+[2025-10-14 22:16:18.442] [RedisServer] [info] Received Interrupt: 2
+[2025-10-14 22:16:18.442] [TcpServer] [info] Stopping server gracefully...
+[2025-10-14 22:16:18.443] [RedisServer] [info] Redis is now ready to exit

@@ -1,39 +1,37 @@
 @startuml
 left to right direction
 
-actor client
-actor admin
+actor "Lập trình viên" as Developer
+actor "Người kiểm thử" as Tester
+actor "Người dùng" as Student
 
-rectangle "Redis-like Server" {
-  usecase "Connect via TCP" as UC5
-  usecase "Store Key-Value Data" as UC1
-  usecase "Retrieve Key-Value Data" as UC2
-  usecase "Snapshot Data to Disk" as UC6
-  usecase "Configure Server Settings" as UC7
-  usecase "Extend System Features" as UC9
+rectangle "Hệ thống lọc web đen" {
+
+    usecase "Quản lý dữ liệu key-value\n(SET/GET/DEL/EXISTS)" as UC1
+    usecase "Phân tích cú pháp RESP" as UC2
+    usecase "Gửi/nhận lệnh qua TCP" as UC3
+
+    usecase "Ghi log thao tác" as UC4
+    usecase "Lưu snapshot dữ liệu ra file" as UC5
+
+
+    usecase "CLI quản trị hệ thống" as UC6
+    usecase "Kiểm thử bằng Redis-CLI/Python client" as UC7
+
 }
 
-' Client interactions
-client --> UC1
-client --> UC2
-client --> UC5
-client --> UC6
+Developer --> UC1
+Developer --> UC3
+Developer --> UC5
+Developer --> UC6
 
-' Admin interactions
-admin --> UC7
-admin --> UC9
+Tester --> UC1
+Tester --> UC3
+Tester --> UC7
 
-' Extend relationships
-UC1 --> UC6 : <<extend>>
-
-' Notes
-note right of UC6
-  Optional background save based on threshold or interval
-end note
+Student --> UC2
+Student --> UC5
 
 
 
-note right of UC9
-  BR-009:\nFor future features like Pub/Sub
-end note
 @enduml

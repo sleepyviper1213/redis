@@ -172,7 +172,7 @@ public:
 				  std::is_constructible_v<T, U &&>)
 	{
 		// Note: This one is needed, as it is a common pattern to assign to an
-		// Optional to set or replace it's contents
+		// Optional to set or replace its contents
 		clear();
 		std::construct_at<std::remove_const_t<T>>(&m_storage,
 												  std::forward<U>(value));
@@ -403,15 +403,14 @@ public:
 	template <typename U>
 	constexpr Optional(Optional<U> &&other)
 		requires (CanBePlacedInOptional<U>)
-		: m_pointer(other.m_pointer) {
-		other.m_pointer = nullptr;
+	{
+		m_pointer = std::exchange(other.m_pointer, nullptr);
 	}
 
 	constexpr Optional &operator=(const Optional &other) = default;
 
 	constexpr Optional &operator=(Optional &&other) {
-		m_pointer       = other.m_pointer;
-		other.m_pointer = nullptr;
+		m_pointer = std::exchange(other.m_pointer, nullptr);
 		return *this;
 	}
 
@@ -427,8 +426,7 @@ public:
 	constexpr Optional &operator=(Optional<U> &&other)
 		requires (CanBePlacedInOptional<U>)
 	{
-		m_pointer       = other.m_pointer;
-		other.m_pointer = nullptr;
+		m_pointer = std::exchange(other.m_pointer, nullptr);
 		return *this;
 	}
 
@@ -554,7 +552,7 @@ public:
 	}
 
 private:
-	std::remove_reference_t<T> *m_pointer{nullptr};
+	std::remove_reference_t<T> *m_pointer = nullptr;
 };
 
 template <class T>

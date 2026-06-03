@@ -4,6 +4,7 @@
 #include "value.hpp"
 
 #include <string_view>
+#include <vector>
 
 namespace redis {
 
@@ -38,6 +39,56 @@ public:
 	 *  \return true if \p s begins with "\\r\\n"; false otherwise.
 	 */
 	[[nodiscard]] static bool is_crlf(std::string_view s);
+
+	struct ParseResult {
+		std::optional<std::vector<std::string>> cmd;
+		std::size_t consumed;
+	};
+
+	static ParseResult try_parse(std::string_view input) {
+		if (input.empty()) return {std::nullopt, 0};
+
+		if (input[0] != '*') {
+			// RESP array must start with '*'
+			return {std::nullopt, 0};
+		}
+
+		// find CRLF after "*N\r\n"
+		auto crlf = input.find("\r\n");
+		if (crlf == std::string_view::npos)
+			return {std::nullopt, 0}; // incomplete
+
+		int nargs       = std::stoi(std::string(input.substr(1, crlf - 1)));
+		std::size_t pos = crlf + 2;
+
+		std::vector<std::string> args;
+		args.reserve(nargs);
+
+		for (int i = 0; i < nargs; i++) {
+			if (pos >= input.size() || input[pos] != '$')
+				return {std::nullopt, 0}; // incomplete or invalid
+
+			auto crlf_len = input.find("\r\n", pos);
+			if (crlf_len == std::string_view::npos) return {std::nullopt, 0};
+
+			int len = std::stoi(
+				std::string(input.substr(pos + 1, crlf_len - pos - 1)));
+			pos = crlf_len + 2;
+
+			if (pos + len + 2 > input.size())
+				return {std::nullopt, 0}; // incomplete bulk string
+
+			args.emplace_back(input.substr(pos, len));
+			pos += len;
+
+			if (pos + 2 > input.size() || input[pos] != '\r' ||
+				input[pos + 1] != '\n')
+				return {std::nullopt, 0}; // incomplete
+			pos += 2;
+		}
+
+		return {std::move(args), pos};
+	}
 
 	/**
 	 * \brief Parse a signed 64-bit integer from a decimal ASCII

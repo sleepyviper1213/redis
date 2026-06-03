@@ -1,6 +1,6 @@
 #include "core.hpp"
-#include "setup_cli_options.hpp"
 #include "server.hpp"
+#include "setup_cli_options.hpp"
 
 #include <spdlog/common.h>
 

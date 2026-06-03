@@ -1,21 +1,19 @@
 @startuml
-title Client-Server Interaction - Redis-like Server
+title Sequence Diagram (BCE) - Kiểm thử bằng Redis-CLI/Python client
 
-actor Client
-participant "TCP Socket" as Socket
-participant "Command Handler\n(Dispatcher)" as Dispatcher
-participant "Database Store\n(Key-Value Map)" as DB
+actor Tester
 
-Client -> Socket : Connect (TCP Handshake)
-Client -> Socket : Send RESP Command("*2\\r\\n$3\\r\\nGET\\r\\n$3\\r\\nkey\\r\\n\")
-Socket -> Dispatcher : Parse and Construct Command
-Dispatcher -> DB : Execute Command\n(GET key)
-DB --> Dispatcher : Result ("value")
-Dispatcher -> Socket : Format and Send RESP Response\n($5\\r\\nvalue\\r\\n)
-Socket -> Client : Return Response
+boundary "Python Client/Redis-CLI" as Client
+boundary "TCP Listener" as TCP
+control "Command Parser" as Parser
+entity "In-Memory Store" as Store
 
-Client -> Socket : Disconnect / QUIT
-Socket -> Dispatcher : Cleanup Connection
-Socket --> Client : Close TCP Connection
-
+Tester -> Client : Chạy test script
+Client -> TCP : Gửi lệnh test
+TCP -> Parser : Truyền dữ liệu
+Parser -> Store : Xử lý lệnh
+Store --> Parser : Kết quả
+Parser --> TCP : Trả phản hồi
+TCP --> Client : Nhận kết quả
+Client --> Tester : Hiển thị log kiểm thử
 @enduml

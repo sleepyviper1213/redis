@@ -1,0 +1,22 @@
+{
+  "version": 6,
+  "include": [
+	"base.json"
+  ],
+  "configurePresets": [
+	{
+	  "name": "homebrew",
+	  "inherits": "base",
+	  "displayName": "Configure with toolchain installed by Homebrew",
+	  "generator": "Unix Makefiles"
+	}
+  ],
+  "buildPresets": [
+	{
+	  "name": "homebrew",
+	  "displayName": "Build Debug (Homebrew, Debug)",
+	  "configurePreset": "homebrew",
+	  "configuration": "Debug"
+	}
+  ]
+}

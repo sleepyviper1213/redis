@@ -15,7 +15,7 @@ std::string CommandHandler::handle_query(Database &db,
 
 	logger_->trace("Query: {:?}", *cmd);
 	auto args                      = cmd->as_array();
-	const std::string command_name = toupper(args[0].as_string());
+	const std::string command_name = ascii_toupper(args[0].as_string());
 	const Value response           = execute_command(db, command_name, args);
 	const std::string resp         = fmt::format("{:e}", response);
 	logger_->trace("Response: {:?}", response);

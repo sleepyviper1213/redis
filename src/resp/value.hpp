@@ -196,6 +196,11 @@ public:
 		return *this;
 	}
 
+	template <class Archive>
+	void serialize(Archive &ar) {
+		ar(data_);
+	}
+
 private:
 	/// Active type tag.
 	Type type_;

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 struct TestResult {
 	bool ok = false;
@@ -21,7 +22,7 @@ public:
 
 	[[nodiscard]] bool valid() const { return ctx_ && !ctx_->err; }
 
-	[[nodiscard]] const char *error() const {
+	[[nodiscard]] std::string_view error() const {
 		return ctx_ ? ctx_->errstr : "No context";
 	}
 
@@ -82,11 +83,11 @@ public:
 		if (!reply.valid())
 			return {.ok = false, .value = "", .error = "NULL reply"};
 
-		return formatReply(reply.get());
+		return format_reply(reply.get());
 	}
 
 private:
-	static TestResult formatReply(redisReply *reply) {
+	static TestResult format_reply(redisReply *reply) {
 		TestResult res;
 		switch (reply->type) {
 		case REDIS_REPLY_STRING:

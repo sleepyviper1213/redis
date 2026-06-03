@@ -1,0 +1,32 @@
+@startuml
+skinparam style strictuml
+skinparam sequence {
+  ArrowColor Black
+  LifeLineBorderColor Black
+  LifeLineBackgroundColor White
+  ParticipantBorderColor Black
+  ParticipantBackgroundColor White
+  FontSize 14
+  FontName Arial
+}
+
+actor User as U
+participant "Mô-đun lọc web" as Filter
+participant "Redis Database" as Redis
+participant "Website đích" as Site
+
+U -> Filter : Gửi yêu cầu truy cập (URL/IP)
+Filter -> Redis : Tra cứu URL/IP
+Redis --> Filter : Kết quả (Blacklist/Whitelist/Không có)
+alt Nếu trong Blacklist
+    Filter -> U : Trả về thông báo chặn
+else Nếu trong Whitelist
+    Filter -> Site : Chuyển tiếp yêu cầu
+    Site --> Filter : Phản hồi nội dung
+    Filter --> U : Trả kết quả website
+else Nếu không nằm trong danh sách
+    Filter -> Site : Chuyển tiếp yêu cầu (theo cấu hình mặc định)
+    Site --> Filter : Phản hồi nội dung
+    Filter --> U : Trả kết quả website
+end
+@enduml

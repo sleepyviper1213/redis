@@ -1,17 +1,23 @@
 #include "core/error.hpp"
 
-#include <absl/container/flat_hash_map.h>
-
 #include <expected>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 
 namespace redis {
+/*
+struct Hash {
+	auto operator()(const std::string &s) const noexcept {
+		return XXH3_64bits(s.data(), s.size());
+	}
+};
+*/
 template <typename K, typename V>
 	requires std::equality_comparable<K> && std::movable<V>
 class HashMap {
 public:
-	using Map         = absl::flat_hash_map<K, V>;
+	using Map         = std::unordered_map<K, V>;
 	using key_type    = typename Map::key_type;
 	using mapped_type = typename Map::mapped_type;
 	using value_type =
@@ -88,9 +94,14 @@ public:
 
 	[[nodiscard]] iterator begin() { return map_.begin(); }
 
+	[[nodiscard]] const_iterator begin() const { return map_.begin(); }
+
 	[[nodiscard]] iterator end() { return map_.end(); }
 
+	[[nodiscard]] const_iterator end() const { return map_.end(); }
+
 	[[nodiscard]] iterator find(const K &key) { return map_.find(key); }
+
 
 private:
 	Map map_;

@@ -1,0 +1,13 @@
+{
+  "version": 6,
+  "configurePresets": [
+	{
+	  "name": "base",
+	  "hidden": true,
+	  "generator": "Ninja Multi-Config",
+	  "binaryDir": "${sourceDir}/build/${presetName}",
+	  "toolchainFile": "cmake/toolchains/macos.cmake",
+	  "environment": {}
+	}
+  ]
+}

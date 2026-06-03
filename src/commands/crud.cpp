@@ -1,9 +1,9 @@
 #include "commands/crud.hpp"
 
-#include "resp/value.hpp"
-#include "utils/toupper.hpp"
 #include "core.hpp"
 #include "memory/database.hpp"
+#include "resp/value.hpp"
+#include "utils/toupper.hpp"
 
 #include <magic_enum/magic_enum_flags.hpp>
 
@@ -44,7 +44,7 @@ parse_set_options(const Value::Array &argv) {
 
 	// --- Parse options ---
 	for (size_t i = 3; i < argv.size(); i++) {
-		const std::string opt = toupper(argv[i].as_string());
+		const std::string opt = ascii_toupper(argv[i].as_string());
 
 		if (opt == "NX" && !has_single_key_exist_flag(set_flag)) {
 			set_flag |= NX;

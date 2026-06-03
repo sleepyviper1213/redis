@@ -1,40 +1,50 @@
 add_library(
-    redis_core SHARED
-    core/error/simple_message.cpp
-    core/logger.cpp
-    resp/parser.cpp
-    resp/value.cpp
-    utils/create_temp_file.cpp
-    utils/deadline_timer.cpp
-    utils/toupper.cpp
-    commands/command_type.cpp
-    commands/crud.cpp
-    commands/exists.cpp
-    commands/list.cpp
-    commands/handler.cpp
-    commands/ping.cpp
-    commands/ttl.cpp
-    memory/database.cpp
-    server/net/redis_server.cpp
-    server/net/session.cpp
-    server/net/tcp_server.cpp)
+	redis_core SHARED
+	core/error/simple_message.cpp
+	core/logger.cpp
+	resp/parser.cpp
+	resp/value.cpp
+	utils/create_temp_file.cpp
+	utils/deadline_timer.cpp
+	utils/toupper.cpp
+	commands/command_type.cpp
+	commands/crud.cpp
+	commands/exists.cpp
+	commands/list.cpp
+	commands/handler.cpp
+	commands/ping.cpp
+	commands/ttl.cpp
+	memory/database.cpp
+	server/net/redis_server.cpp
+	server/net/session.cpp
+	server/net/tcp_server.cpp)
 
 add_library(redis::core ALIAS redis_core)
 
-#target_compile_options(redis_core PUBLIC -fsanitize=address)
-#target_link_options(redis_core PUBLIC -fsanitize=address)
+target_compile_options(redis_core PUBLIC
+	$<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:AppleClang>>:
+	-Wall -Wextra -pedantic
+	>
+	$<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+if(REDIS_ASAN_ENABLED)
+	target_compile_options(redis_core PRIVATE -fsanitize=address -fno-omit-frame-pointer -O1)
+	target_link_options(redis_core PRIVATE -fsanitize=address)
+endif()
+
 target_link_libraries(
-    redis_core PUBLIC spdlog::spdlog magic_enum::magic_enum
-                      FastFloat::fast_float absl::flat_hash_map)
+	redis_core PUBLIC spdlog::spdlog magic_enum::magic_enum
+	FastFloat::fast_float)
 
 target_include_directories(
-    redis_core PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
-                      $<INSTALL_INTERFACE:${CMAKE_INCLUDE_DIR}>)
+	redis_core PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+	$<INSTALL_INTERFACE:${CMAKE_INCLUDE_DIR}>)
 
 if(boost_asio_FOUND)
-    target_link_libraries(redis_core PUBLIC Boost::asio)
+	target_link_libraries(redis_core PUBLIC Boost::asio)
 else()
-    target_link_libraries(redis_core PUBLIC Boost::thread)
+	target_link_libraries(redis_core PUBLIC Boost::thread)
 endif()
 
 add_executable(redis_server cli/main.cpp cli/setup_cli_options.cpp)

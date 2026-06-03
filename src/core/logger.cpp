@@ -1,6 +1,7 @@
 #include "logger.hpp"
 
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/null_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -17,7 +18,8 @@ void Logger::init(const std::string &file, spdlog::level::level_enum level) {
 		std::make_shared<spdlog::sinks::basic_file_sink_mt>(file, true);
 	file_sink->set_level(level);
 
-	sinks_     = {console_sink, file_sink};
+	sinks_.push_back(std::move(file_sink));
+	sinks_.push_back(std::move(console_sink));
 	log_level_ = level;
 }
 

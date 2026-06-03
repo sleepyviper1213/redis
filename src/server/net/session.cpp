@@ -1,7 +1,7 @@
 #include "session.hpp"
 
-#include "formatter.hpp"
 #include "commands/handler.hpp"
+#include "formatter.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>

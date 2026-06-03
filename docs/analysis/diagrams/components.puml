@@ -1,5 +1,5 @@
 @startuml
-title Redis System Architecture
+title Kiến trúc hệ thống Redis mô phỏng
 
 node "Redis Server" {
     [TCP Listener]
@@ -9,29 +9,31 @@ node "Redis Server" {
     [In-Memory Store]
 }
 
-[Client] --> [TCP Listener] : TCP (port 6379)
+[Client] --> [TCP Listener] : Kết nối TCP (cổng 6379)
 [TCP Listener] --> [Command Parser]
-[Command Parser] --> [In-Memory Store] : e.g., GET/SET
-[Command Parser] --> [Snapshot Manager] : e.g., SAVE
-[In-Memory Store] --> [Snapshot Manager] : snapshot trigger
-[Snapshot Manager] --> [File System] : File I/O
+[Command Parser] --> [In-Memory Store] : Ví dụ: GET/SET
+[Command Parser] --> [Snapshot Manager] : Ví dụ: SAVE
+[In-Memory Store] --> [Snapshot Manager] : Kích hoạt snapshot
+[Snapshot Manager] --> [File System] : Ghi/Đọc tệp
+
+' Trả kết quả về client
+[Command Parser] --> [TCP Listener] : Kết quả xử lý
+[TCP Listener] --> [Client] : Phản hồi
 
 ' Notes
 note right of [Client]
-Redis-CLI or Telnet
+Redis-CLI hoặc Telnet
 end note
 
 note right of [Command Parser]
-Parses RESP protocol
-Maps commands to handlers
+Phân tích giao thức RESP
+Ánh xạ lệnh sang trình xử lý
 end note
 
 note right of [In-Memory Store]
-Supports strings, lists
+Hỗ trợ kiểu dữ liệu: chuỗi, danh sách
 end note
 
-note right of [Snapshot Manager]
-Serializes in RESP format
-end note
+
 
 @enduml
