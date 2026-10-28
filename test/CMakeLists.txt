@@ -46,3 +46,19 @@ add_executable(redis_integration_test
 target_link_libraries(redis_integration_test PRIVATE Catch2::Catch2WithMain
                                                      Hiredis::Hiredis)
 copy_sanitizer_runtime(redis_integration_test)
+
+# Stress test: many clients checking every reply against a model, plus
+# fragmented and malformed input. Run via scripts/stress_server.sh, or directly
+# against a running server. Unlike redis-benchmark it verifies the replies, and
+# on a failure names the client, the request and the first wrong byte.
+add_executable(redis_stress_test stress/stress.cpp)
+target_link_libraries(redis_stress_test PRIVATE Hiredis::Hiredis CLI11::CLI11
+                                               Threads::Threads)
+if(boost_asio_FOUND)
+    target_link_libraries(redis_stress_test PRIVATE Boost::asio)
+else()
+    target_link_libraries(redis_stress_test PRIVATE Boost::thread Boost::system)
+endif()
+target_compile_definitions(redis_stress_test PRIVATE BOOST_ASIO_NO_DEPRECATED)
+set_warnings(redis_stress_test)
+copy_sanitizer_runtime(redis_stress_test)
