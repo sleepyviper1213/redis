@@ -74,3 +74,12 @@ vcpkg_installed
 docs/doxygen
 
 /test_logs/
+
+# Runtime logs written by the server and tests
+*.log
+
+# Editor settings
+.vscode/
+
+# Snapshot files written by SAVE, BGSAVE and shutdown
+*.snap
