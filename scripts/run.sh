@@ -1,16 +1,16 @@
-#!/bin/sh
+#!/usr/bin/env bash
+# Start the server from a preset's build tree.
+#
+#   scripts/run.sh [configure-preset] [configuration] [-- server args...]
+#   scripts/run.sh linux-gcc Release -- --port 6380 --log-level info
 set -euo pipefail
+cd "$(dirname "$0")/.."
+source scripts/common.sh
 
-PRESET="${1:-vcpkg-debug}"
+PRESET="${1:-linux-gcc}"
+CONFIG="${2:-Debug}"
+shift $(( $# < 2 ? $# : 2 ))
+[ "${1:-}" = "--" ] && shift
 
-# Split preset into name and build type
-PRESET_NAME="${PRESET%-*}"        # before last '-'
-BUILD_TYPE="${PRESET##*-}"        # after last '-'
-
-# Capitalize first letter of BUILD_TYPE for Ninja Multi-Config
-BUILD_TYPE="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
-
-# Capitalize first letter of build type (Debug, Release) in a portable way
-ROOT_DIR="$(pwd)"
-REDIS_SERVER="$ROOT_DIR/build/$PRESET_NAME/src/$BUILD_TYPE/redis_server"
-"$REDIS_SERVER" --log-level trace
+SERVER="$(locate_binary "$PRESET" "$CONFIG" redis_server)"
+exec "$SERVER" --log-level trace "$@"

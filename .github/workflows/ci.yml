@@ -1,0 +1,118 @@
+name: CI
+
+# The preset is the contract: every job runs a workflow preset by name, so a
+# red job reproduces locally with one command and no flag archaeology:
+#
+#     cmake --workflow --preset <preset>
+#
+# The project targets Linux and macOS (it forks for BGSAVE). Linux runs the
+# full matrix including sanitizers; macOS builds with Homebrew LLVM.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  # Content-addressed by package ABI hash, so jobs share prebuilt dependencies
+  # without ever overwriting each other's.
+  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+
+jobs:
+  test:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: linux-gcc-debug,   configure: linux-gcc,      config: Debug }
+          - { preset: linux-gcc-release, configure: linux-gcc,      config: Release }
+          - { preset: linux-clang-debug, configure: linux-clang,    config: Debug }
+          # The AddressSanitizer config folds UBSan in on GCC/Clang.
+          - { preset: linux-gcc-asan,    configure: linux-gcc-asan, config: AddressSanitizer }
+          - { preset: linux-gcc-tsan,    configure: linux-gcc-tsan, config: ThreadSanitizer }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
+      - name: Install toolchain
+        # The presets name plain gcc/g++; point them at GCC 14. Clang builds
+        # against the same libstdc++.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-14 clang
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
+      - name: Allow ThreadSanitizer's memory layout
+        # Ubuntu 24.04's default mmap ASLR entropy collides with TSan's shadow
+        # memory and every instrumented binary aborts at startup.
+        if: matrix.config == 'ThreadSanitizer'
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure, build and unit test
+        run: cmake --workflow --preset ${{ matrix.preset }}
+      - name: Integration test
+        run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }}
+
+  macos:
+    name: macos-arm64-llvm-debug
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+      - name: Install toolchain
+        # Homebrew LLVM, not AppleClang: see cmake/toolchains/homebrew-llvm.cmake.
+        run: brew install llvm ninja
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure, build and unit test
+        run: cmake --workflow --preset macos-arm64-llvm-debug
+      - name: Integration test
+        run: scripts/test_server.sh macos-arm64-llvm Debug
+
+  analysis:
+    name: Static analysis (clang-tidy, cppcheck)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-14 clang clang-tidy cppcheck
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      # Both analysers run as compiler launchers, so building is analysing.
+      # Clang rather than GCC: clang-tidy re-parses the compiler's own command
+      # line, which needs no reconciliation on a Clang tree.
+      - name: Configure and analyse
+        run: cmake --workflow --preset linux-clang-analysis

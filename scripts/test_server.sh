@@ -1,71 +1,41 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Run the integration suite against a freshly started server.
+#
+#   scripts/test_server.sh [configure-preset] [configuration] [port]
+#
+# Unit tests need no server and run through CTest instead:
+#   ctest --preset linux-gcc-debug
 set -euo pipefail
+cd "$(dirname "$0")/.."
+source scripts/common.sh
 
-PRESET="${1:-vcpkg-debug}"
+PRESET="${1:-linux-gcc}"
+CONFIG="${2:-Debug}"
+PORT="${3:-6380}"
 
-# Split preset into name and build type
-PRESET_NAME="${PRESET%-*}"        # before last '-'
-BUILD_TYPE="${PRESET##*-}"        # after last '-'
+SERVER="$(locate_binary "$PRESET" "$CONFIG" redis_server)"
+TESTS="$(locate_binary "$PRESET" "$CONFIG" redis_integration_test)"
+WORKDIR="$(mktemp -d)"
+LOG="$WORKDIR/redis_server.log"
 
-# Capitalize first letter of BUILD_TYPE for Ninja Multi-Config
-BUILD_TYPE="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
-
-# Configurable paths and port
-ROOT_DIR="$(pwd)"
-REDIS_TEST="$ROOT_DIR/build/$PRESET_NAME/tests/$BUILD_TYPE/redis_server_test"
-REDIS_SERVER="$ROOT_DIR/build/$PRESET_NAME/src/$BUILD_TYPE/redis_server"
-PORT="${2:-6380}"
-
-# Build the project
-cmake --build --preset $PRESET
-
-# Clean old logs
-rm -f server_test.log server_test.err
-
-# Check for stale server process on port
-STALE_PID=$(lsof -t -i:"$PORT" || true)
-if [ -n "$STALE_PID" ]; then
-    echo "Killing stale server process (PID: $STALE_PID)"
-    if ! kill "$STALE_PID" 2>/dev/null; then
-        echo "Warning: Failed to kill stale PID $STALE_PID"
-    fi
-    sleep 1 # Wait for port to be released
-fi
-
-# Start the server with redirected output
-"$REDIS_SERVER" --log-level trace --port "$PORT" &
+"$SERVER" --port "$PORT" --log-level info --log-file "$LOG" \
+    --dump "$WORKDIR/dump.snap" >/dev/null 2>&1 &
 SERVER_PID=$!
-echo "Server started with PID: $SERVER_PID"
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
-# Wait for server to start (poll port for up to 10 seconds)
-MAX_ATTEMPTS=100 # 10 seconds / 0.1 seconds per attempt
-ATTEMPT=0
-until nc -z 127.0.0.1 "$PORT" || [ $ATTEMPT -ge $MAX_ATTEMPTS ]; do
-    sleep 0.1
-    ATTEMPT=$((ATTEMPT + 1))
-    # Log partial errors for debugging
-    if [ $ATTEMPT -eq 50 ]; then
-        echo "Server not up after 5 seconds, partial errors:"
-        head -n 10 server_test.err
+# Wait up to 10s for the port to accept connections.
+for _ in $(seq 100); do
+    if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then break; fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "error: server exited during startup:" >&2
+        cat "$LOG" >&2
+        exit 1
     fi
+    sleep 0.1
 done
 
-if ! nc -z 127.0.0.1 "$PORT"; then
-    echo "Error: Server failed to start after 10 seconds. Check server_test.err:"
-    cat server_test.err
+echo "Running $TESTS against $SERVER on port $PORT"
+if ! "$TESTS" --order rand; then
+    echo "Integration tests failed. Server log: $LOG" >&2
     exit 1
 fi
-
-# Run Catch2 tests
-echo "Running tests: $REDIS_TEST"
-if "$REDIS_TEST"; then
-    echo "Tests passed. Stopping server (PID: $SERVER_PID)"
-    kill "$SERVER_PID" 2>/dev/null || true
-    exit 0
-else
-    TEST_EXIT_CODE=$?
-    echo "Tests failed with exit code $TEST_EXIT_CODE. Server (PID: $SERVER_PID) is still running for debugging."
-    echo "Check redis_server.log for server errors:"
-    exit $TEST_EXIT_CODE
-fi
-
