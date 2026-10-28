@@ -1,0 +1,256 @@
+{
+    "version": 6,
+    "include": [
+        "options.json",
+        "toolchains.json",
+        "testing.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "macos-arm64-llvm",
+            "displayName": "macOS arm64 Homebrew LLVM",
+            "description": "Debug, Release and RelWithDebInfo.",
+            "inherits": [
+                "dev-options",
+                "macos-llvm-toolchain"
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-coverage",
+            "displayName": "macOS arm64 Homebrew LLVM / coverage",
+            "inherits": [
+                "coverage-options",
+                "macos-llvm-toolchain"
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-analysis",
+            "displayName": "macOS arm64 Homebrew LLVM / analysis",
+            "inherits": [
+                "analysis-options",
+                "macos-llvm-toolchain"
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-asan",
+            "displayName": "macOS arm64 Homebrew LLVM / asan",
+            "inherits": [
+                "asan-options",
+                "macos-llvm-toolchain"
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-tsan",
+            "displayName": "macOS arm64 Homebrew LLVM / tsan",
+            "inherits": [
+                "tsan-options",
+                "macos-llvm-toolchain"
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-ubsan",
+            "displayName": "macOS arm64 Homebrew LLVM / ubsan",
+            "inherits": [
+                "ubsan-options",
+                "macos-llvm-toolchain"
+            ]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "macos-arm64-llvm-debug",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-arm64-llvm-release",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "Release"
+        },
+        {
+            "name": "macos-arm64-llvm-relwithdebinfo",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "macos-arm64-llvm-coverage",
+            "configurePreset": "macos-arm64-llvm-coverage",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-arm64-llvm-analysis",
+            "configurePreset": "macos-arm64-llvm-analysis",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-arm64-llvm-asan",
+            "configurePreset": "macos-arm64-llvm-asan",
+            "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "macos-arm64-llvm-tsan",
+            "configurePreset": "macos-arm64-llvm-tsan",
+            "configuration": "ThreadSanitizer"
+        },
+        {
+            "name": "macos-arm64-llvm-ubsan",
+            "configurePreset": "macos-arm64-llvm-ubsan",
+            "configuration": "UndefinedSanitizer"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "macos-arm64-llvm-debug",
+            "inherits": "test-base",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-arm64-llvm-release",
+            "inherits": "test-base",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "Release"
+        },
+        {
+            "name": "macos-arm64-llvm-coverage",
+            "inherits": "test-base",
+            "configurePreset": "macos-arm64-llvm-coverage",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-arm64-llvm-asan",
+            "inherits": "asan-test-base",
+            "configurePreset": "macos-arm64-llvm-asan",
+            "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "macos-arm64-llvm-tsan",
+            "inherits": "tsan-test-base",
+            "configurePreset": "macos-arm64-llvm-tsan",
+            "configuration": "ThreadSanitizer"
+        },
+        {
+            "name": "macos-arm64-llvm-ubsan",
+            "inherits": "ubsan-test-base",
+            "configurePreset": "macos-arm64-llvm-ubsan",
+            "configuration": "UndefinedSanitizer"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "macos-arm64-llvm-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-debug"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-release",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-release"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-release"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-coverage",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm-coverage"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-coverage"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-coverage"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-analysis",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm-analysis"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-analysis"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-asan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm-asan"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-asan"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-asan"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-tsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm-tsan"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-tsan"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-tsan"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-ubsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm-ubsan"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-ubsan"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-ubsan"
+                }
+            ]
+        }
+    ]
+}

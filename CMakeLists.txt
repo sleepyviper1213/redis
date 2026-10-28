@@ -1,86 +1,30 @@
 cmake_minimum_required(VERSION 3.28)
 
 project(
-    Redis
-    LANGUAGES CXX
-    VERSION 1.0)
+    redis
+    VERSION 1.0.0
+    DESCRIPTION "A Redis-compatible key-value server built on C++23 coroutines"
+    LANGUAGES CXX)
 
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
+# The server forks for background saves and fsyncs snapshots: it targets
+# Linux and macOS. On Windows, develop through WSL.
+if(NOT UNIX)
+    message(FATAL_ERROR "redis targets Unix-like systems (Linux, macOS). "
+                        "On Windows, build inside WSL.")
 endif()
 
-if(NOT DEFINED REDIS_MASTER_PROJECT)
-    set(REDIS_MASTER_PROJECT OFF)
-    if(PROJECT_IS_TOP_LEVEL)
-        set(REDIS_MASTER_PROJECT ON)
-        set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-    endif()
-    message(STATUS "CMake version: ${CMAKE_VERSION}")
-endif()
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
-# guard against in-source builds
-if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
-    message(
-        FATAL_ERROR
-            "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there. You may need to remove CMakeCache.txt. "
-    )
-endif()
-
-find_package(fmt 11 REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(cereal REQUIRED)
-find_package(CLI11 REQUIRED)
-find_package(boost_asio QUIET)
-find_package(magic_enum REQUIRED)
-find_package(FastFloat REQUIRED)
-
-if(boost_asio_FOUND)
-    message(STATUS "Using standalone Boost asio")
-else()
-    find_package(Boost CONFIG COMPONENTS system thread)
-    message(STATUS "Using classic Boost")
-endif()
-# --- Options / Macros ---
-option(REDIS_DOC "Generate the doc target." ${REDIS_MASTER_PROJECT})
-option(REDIS_INSTALL "Generate the install target." ON)
-option(REDIS_TEST "Generate the test target." ${REDIS_MASTER_PROJECT})
-option(REDIS_SERVER_LOGS "Enable redis server logging in tests" ON)
-
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Let's ensure -std=g++xx instead of -std=c++xx
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_EXTENSIONS ON)
-
-# configure files based on CMake configuration options
-# add_subdirectory(configured_files)
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-
-if(REDIS_INSTALL)
-    # --- Package export setup ---
-    include(CMakePackageConfigHelpers)
-
-    write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/redisConfigVersion.cmake"
-        VERSION ${PROJECT_VERSION}
-        COMPATIBILITY AnyNewerVersion)
-
-    configure_package_config_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackageConfigHelpers.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/redisConfig.cmake"
-        INSTALL_DESTINATION lib/cmake/redis)
-
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/redisConfig.cmake"
-                  "${CMAKE_CURRENT_BINARY_DIR}/redisConfigVersion.cmake"
-            DESTINATION lib/cmake/redis)
-endif()
+include(cmake/ProjectOptions.cmake)
+include(cmake/Dependencies.cmake)
 
 add_subdirectory(src)
 
-if(REDIS_MASTER_PROJECT)
-    find_package(Hiredis REQUIRED)
-	find_package(Catch2 3 REQUIRED)
-
+if(REDIS_BUILD_TESTS)
     enable_testing()
-    add_subdirectory(tests)
+    add_subdirectory(test)
+endif()
+
+if(REDIS_INSTALL)
+    include(cmake/Install.cmake)
 endif()

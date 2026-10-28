@@ -1,0 +1,84 @@
+{
+    "version": 6,
+    "include": [
+        "base.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "dev-options",
+            "hidden": true,
+            "description": "Day-to-day iteration: Debug, Release and RelWithDebInfo; LTO for the optimised configurations.",
+            "inherits": "vcpkg-base",
+            "cacheVariables": {
+                "REDIS_ENABLE_CCACHE": "ON",
+                "REDIS_ENABLE_STATIC_ANALYZERS": "OFF",
+                "REDIS_ENABLE_COVERAGE": "OFF",
+                "REDIS_ENABLE_IPO": "ON",
+                "REDIS_WARNINGS_AS_ERRORS": "OFF"
+            }
+        },
+        {
+            "name": "coverage-options",
+            "hidden": true,
+            "description": "Debug only, instrumented for coverage.",
+            "inherits": "vcpkg-base",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug",
+                "REDIS_ENABLE_COVERAGE": "ON",
+                "REDIS_ENABLE_CCACHE": "OFF",
+                "REDIS_ENABLE_IPO": "OFF"
+            }
+        },
+        {
+            "name": "analysis-options",
+            "hidden": true,
+            "description": "clang-tidy and cppcheck run as compiler launchers over one Debug configuration: building is analysing.",
+            "inherits": "vcpkg-base",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug",
+                "REDIS_ENABLE_STATIC_ANALYZERS": "ON",
+                "REDIS_ENABLE_IPO": "OFF",
+                "REDIS_ENABLE_CCACHE": "ON"
+            }
+        },
+        {
+            "name": "sanitizer-options",
+            "hidden": true,
+            "description": "Shared by every sanitizer preset. IPO is off: LTO inlines away the frames a sanitizer report is made of.",
+            "inherits": "vcpkg-base",
+            "cacheVariables": {
+                "REDIS_ENABLE_CCACHE": "ON",
+                "REDIS_ENABLE_STATIC_ANALYZERS": "OFF",
+                "REDIS_ENABLE_COVERAGE": "OFF",
+                "REDIS_ENABLE_IPO": "OFF"
+            }
+        },
+        {
+            "name": "asan-options",
+            "hidden": true,
+            "inherits": "sanitizer-options",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "AddressSanitizer",
+                "REDIS_SANITIZER": "Address"
+            }
+        },
+        {
+            "name": "tsan-options",
+            "hidden": true,
+            "inherits": "sanitizer-options",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "ThreadSanitizer",
+                "REDIS_SANITIZER": "Thread"
+            }
+        },
+        {
+            "name": "ubsan-options",
+            "hidden": true,
+            "inherits": "sanitizer-options",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "UndefinedSanitizer",
+                "REDIS_SANITIZER": "Undefined"
+            }
+        }
+    ]
+}
