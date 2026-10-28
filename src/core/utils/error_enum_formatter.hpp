@@ -55,4 +55,3 @@
 			return formatter<string_view>::format(name, ctx);                  \
 		}                                                                      \
 	};
-\
