@@ -62,7 +62,9 @@ SCENARIO("[UT-2001] Encode RESP values into wire format", "[Encode][RESP]") {
 			const auto val     = Value::from_null();
 			const auto encoded = fmt::format("{:e}", val);
 
-			THEN("the result matches _\\r\\n") { REQUIRE(encoded == "_\r\n"); }
+			THEN("the result is the RESP2 null bulk string") {
+				REQUIRE(encoded == "$-1\r\n");
+			}
 		}
 
 		WHEN("encoding a Double") {
@@ -82,12 +84,12 @@ SCENARIO("[UT-2001] Encode RESP values into wire format", "[Encode][RESP]") {
 				 Value::from_bulk_string("EX"),
 				 Value::from_bulk_string("60")});
 
-			const char *expected_str = "*5\r\n"
-									   "$3\r\nSET\r\n"
-									   "$10\r\nanotherkey\r\n"
-									   "$23\r\nwill expire in a minute\r\n"
-									   "$2\r\nEX\r\n"
-									   "$2\r\n60\r\n";
+			std::string_view expected_str = "*5\r\n"
+											"$3\r\nSET\r\n"
+											"$10\r\nanotherkey\r\n"
+											"$23\r\nwill expire in a minute\r\n"
+											"$2\r\nEX\r\n"
+											"$2\r\n60\r\n";
 
 			const auto encoded = fmt::format("{:e}", val);
 
@@ -477,5 +479,49 @@ SCENARIO("Parsing complex nested RESP array with mixed types and nulls",
 				REQUIRE(result.error() == Parser::RespError::SYNTAX_ERROR);
 			}
 		}
+	}
+}
+
+SCENARIO("Parser separates incomplete frames from malformed ones",
+		 "[resp][parser][framing]") {
+	THEN("every strict prefix of a valid frame is reported as incomplete") {
+		const std::string_view frame = "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n";
+		for (size_t len = 0; len < frame.size(); ++len) {
+			const auto result = Parser::parse(frame.substr(0, len));
+			INFO("prefix length " << len);
+			REQUIRE(!result);
+			REQUIRE(Parser::is_incomplete(result.error()));
+		}
+		REQUIRE(Parser::parse(frame).has_value());
+	}
+
+	THEN("malformed input is not mistaken for incomplete input") {
+		const auto result = Parser::parse("$3\r\nabcXY");
+		REQUIRE(!result);
+		REQUIRE(!Parser::is_incomplete(result.error()));
+	}
+
+	THEN("pipelined frames are consumed one at a time") {
+		const std::string_view data = "+A\r\n+B\r\n";
+		size_t pos                  = 0;
+		REQUIRE(Parser::parse_recursive(data, pos)->as_string() == "A");
+		REQUIRE(pos == 4);
+		REQUIRE(Parser::parse_recursive(data, pos)->as_string() == "B");
+		REQUIRE(pos == data.size());
+	}
+}
+
+SCENARIO("Parser rejects or bounds client-declared lengths",
+		 "[resp][parser][limits]") {
+	THEN("an oversized bulk length is rejected") {
+		const auto result = Parser::parse("$999999999999\r\n");
+		REQUIRE(!result);
+		REQUIRE(result.error() == Parser::RespError::INVALID_BULK_LENGTH);
+	}
+
+	THEN("a huge declared array length does not allocate up front") {
+		const auto result = Parser::parse("*999999999999\r\n+A\r\n");
+		REQUIRE(!result);
+		REQUIRE(Parser::is_incomplete(result.error()));
 	}
 }
