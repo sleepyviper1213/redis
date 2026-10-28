@@ -17,6 +17,8 @@ add_library(
     net/redis_server.cpp
     net/session.cpp
     net/tcp_server.cpp
+    net/v2/session.cpp
+    net/v2/tcp_server.cpp
 
     persistence/persistence.cpp
     persistence/posix.cpp
@@ -30,6 +32,7 @@ add_library(redis::server_lib ALIAS redis_server_lib)
 
 target_compile_definitions(redis_server_lib PUBLIC BOOST_ASIO_NO_DEPRECATED)
 target_link_libraries(redis_server_lib PUBLIC redis::core CLI11::CLI11
+    STDEXEC::stdexec
                                               Threads::Threads
                                        PRIVATE cereal::cereal)
 

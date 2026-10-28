@@ -10,21 +10,22 @@ include(Catch)
 
 # Unit tests: in-process, no network, run by CTest.
 add_executable(redis_unit_test
-    logging.setup.cpp
+    unit/logging.setup.cpp
 
-    core/resp/parser.test.cpp
-    core/resp/request.test.cpp
-    core/utils/glob.test.cpp
+    unit/core/resp/parser.test.cpp
+    unit/core/resp/request.test.cpp
+    unit/core/utils/glob.test.cpp
 
-    server/commands/hash.test.cpp
-    server/commands/keyspace.test.cpp
-    server/commands/list.test.cpp
-    server/commands/set.test.cpp
-    server/commands/set_ttl.test.cpp
-    server/commands/string.test.cpp
-    server/net/pipeline.test.cpp
-    server/persistence/snapshot.test.cpp
-    server/storage/database.test.cpp
+    unit/server/commands/hash.test.cpp
+    unit/server/commands/keyspace.test.cpp
+    unit/server/commands/list.test.cpp
+    unit/server/commands/set.test.cpp
+    unit/server/commands/set_ttl.test.cpp
+    unit/server/commands/string.test.cpp
+    unit/server/net/executor.test.cpp
+    unit/server/net/pipeline.test.cpp
+    unit/server/persistence/snapshot.test.cpp
+    unit/server/storage/database.test.cpp
 )
 target_link_libraries(redis_unit_test PRIVATE Catch2::Catch2WithMain
                                               redis::server_lib)
