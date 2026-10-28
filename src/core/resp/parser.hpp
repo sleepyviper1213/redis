@@ -22,7 +22,8 @@ public:
 		INVALID_ARRAY_LENGTH,
 		PARSE_NUMBER,
 		NOT_SUPPORTED,
-		SYNTAX_ERROR
+		SYNTAX_ERROR,
+		INLINE_TOO_LONG
 	};
 
 	/**
@@ -59,6 +60,28 @@ public:
 
 	static std::expected<Value, RespError>
 	parse_recursive(std::string_view data, size_t &pos);
+
+	/**
+	 * rief Whether \p err means the input is a valid but incomplete prefix.
+	 *
+	 * Network reads deliver arbitrary byte chunks, so a frame may be split
+	 * across reads. Callers should buffer more bytes and retry on these
+	 * errors, and treat every other error as a protocol violation.
+	 */
+	[[nodiscard]] static bool is_incomplete(RespError err) noexcept;
+
+	/**
+	 * rief Largest bulk string accepted (same default as Redis'
+	 * proto-max-bulk-len).
+	 */
+	static constexpr int64_t MAX_BULK_LENGTH = 512LL * 1024 * 1024;
+
+	/**
+	 * rief Largest number of array elements pre-allocated up front. Bigger
+	 * arrays still parse, but memory grows only as elements actually arrive,
+	 * so a client cannot make the server allocate by just declaring a length.
+	 */
+	static constexpr int64_t MAX_ARRAY_RESERVE = 1024;
 
 private:
 	/**

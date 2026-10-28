@@ -158,7 +158,9 @@ auto fmt::formatter<Value>::format(const Value &value,
                                 fmt::join(arr, ""));
 			break;
 		}
-		case Null: it = format_to(it, "_\r\n"); break;
+		// RESP2 null bulk string. RESP3's "_" is only legal after a client
+		// negotiates protocol 3 with HELLO, which this server does not offer.
+		case Null: it = fmt::format_to(it, "$-1\r\n"); break;
 		case Double:
 			it = fmt::format_to(it, ",{}\r\n", value.as_double());
 			break;

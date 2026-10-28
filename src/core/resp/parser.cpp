@@ -5,6 +5,7 @@
 
 #include <fast_float/fast_float.h>
 
+#include <algorithm>
 #include <string_view>
 #include <utility>
 
@@ -22,7 +23,7 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 
 	// Read a line
 	const auto line_end = data.find("\r\n", pos);
-	if (line_end == std::string_view::npos) FAILED(MISSING_CRLF);
+	if (line_end == std::string_view::npos) FAILED(UNEXPECTED_EOF);
 
 	std::string_view line = data.substr(pos, line_end - pos); // exclude CRLF
 	pos                   = line_end + 2; // move past "\r\n"
@@ -42,7 +43,7 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 	case '$': {
 		const auto len = TRY_FROM(parse_integer(payload), RespError);
 		if (len == -1) return Value::from_null();
-		if (len < -1) FAILED(INVALID_BULK_LENGTH);
+		if (len < -1 || len > MAX_BULK_LENGTH) FAILED(INVALID_BULK_LENGTH);
 
 		if (pos + len + CRLF.size() > data.size())
 			FAILED(TRUNCATED_BULK_STRING);
@@ -59,7 +60,7 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 		if (len < -1) FAILED(INVALID_ARRAY_LENGTH);
 
 		std::vector<Value> arr;
-		arr.reserve(len);
+		arr.reserve(std::min(len, MAX_ARRAY_RESERVE));
 
 		for (int i = 0; i < len; ++i) {
 			auto v = TRY(parse_recursive(data, pos));
@@ -77,6 +78,11 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 	}
 	default: FAILED(NOT_SUPPORTED);
 	}
+}
+
+bool Parser::is_incomplete(RespError err) noexcept {
+	return err == RespError::UNEXPECTED_EOF ||
+		   err == RespError::TRUNCATED_BULK_STRING;
 }
 
 bool Parser::is_crlf(std::string_view s) { return s == CRLF; }

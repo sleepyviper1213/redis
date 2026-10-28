@@ -2,9 +2,11 @@
 
 #include <fmt/base.h>
 
+#include <cstdint>
 #include <expected>
 #include <span>
 #include <string>
+#include <system_error>
 #include <variant>
 #include <vector>
 
@@ -24,7 +26,7 @@ public:
 	 * Array, Null
 	 * - RESP3 extends with typed Null, Boolean, Double, BulkError, etc.
 	 */
-	enum class [[nodiscard]] Type {
+	enum class [[nodiscard]] Type : uint8_t {
 		// RESP2
 		/** Simple string reply, e.g. +OK\r\n */
 		SimpleString,
@@ -79,15 +81,6 @@ public:
 	static Value from_double(double d);
 	/** @} */
 
-	/** \brief Construct an empty value with explicit type; for internal use. */
-	Value(Type type);
-
-	/**
-	 * \brief Construct a value providing both the type tag and the payload.
-	 * \tparam T Payload type compatible with the active alternative.
-	 */
-	template <typename T>
-	Value(Type type, T t) : type_(type), data_(std::move(t)) {}
 
 	/**
 	 * \name Accessors
@@ -156,15 +149,22 @@ public:
 	 */
 	[[nodiscard]] std::expected<int64_t, std::errc> try_as_integer() const;
 
+protected:
+	/** \brief Construct an empty value with explicit type; for internal use. */
+	Value(Type type);
+
+	/**
+	 * \brief Construct a value providing both the type tag and the payload.
+	 * \tparam T Payload type compatible with the active alternative.
+	 */
+	template <typename T>
+	Value(Type type, T t) : type_(type), data_(std::move(t)) {}
+
 private:
 	/// Active type tag.
 	Type type_;
 
 	/// Payload storage:
-	/// - std::string: SimpleString, SimpleError, BulkString
-	/// - int64_t: Integer
-	/// - Array: Array
-	/// - double: Double
 	std::variant<std::string, // SimpleString, Error, BulkString
 				 int64_t,     // Integer
 				 Array,       // Array
