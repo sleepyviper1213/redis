@@ -1,8 +1,7 @@
-#include "server/setup_cli_options.hpp"
+#include "setup_cli_options.hpp"
 
 #include <CLI/CLI.hpp>
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 
 namespace redis {
 struct MyFormatter : public CLI::Formatter {
@@ -37,7 +36,7 @@ struct MyFormatter : public CLI::Formatter {
 	}
 };
 
-CLI::App_p setup_cli_options_from(int argc, char **argv) {
+CLI::App_p setup_cli_options() {
 	auto app = std::make_shared<CLI::App>("Redis-like TcpServer");
 	app->formatter(std::make_shared<MyFormatter>());
 	// Version + config
@@ -56,17 +55,19 @@ CLI::App_p setup_cli_options_from(int argc, char **argv) {
 		->group("Network")
 		->check(CLI::ValidIPV4)
 		->default_val("127.0.0.1");
-	app->add_option("--dump")->option_text("<file>")->default_val("dump.rdb");
+	app->add_option("--dump", "Snapshot file, loaded at startup and written "
+							 "by SAVE, BGSAVE and on shutdown")
+		->envname("REDIS_DUMP_FILE")
+		->option_text("<file>")
+		->group("Persistence")
+		->default_val("dump.snap");
 	app->add_option("-p,--port", "TcpServer port")
 		->envname("REDIS_PORT")
 		->option_text("<port>")
 		->group("Network")
 		->check(CLI::PositiveNumber)
 		->default_val(6379);
-	app->add_flag("--use-ssl", "Enable SSL")
-		->envname("REDIS_USE_SSL")
-		->group("Network");
-
+	
 	app->add_option("--log-file", "Log file path")
 		->envname("REDIS_LOGFILE")
 		->group("Logging")

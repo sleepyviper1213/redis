@@ -1,31 +1,36 @@
 #include "core/logging.hpp"
-#include "server.hpp"
+#include "server/net/redis_server.hpp"
+#include "server/setup_cli_options.hpp"
 
-#include <spdlog/spdlog.h>
+#include <cstdlib>
+#include <exception>
 
 int main(int argc, char **argv) {
-	const auto app = redis::setup_cli_options_from(argc, argv);
-
+	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
-	auto log_level = spdlog::level::from_str(
-		app->get_option("--log-level")->as<std::string>());
-	redis::Logger::get_instance().init(
-		app->get_option("--log-file")->as<std::string>(),
-		log_level);
 
-	auto logger = redis::Logger::get_instance().get("main");
+	// Shuts logging down (joining the async writer) on every return path.
+	const redis::logging::guard log_guard{{
+		.level    = app->get_option("--log-level")->as<std::string>(),
+		.log_file = app->get_option("--log-file")->as<std::string>(),
+	}};
+	auto &log = redis::logging::logger_for(redis::logging::channel::server);
+
+	if (app->count("--config"))
+		log.info("Using config file: {}",
+				 app->get_option("--config")->as<std::string>());
 
 	try {
-		if (!app->count("--config"))
-			logger->warn("No config file specified. Using default config");
-		else
-			logger->warn("Using config file: {}",
-						 app->get_option("--config")->as<std::string_view>());
-		redis::RedisServer server(
-			app->get_option("--host")->as<std::string>(),
-			app->get_option("--port")->as<uint_least16_t>());
-		server.start();
-	} catch (const boost::system::error_code &e) {
-		logger->critical("{}", e.what());
+		redis::RedisServer server(redis::ServerConfig{
+			.host      = app->get_option("--host")->as<std::string>(),
+			.port      = app->get_option("--port")->as<uint16_t>(),
+			.dump_file = app->get_option("--dump")->as<std::string>(),
+		});
+		server.run();
+	} catch (const std::exception &e) {
+		// e.g. boost::system::system_error when the port is already in use.
+		log.critical("{}", e.what());
+		return EXIT_FAILURE;
 	}
+	return EXIT_SUCCESS;
 }

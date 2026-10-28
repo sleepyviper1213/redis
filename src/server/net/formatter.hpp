@@ -1,6 +1,4 @@
 #pragma once
-#include "concepts.hpp"
-
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/basic_endpoint.hpp>
 #include <fmt/format.h>
@@ -21,11 +19,13 @@ struct fmt::formatter<boost::asio::ip::address> : fmt::formatter<std::string> {
 	}
 };
 
-template <redis::requirement::InternetProtocol IP>
-struct fmt::formatter<boost::asio::ip::basic_endpoint<IP>> {
+// Formats TCP and UDP endpoints as address:port.
+template <typename InternetProtocol>
+struct fmt::formatter<boost::asio::ip::basic_endpoint<InternetProtocol>> {
 	constexpr auto parse(format_parse_context &ctx) { return ctx.begin(); }
 
-	constexpr auto format(const boost::asio::ip::basic_endpoint<IP> &endpoint,
+	constexpr auto
+	format(const boost::asio::ip::basic_endpoint<InternetProtocol> &endpoint,
 						  format_context &ctx) const {
 		return fmt::format_to(ctx.out(),
 							  "{}:{}",
