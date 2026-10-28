@@ -1,11 +1,10 @@
-#include "server/net/session.hpp"
+#include "session.hpp"
 
 #include "core/logging.hpp"
-#include "server/net/formatter.hpp"
-#include "server/net/pipeline.hpp"
+#include "executor.hpp"
+#include "formatter.hpp"
+#include "pipeline.hpp"
 
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
 #include <boost/asio/write.hpp>
 #include <spdlog/logger.h>
 
@@ -16,26 +15,27 @@ using boost::asio::ip::tcp;
 
 namespace redis {
 namespace {
-spdlog::logger &log() {
-	return logging::logger_for(logging::channel::net);
-}
+spdlog::logger &log() { return logging::logger_for(logging::channel::net); }
 } // namespace
 
-Session::Session(tcp::socket socket, const CommandHandler &handler,
-				 CommandContext &ctx)
-	: socket_(std::move(socket)), handler_(handler), ctx_(ctx) {
+inline namespace v1 {
+
+Session::Session(tcp::socket socket, Executor &executor,
+				 const CommandHandler &handler, CommandContext &ctx)
+	: socket_(std::move(socket)),
+	  executor_(executor),
+	  handler_(handler),
+	  ctx_(ctx) {
 	boost::system::error_code ec;
 	const auto peer = socket_.remote_endpoint(ec);
 	if (!ec) log().debug("Accepted from {}", peer);
 }
 
-void Session::run() {
-	net::co_spawn(
-		socket_.get_executor(),
-		[self = shared_from_this()] -> net::awaitable<void> {
-			co_return co_await self->loop();
-		},
-		net::detached);
+net::awaitable<void> Session::serve(tcp::socket socket, Executor &executor,
+									const CommandHandler &handler,
+									CommandContext &ctx) {
+	Session session(std::move(socket), executor, handler, ctx);
+	co_await session.loop();
 }
 
 net::awaitable<void> Session::loop() {
@@ -64,9 +64,19 @@ net::awaitable<void> Session::loop() {
 			co_return;
 		}
 
-		// The hot path runs as a plain function call; see pipeline.hpp.
-		const AfterReplies after =
-			execute_pending(pending, replies, handler_, ctx_);
+		// The hot path runs as plain function calls; see pipeline.hpp.
+		AfterReplies after = AfterReplies::KeepOpen;
+		if (!executor_.is_threaded()) {
+			after = execute_pending(pending, replies, handler_, ctx_);
+		} else {
+			// Parse here, on this I/O thread; hop to the keyspace thread only
+			// to execute, so other sessions parse while this batch runs.
+			const ParsedBatch batch = parse_pending(pending);
+			if (!batch.requests.empty() || !batch.protocol_error.empty())
+				after = co_await executor_.run([&] {
+					return execute_batch(batch, replies, handler_, ctx_);
+				});
+		}
 
 		if (!replies.empty()) {
 			const auto [write_err, _] =
@@ -78,4 +88,5 @@ net::awaitable<void> Session::loop() {
 	}
 }
 
+} // namespace v1
 } // namespace redis

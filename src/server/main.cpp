@@ -25,6 +25,8 @@ int main(int argc, char **argv) {
 			.host      = app->get_option("--host")->as<std::string>(),
 			.port      = app->get_option("--port")->as<uint16_t>(),
 			.dump_file = app->get_option("--dump")->as<std::string>(),
+			.io_threads = app->get_option("--io-threads")->as<unsigned>(),
+			.sender_sessions = app->get_option("--sender-sessions")->as<bool>(),
 		});
 		server.run();
 	} catch (const std::exception &e) {

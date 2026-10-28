@@ -55,7 +55,22 @@ CLI::App_p setup_cli_options() {
 		->group("Network")
 		->check(CLI::ValidIPV4)
 		->default_val("127.0.0.1");
-	app->add_option("--dump", "Snapshot file, loaded at startup and written "
+	app->add_option("--io-threads",
+					"Network I/O threads. 1 serves everything on one thread; "
+					"more adds a thread that executes commands, so I/O and "
+					"parsing run in parallel")
+		->envname("REDIS_IO_THREADS")
+		->option_text("<count>")
+		->group("Network")
+		->check(CLI::Range(1, 256))
+		->default_val(1);
+	app->add_flag("--sender-sessions",
+				  "Serve clients with sender-based sessions (stdexec) "
+				  "instead of coroutines")
+		->envname("REDIS_SENDER_SESSIONS")
+		->group("Network")
+		->default_val(false);
+	app->add_option("--dump","Snapshot file, loaded at startup and written "
 							 "by SAVE, BGSAVE and on shutdown")
 		->envname("REDIS_DUMP_FILE")
 		->option_text("<file>")

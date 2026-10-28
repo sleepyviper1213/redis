@@ -6,6 +6,7 @@ find_package(CLI11 CONFIG REQUIRED)
 find_package(magic_enum CONFIG REQUIRED)
 find_package(FastFloat CONFIG REQUIRED)
 find_package(cereal CONFIG REQUIRED)
+find_package(stdexec CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Prefer standalone Boost.Asio (vcpkg's boost-asio port); fall back to a full

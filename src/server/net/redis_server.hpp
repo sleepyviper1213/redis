@@ -1,7 +1,8 @@
 #pragma once
 // Must precede every Asio include: makes co_await on Asio operations return
 // (error_code, result) tuples.
-#include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
+#include "nothrow_awaitable_t.hpp" // IWYU pragma: keep
+#include "executor.hpp"
 
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
@@ -23,14 +24,22 @@ struct ServerConfig {
 	std::string host = "127.0.0.1";
 	uint16_t port    = 6379;
 	std::filesystem::path dump_file = "dump.snap";
+	/// Threads running network I/O. 1 runs everything on one thread; more
+	/// adds a thread dedicated to executing commands (see Executor).
+	unsigned io_threads = 1;
+	/// Serve clients with the sender-based v2::Session instead of the
+	/// coroutine-based Session.
+	bool sender_sessions = false;
 };
 
 /**
  * \brief The composition root: owns the keyspace, persistence, the command
  * table and the event loop.
  *
- * Everything runs on one thread, like Redis: commands execute one at a time,
- * so the keyspace needs no locks.
+ * Commands execute one at a time on a single thread, like Redis, so the
+ * keyspace needs no locks. With ServerConfig::io_threads == 1 that is the one
+ * thread that also does the I/O; with more, it is a dedicated thread and the
+ * I/O threads only read, parse and write.
  */
 class RedisServer {
 public:
@@ -63,5 +72,8 @@ private:
 	Persistence persistence_;
 	CommandHandler handler_;
 	CommandContext ctx_{db_, persistence_};
+	/// Declared last so it is destroyed first: its thread, the only one
+	/// touching the keyspace, is joined before the keyspace goes away.
+	Executor executor_;
 };
 } // namespace redis

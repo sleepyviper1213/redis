@@ -12,6 +12,7 @@ add_library(
     commands/set.cpp
     commands/string.cpp
 
+    net/executor.cpp
     net/pipeline.cpp
     net/redis_server.cpp
     net/session.cpp
