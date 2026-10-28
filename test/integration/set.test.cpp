@@ -1,4 +1,4 @@
-#include "redis_fixture.hpp"
+#include "redis.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -49,14 +49,18 @@ SCENARIO_METHOD(RedisTestFixture,"TC-008: Save a valid key-value pair", "[set]")
 	}
 }
 
-SCENARIO_METHOD(RedisTestFixture,"TC-009: Save empty key (invalid)", "[set]") {
+// Redis keys are binary-safe, and the empty string is a valid key.
+SCENARIO_METHOD(RedisTestFixture,"TC-009: Save empty key", "[set]") {
 	GIVEN("A connected client") {
 		WHEN("Sending SET command with empty key") {
 			auto res = client.send("SET %s %s", "", "John");
 
-			THEN("The command fails with error") {
-				REQUIRE(!res.ok);
-				REQUIRE_THAT(res.error, Equals("ERR invalid key"));
+			THEN("The command succeeds and the value round-trips") {
+				REQUIRE(res.ok);
+				REQUIRE_THAT(res.value, Equals("OK"));
+				auto get_res = client.send("GET %s", "");
+				REQUIRE(get_res.ok);
+				REQUIRE_THAT(get_res.value, Equals("John"));
 			}
 		}
 	}
@@ -95,7 +99,7 @@ SCENARIO_METHOD(RedisTestFixture,"TC-011: Save with missing arguments", "[set]")
 			THEN("The command fails with error") {
 				REQUIRE(!res.ok);
 				REQUIRE_THAT(res.error,
-							 Equals("ERR wrong number of arguments"));
+							 Equals("ERR wrong number of arguments for 'set' command"));
 			}
 		}
 	}
@@ -108,9 +112,14 @@ SCENARIO_METHOD(RedisTestFixture,"TC-012: Save large value (>1MB)", "[set]") {
 		WHEN("Sending SET command with large value") {
 			auto res = client.send("SET %s %s", "bigkey", large_value.c_str());
 
-			THEN("The command fails with error") {
-				REQUIRE(!res.ok);
-				REQUIRE_THAT(res.error, Equals("ERR value too large"));
+			// Redis accepts strings up to proto-max-bulk-len (512MB). A 1MB
+			// value also spans many TCP reads, exercising frame reassembly.
+			THEN("The command succeeds and the value round-trips") {
+				REQUIRE(res.ok);
+				REQUIRE_THAT(res.value, Equals("OK"));
+				auto get_res = client.send("GET %s", "bigkey");
+				REQUIRE(get_res.ok);
+				REQUIRE(get_res.value == large_value);
 			}
 		}
 	}

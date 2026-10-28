@@ -1,4 +1,4 @@
-#include "redis_fixture.hpp"
+#include "redis.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -64,7 +64,7 @@ SCENARIO_METHOD(RedisTestFixture, "TC-025: Delete without argument", "[del]") {
 			THEN("The command fails with error") {
 				REQUIRE(!res.ok);
 				REQUIRE_THAT(res.error,
-							 Equals("ERR wrong number of arguments"));
+							 Equals("ERR wrong number of arguments for 'del' command"));
 			}
 		}
 	}
@@ -75,9 +75,10 @@ SCENARIO_METHOD(RedisTestFixture, "TC-026: Delete with empty key", "[del]") {
 		WHEN("Sending DEL command with empty key") {
 			auto res = client.send("DEL %s", "");
 
-			THEN("The command fails with error") {
-				REQUIRE(!res.ok);
-				REQUIRE_THAT(res.error, Equals("ERR invalid key"));
+			// Redis keys are binary-safe; deleting a missing key removes 0.
+			THEN("Nothing is deleted") {
+				REQUIRE(res.ok);
+				REQUIRE_THAT(res.value, Equals("0"));
 			}
 		}
 	}
