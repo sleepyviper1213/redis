@@ -3,6 +3,10 @@
 #
 #   scripts/test_server.sh [configure-preset] [configuration] [port]
 #
+# Extra server options can be passed in SERVER_ARGS, e.g. to run the same suite
+# against the sender-based sessions and several I/O threads:
+#   SERVER_ARGS="--sender-sessions --io-threads 4" scripts/test_server.sh
+#
 # Unit tests need no server and run through CTest instead:
 #   ctest --preset linux-gcc-debug
 set -euo pipefail
@@ -19,7 +23,7 @@ WORKDIR="$(mktemp -d)"
 LOG="$WORKDIR/redis_server.log"
 
 "$SERVER" --port "$PORT" --log-level info --log-file "$LOG" \
-    --dump "$WORKDIR/dump.snap" >/dev/null 2>&1 &
+    --dump "$WORKDIR/dump.snap" ${SERVER_ARGS:-} >/dev/null 2>&1 &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
