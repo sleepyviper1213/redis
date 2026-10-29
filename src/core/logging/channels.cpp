@@ -1,4 +1,4 @@
-#include "core/logging/channels.hpp"
+#include "channels.hpp"
 
 #include <spdlog/spdlog.h>
 

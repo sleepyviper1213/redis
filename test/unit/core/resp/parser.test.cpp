@@ -577,3 +577,21 @@ SCENARIO("Parsing decimal integers", "[resp][parser][integer]") {
 		CHECK(result->as_integer() == -5);
 	}
 }
+
+SCENARIO("Parsing RESP double with trailing garbage", "[resp][parser]") {
+	THEN("a valid number followed by other characters is a protocol error") {
+		for (const std::string_view data : {",1.5abc\r\n", ",1.5 \r\n", ",2x\r\n"}) {
+			INFO("input " << data);
+			const auto result = Parser::parse(data);
+			REQUIRE(!result);
+			CHECK(result.error() == Parser::RespError::PARSE_NUMBER);
+			CHECK(!Parser::is_incomplete(result.error()));
+		}
+	}
+
+	THEN("a plain number still parses") {
+		const auto result = Parser::parse(",-2.5\r\n");
+		REQUIRE(result.has_value());
+		CHECK_THAT(result->as_double(), WithinAbs(-2.5, 1e-9));
+	}
+}

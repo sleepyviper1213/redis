@@ -1,6 +1,6 @@
-#include "core/error/simple_message.hpp"
+#include "simple_message.hpp"
 
-#include "core/error/errc_formatter.hpp"
+#include "errc_formatter.hpp"
 
 namespace redis {
 SimpleMessage::SimpleMessage(std::string_view message, std::errc code)

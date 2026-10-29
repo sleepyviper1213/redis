@@ -1,4 +1,4 @@
-#include "core/resp/request.hpp"
+#include "request.hpp"
 
 #include <fast_float/fast_float.h>
 
@@ -31,8 +31,8 @@ parse_inline(std::string_view data, size_t &pos) {
 		const size_t start = i;
 		while (i < line.size() && line[i] != ' ' && line[i] != '\t') ++i;
 		if (i > start)
-			args.push_back(
-				Value::from_bulk_string(std::string(line.substr(start, i - start))));
+			args.push_back(Value::from_bulk_string(
+				std::string(line.substr(start, i - start))));
 	}
 
 	if (args.empty()) return std::nullopt;
@@ -95,8 +95,14 @@ parse_request(std::string_view data, size_t &pos) {
 
 	if (auto fast = parse_bulk_array(data, pos)) return fast;
 
-	auto value = Parser::parse_recursive(data, pos);
-	if (!value) return std::unexpected(value.error());
+	// The generic parser advances `pos` as it reads, even when it then fails
+	// for lack of bytes; restore it so an error consumes nothing.
+	const size_t start = pos;
+	auto value         = Parser::parse_recursive(data, pos);
+	if (!value) {
+		pos = start;
+		return std::unexpected(value.error());
+	}
 	return std::optional<Value>(std::move(*value));
 }
 

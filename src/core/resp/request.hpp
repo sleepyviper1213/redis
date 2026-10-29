@@ -1,6 +1,6 @@
 #pragma once
-#include "core/resp/parser.hpp"
-#include "core/resp/value.hpp"
+#include "parser.hpp"
+#include "value.hpp"
 
 #include <cstddef>
 #include <expected>
@@ -28,8 +28,9 @@ inline constexpr size_t MAX_INLINE_LENGTH = 64 * 1024;
  *
  * \return The request as an array of bulk strings, advancing \p pos past it;
  *         std::nullopt for a blank inline line, which is consumed and ignored
- *         like Redis does; or an error. Parser::is_incomplete() tells whether
- *         the error just means more bytes are needed.
+ *         like Redis does; or an error, which leaves \p pos unchanged.
+ *         Parser::is_incomplete() tells whether the error just means more
+ *         bytes are needed.
  */
 [[nodiscard]] std::expected<std::optional<Value>, Parser::RespError>
 parse_request(std::string_view data, size_t &pos);

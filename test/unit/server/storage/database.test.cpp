@@ -115,13 +115,16 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 
 	GIVEN("ten keys that expired at the same time") {
 		Database db;
-		const auto deadline = Database::clock::now() + 10ms;
+		// Generous margins: a deadline that passes while the keys are still
+		// being added deletes them at once and the test miscounts (seen under
+		// a sanitizer with the whole suite running in parallel).
+		const auto deadline = Database::clock::now() + 200ms;
 		for (int i = 0; i < 10; ++i) {
 			const auto key = "k" + std::to_string(i);
 			db.set(key, String("v"));
 			db.set_expiry(key, deadline);
 		}
-		std::this_thread::sleep_for(20ms);
+		std::this_thread::sleep_for(250ms);
 
 		WHEN("cycles run with a budget of 4, then a large one") {
 			const auto first  = db.active_expire_cycle(4);

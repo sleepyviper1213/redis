@@ -1,4 +1,4 @@
-#include "core/utils/toupper.hpp"
+#include "toupper.hpp"
 
 #include <algorithm>
 #include <cctype>

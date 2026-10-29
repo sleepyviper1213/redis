@@ -1,6 +1,6 @@
-#include "core/logging/guard.hpp"
+#include "guard.hpp"
 
-#include "core/logging/lifecycle.hpp"
+#include "lifecycle.hpp"
 
 namespace redis::logging {
 

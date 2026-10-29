@@ -1,7 +1,7 @@
-#include "core/resp/parser.hpp"
+#include "parser.hpp"
 
 #include "core/error.hpp"
-#include "core/resp/value.hpp"
+#include "value.hpp"
 
 #include <fast_float/fast_float.h>
 
@@ -45,13 +45,16 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 		if (len == -1) return Value::from_null();
 		if (len < -1 || len > MAX_BULK_LENGTH) FAILED(INVALID_BULK_LENGTH);
 
-		if (pos + len + CRLF.size() > data.size())
+		// len is in [0, MAX_BULK_LENGTH] here.
+		const auto size = static_cast<size_t>(len);
+		if (pos + size + CRLF.size() > data.size())
 			FAILED(TRUNCATED_BULK_STRING);
 
-		std::string_view bulk_data = data.substr(pos, len);
-		if (!is_crlf(data.substr(pos + len, CRLF.size()))) FAILED(MISSING_CRLF);
+		std::string_view bulk_data = data.substr(pos, size);
+		if (!is_crlf(data.substr(pos + size, CRLF.size())))
+			FAILED(MISSING_CRLF);
 
-		pos += len + CRLF.size(); // skip data + CRLF
+		pos += size + CRLF.size(); // skip data + CRLF
 		return Value::from_bulk_string(std::string(bulk_data));
 	}
 	case '*': {
@@ -60,7 +63,7 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 		if (len < -1) FAILED(INVALID_ARRAY_LENGTH);
 
 		std::vector<Value> arr;
-		arr.reserve(std::min(len, MAX_ARRAY_RESERVE));
+		arr.reserve(static_cast<size_t>(std::min(len, MAX_ARRAY_RESERVE)));
 
 		for (int i = 0; i < len; ++i) {
 			auto v = TRY(parse_recursive(data, pos));
@@ -99,8 +102,11 @@ std::expected<int64_t, std::errc> Parser::parse_integer(std::string_view s) {
 
 std::expected<double, std::errc> Parser::parse_double(std::string_view s) {
 	double val{};
-	auto [ptr, ec] = fast_float::from_chars(s.begin(), s.end(), val);
-	if (ec != std::errc() || ptr != s.end()) FAILED(ec);
+	auto [ptr, ec] = fast_float::from_chars(s.data(), s.data() + s.size(), val);
+	// Trailing garbage after a valid prefix ("1.5abc") reports no error code.
+	if (ec == std::errc() && ptr != s.data() + s.size())
+		ec = std::errc::invalid_argument;
+	if (ec != std::errc()) FAILED(ec);
 	return val;
 }
 

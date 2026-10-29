@@ -1,7 +1,7 @@
-#include "core/logging/lifecycle.hpp"
+#include "lifecycle.hpp"
 
-#include "core/logging/channels.hpp"
-#include "core/logging/settings.hpp"
+#include "channels.hpp"
+#include "settings.hpp"
 
 #include <fmt/format.h>
 #include <spdlog/async.h>
