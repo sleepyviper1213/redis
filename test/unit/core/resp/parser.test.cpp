@@ -5,7 +5,10 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/ranges.h>
 
+#include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 using Catch::Matchers::Equals;
 using Catch::Matchers::WithinAbs;
 using namespace redis::resp;
@@ -593,5 +596,46 @@ SCENARIO("Parsing RESP double with trailing garbage", "[resp][parser]") {
 		const auto result = Parser::parse(",-2.5\r\n");
 		REQUIRE(result.has_value());
 		CHECK_THAT(result->as_double(), WithinAbs(-2.5, 1e-9));
+	}
+}
+
+SCENARIO("encode_to produces the same bytes as the fmt 'e' presentation",
+		 "[resp][encode]") {
+	const std::vector<Value> values = {
+		Value::from_simple_string("OK"),
+		Value::from_simple_string(""),
+		Value::from_simple_error("ERR boom"),
+		Value::from_integer(0),
+		Value::from_integer(-1),
+		Value::from_integer(INT64_MAX),
+		Value::from_integer(INT64_MIN),
+		Value::from_bulk_string(""),
+		Value::from_bulk_string("hello"),
+		Value::from_bulk_string("a\r\nb"),
+		Value::from_bulk_string(std::string(300, 'x')),
+		Value::from_null(),
+		Value::from_double(3.5),
+		Value::from_double(-0.25),
+		Value::from_double(1e300),
+		Value::from_array({}),
+		Value::from_array({Value::from_bulk_string("GET"),
+						   Value::from_integer(7),
+						   Value::from_null(),
+						   Value::from_array({Value::from_simple_string("in"),
+											  Value::from_array({})})}),
+	};
+
+	for (const Value &value : values) {
+		const std::string expected = fmt::format("{:e}", value);
+
+		std::string out;
+		encode_to(out, value);
+		INFO("expected " << expected);
+		CHECK(out == expected);
+
+		// It appends: whatever is already in the buffer is left alone.
+		std::string buffer = "+earlier\r\n";
+		encode_to(buffer, value);
+		CHECK(buffer == "+earlier\r\n" + expected);
 	}
 }

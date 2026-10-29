@@ -61,17 +61,23 @@ Value set(CommandContext &ctx, Args args) {
 	if (!opts) return opts.error();
 
 	const std::string &key = args[1].as_string();
-	auto current           = ctx.db.find_as<String>(key);
-	// Plain SET overwrites any type; SET ... GET must read a string first.
-	if (!current && opts->get) return reply::wrong_type();
-	const bool exists = !current || *current != nullptr;
 
 	// With GET, the reply is the previous value (or nil) instead of OK.
 	Value previous = reply::nil();
-	if (opts->get && exists) previous = reply::bulk(**current);
 
-	if ((opts->nx && exists) || (opts->xx && !exists))
-		return opts->get ? previous : reply::nil();
+	// A plain SET (no NX, XX or GET) overwrites whatever is there, so it does
+	// not need to look the key up first; the set() below does the one lookup.
+	if (opts->nx || opts->xx || opts->get) {
+		const auto current = ctx.db.find_as<String>(key);
+		// SET ... GET must read a string first.
+		if (!current && opts->get) return reply::wrong_type();
+		const bool exists = !current || *current != nullptr;
+
+		if (opts->get && exists) previous = reply::bulk(**current);
+
+		if ((opts->nx && exists) || (opts->xx && !exists))
+			return opts->get ? previous : reply::nil();
+	}
 
 	ctx.db.set(key, args[2].as_string());
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.

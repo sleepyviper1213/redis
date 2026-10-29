@@ -19,7 +19,9 @@ void Database::set(std::string_view key, Object value) {
 }
 
 bool Database::erase(std::string_view key) {
-	if (auto it = expires_.find(key); it != expires_.end()) erase_deadline(it);
+	if (!expires_.empty())
+		if (auto it = expires_.find(key); it != expires_.end())
+			erase_deadline(it);
 	const auto it = dict_.find(key);
 	if (it == dict_.end()) return false;
 	dict_.erase(it);
@@ -57,6 +59,8 @@ bool Database::set_expiry(std::string_view key, time_point deadline) {
 }
 
 bool Database::persist(std::string_view key) {
+	// Most keyspaces have few or no deadlines: skip the hash of the key.
+	if (expires_.empty()) return false;
 	const auto it = expires_.find(key);
 	if (it == expires_.end()) return false;
 	erase_deadline(it);
@@ -84,6 +88,7 @@ size_t Database::active_expire_cycle(size_t max_keys) {
 }
 
 bool Database::expire_if_due(std::string_view key) {
+	if (expires_.empty()) return false;
 	const auto it = expires_.find(key);
 	if (it == expires_.end() || it->second > clock::now()) return false;
 	erase(key);

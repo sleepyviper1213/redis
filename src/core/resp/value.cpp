@@ -4,6 +4,8 @@
 #include <fmt/ranges.h>
 
 #include <cassert>
+#include <charconv>
+#include <iterator>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -93,6 +95,57 @@ bool Value::is_integer() const {
 
 bool Value::is_double() const {
 	return type_ == Type::Double && std::holds_alternative<double>(data_);
+}
+
+void encode_to(std::string &out, const Value &value) {
+	using enum Value::Type;
+
+	char digits[24]; // fits any int64_t or size_t in decimal
+	const auto append_number = [&](auto n) {
+		const auto [end, ec] = std::to_chars(digits, digits + sizeof digits, n);
+		out.append(digits, end);
+	};
+
+	switch (value.type()) {
+	case SimpleString:
+		out += '+';
+		out += value.as_string();
+		out += "\r\n";
+		break;
+	case SimpleError:
+		out += '-';
+		out += value.as_string();
+		out += "\r\n";
+		break;
+	case Integer:
+		out += ':';
+		append_number(value.as_integer());
+		out += "\r\n";
+		break;
+	case BulkString: {
+		const auto &str = value.as_string();
+		out += '$';
+		append_number(str.size());
+		out += "\r\n";
+		out += str;
+		out += "\r\n";
+		break;
+	}
+	case Array: {
+		const auto &arr = value.as_array();
+		out += '*';
+		append_number(arr.size());
+		out += "\r\n";
+		for (const auto &element : arr) encode_to(out, element);
+		break;
+	}
+	// RESP2 null bulk string; see the formatter below.
+	case Null: out += "$-1\r\n"; break;
+	case Double:
+		fmt::format_to(std::back_inserter(out), ",{}\r\n", value.as_double());
+		break;
+	default: std::unreachable();
+	}
 }
 } // namespace redis::resp
 

@@ -35,7 +35,7 @@ ParsedBatch parse_pending(std::string &pending) {
 AfterReplies execute_batch(const ParsedBatch &batch, std::string &replies,
 						   const CommandHandler &handler, CommandContext &ctx) {
 	for (const auto &request : batch.requests)
-		replies += handler.execute(ctx, request);
+		handler.execute(ctx, request, replies);
 
 	if (batch.protocol_error.empty()) return AfterReplies::KeepOpen;
 	replies += batch.protocol_error;

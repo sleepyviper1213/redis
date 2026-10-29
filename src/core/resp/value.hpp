@@ -172,6 +172,15 @@ private:
 		data_;
 };
 
+/**
+ * \brief Append the RESP encoding of \p value to \p out.
+ *
+ * Produces exactly what `fmt::format("{:e}", value)` does, without the
+ * temporary string or the format-string parsing; this is the reply path of
+ * every command.
+ */
+void encode_to(std::string &out, const Value &value);
+
 } // namespace redis::resp
 
 /**

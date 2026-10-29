@@ -25,6 +25,14 @@ public:
 	[[nodiscard]] std::string execute(CommandContext &ctx,
 									  const resp::Value &request) const;
 
+	/**
+	 * \brief Like the above, but appends the reply to \p out. The hot path
+	 * uses this to build a whole batch of replies in one buffer, without a
+	 * temporary string per request.
+	 */
+	void execute(CommandContext &ctx, const resp::Value &request,
+				 std::string &out) const;
+
 private:
 	StringMap<CommandInfo> commands_;
 };

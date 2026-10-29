@@ -5,6 +5,7 @@
 #include <chrono>
 #include <string>
 #include <thread>
+#include <vector>
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -165,6 +166,118 @@ SCENARIO("Malformed requests get RESP error replies", "[commands]") {
 				CHECK(server.run({"GET", "a", "b"}) ==
 					  "-ERR wrong number of arguments for 'get' command\r\n");
 			}
+		}
+	}
+}
+
+SCENARIO("Command names are matched without regard to case",
+		 "[commands][dispatch]") {
+	GIVEN("a keyspace holding one key") {
+		test::Server server;
+		REQUIRE(server.run({"set", "k", "v"}) == "+OK\r\n");
+
+		THEN("lower and mixed case names find their command") {
+			CHECK(server.run({"get", "k"}) == "$1\r\nv\r\n");
+			CHECK(server.run({"GeT", "k"}) == "$1\r\nv\r\n");
+			CHECK(server.run({"strlen", "k"}) == ":1\r\n");
+		}
+
+		THEN("an arity error names the command in lower case") {
+			CHECK(server.run({"GET"}) ==
+				  "-ERR wrong number of arguments for 'get' command\r\n");
+		}
+
+		THEN("an unknown name is echoed back as the client sent it") {
+			CHECK(server.run({"NoSuchCmd"}) ==
+				  "-ERR unknown command 'NoSuchCmd'\r\n");
+			CHECK(server.run({""}) == "-ERR unknown command ''\r\n");
+		}
+
+		THEN("a name longer than any command is unknown, not truncated") {
+			const std::string longer(40, 'a');
+			CHECK(server.run({longer}) ==
+				  "-ERR unknown command '" + longer + "'\r\n");
+			// A long name must not match a real command by prefix.
+			CHECK(server.run({"GET" + std::string(40, 'x')}) ==
+				  "-ERR unknown command 'GET" + std::string(40, 'x') + "'\r\n");
+		}
+	}
+}
+
+SCENARIO("A reply is appended to the caller's buffer", "[commands][dispatch]") {
+	GIVEN("a handler and a buffer that already holds a reply") {
+		static const CommandHandler handler;
+		test::Server server;
+		std::string out = "+earlier\r\n";
+
+		WHEN("two requests run against it") {
+			const std::vector<std::string> ping{"PING"};
+			const std::vector<std::string> set{"SET", "k", "v"};
+			handler.execute(server.ctx, resp::Value::from_raw_array(ping), out);
+			handler.execute(server.ctx, resp::Value::from_raw_array(set), out);
+
+			THEN("their replies follow, in order, and nothing is lost") {
+				CHECK(out == "+earlier\r\n+PONG\r\n+OK\r\n");
+			}
+		}
+	}
+}
+
+SCENARIO("A plain SET overwrites without looking at the old value",
+		 "[commands][set]") {
+	GIVEN("a key holding a list") {
+		test::Server server;
+		REQUIRE(server.run({"LPUSH", "k", "a"}) == ":1\r\n");
+
+		WHEN("SET is run without options") {
+			CHECK(server.run({"SET", "k", "v"}) == "+OK\r\n");
+
+			THEN("the list is replaced by the string") {
+				CHECK(server.run({"TYPE", "k"}) == "+string\r\n");
+				CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
+			}
+		}
+
+		WHEN("SET is run with NX, XX or GET") {
+			THEN("the old value still decides the outcome") {
+				CHECK(server.run({"SET", "k", "v", "NX"}) == "$-1\r\n");
+				CHECK(server.run({"SET", "k", "v", "GET"}) ==
+					  "-WRONGTYPE Operation against a key holding the wrong "
+					  "kind of value\r\n");
+				CHECK(server.run({"SET", "k", "v", "XX"}) == "+OK\r\n");
+			}
+		}
+	}
+
+	GIVEN("a key with a TTL") {
+		test::Server server;
+		REQUIRE(server.run({"SET", "k", "v", "EX", "100"}) == "+OK\r\n");
+
+		WHEN("SET is run without options") {
+			REQUIRE(server.run({"SET", "k", "w"}) == "+OK\r\n");
+
+			THEN("the TTL is cleared, as in Redis") {
+				CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
+			}
+		}
+
+		WHEN("SET is run with KEEPTTL") {
+			REQUIRE(server.run({"SET", "k", "w", "KEEPTTL"}) == "+OK\r\n");
+
+			THEN("the TTL is kept") {
+				CHECK(server.run({"TTL", "k"}) == ":100\r\n");
+			}
+		}
+	}
+
+	GIVEN("a keyspace with no deadlines at all") {
+		test::Server server;
+
+		THEN("SET, GET and DEL still work on it") {
+			CHECK(server.run({"SET", "a", "1"}) == "+OK\r\n");
+			CHECK(server.run({"GET", "a"}) == "$1\r\n1\r\n");
+			CHECK(server.run({"DEL", "a"}) == ":1\r\n");
+			CHECK(server.run({"GET", "a"}) == "$-1\r\n");
 		}
 	}
 }

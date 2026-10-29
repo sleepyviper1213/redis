@@ -112,3 +112,38 @@ SCENARIO("Commands reject keys holding another type", "[commands][types]") {
 		}
 	}
 }
+
+SCENARIO("Integer arguments are parsed the way Redis does",
+		 "[commands][string][integer]") {
+	GIVEN("a counter") {
+		test::Server server;
+		REQUIRE(server.run({"SET", "n", "1"}) == "+OK\r\n");
+		const std::string not_integer =
+			"-ERR value is not an integer or out of range\r\n";
+
+		THEN("plain decimals, with a minus sign, are accepted") {
+			CHECK(server.run({"INCRBY", "n", "10"}) == ":11\r\n");
+			CHECK(server.run({"INCRBY", "n", "-11"}) == ":0\r\n");
+		}
+
+		THEN("a plus sign, spaces, fractions and prefixes are rejected") {
+			for (const char *bad :
+				 {"+5", " 5", "5 ", "", "1.5", "0x10", "5abc", "--5"}) {
+				INFO("argument '" << bad << "'");
+				CHECK(server.run({"INCRBY", "n", bad}) == not_integer);
+			}
+		}
+
+		THEN("a value outside int64 is rejected") {
+			CHECK(server.run({"INCRBY", "n", "9223372036854775808"}) ==
+				  not_integer);
+			CHECK(server.run({"INCRBY", "n", "-9223372036854775809"}) ==
+				  not_integer);
+		}
+
+		THEN("a stored value that is not an integer is rejected") {
+			REQUIRE(server.run({"SET", "s", "+5"}) == "+OK\r\n");
+			CHECK(server.run({"INCR", "s"}) == not_integer);
+		}
+	}
+}
