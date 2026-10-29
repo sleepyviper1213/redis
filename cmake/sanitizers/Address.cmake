@@ -79,8 +79,8 @@ else()
     # composes with ASan, unlike TSan. -fno-sanitize-recover so CI dies on UB
     # instead of printing and continuing.
     _redis_add_sanitizer_flags(
-        AddressSanitizer -fsanitize=address,undefined -fno-omit-frame-pointer
-        -fno-sanitize-recover=all -g)
+        AddressSanitizer -fsanitize=address,undefined ${REDIS_UBSAN_EXTRA_FLAGS}
+        -fno-omit-frame-pointer -fno-sanitize-recover=all -g)
     message(STATUS "sanitizers: AddressSanitizer instruments with ASan+UBSan")
 endif()
 

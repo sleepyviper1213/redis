@@ -18,6 +18,19 @@ function(_redis_add_sanitizer_flags config)
     add_link_options(${_opts})
 endfunction()
 
+# Extra flags for configurations that enable UBSan.
+#
+# -fsanitize=function makes every C++ `throw` abort ("terminating due to
+# uncaught exception") with Homebrew LLVM on macOS, even when a handler exists:
+# a ten-line throw/catch program fails with it and passes without it, on every
+# other UBSan check and with ASan alone. Switch only that check off there; the
+# rest of UBSan stays on. Other platforms keep the full set.
+if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(REDIS_UBSAN_EXTRA_FLAGS -fno-sanitize=function)
+else()
+    set(REDIS_UBSAN_EXTRA_FLAGS)
+endif()
+
 function(_redis_sanitizer_uninstrumented config reason)
     message(STATUS "${reason}; '${config}' builds WITHOUT instrumentation.")
 endfunction()

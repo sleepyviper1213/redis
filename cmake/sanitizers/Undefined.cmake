@@ -12,6 +12,7 @@ if(WIN32)
 else()
     _redis_add_sanitizer_flags(UndefinedSanitizer
         -fsanitize=undefined
+        ${REDIS_UBSAN_EXTRA_FLAGS}
         -fno-omit-frame-pointer
         -fno-sanitize-recover=all
         -g)
