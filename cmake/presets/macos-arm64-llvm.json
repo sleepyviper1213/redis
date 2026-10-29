@@ -9,11 +9,14 @@
         {
             "name": "macos-arm64-llvm",
             "displayName": "macOS arm64 Homebrew LLVM",
-            "description": "Debug, Release and RelWithDebInfo.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "macos-llvm-toolchain"
-            ]
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address;Thread;Undefined"
+            }
         },
         {
             "name": "macos-arm64-llvm-coverage",
@@ -28,30 +31,6 @@
             "displayName": "macOS arm64 Homebrew LLVM / analysis",
             "inherits": [
                 "analysis-options",
-                "macos-llvm-toolchain"
-            ]
-        },
-        {
-            "name": "macos-arm64-llvm-asan",
-            "displayName": "macOS arm64 Homebrew LLVM / asan",
-            "inherits": [
-                "asan-options",
-                "macos-llvm-toolchain"
-            ]
-        },
-        {
-            "name": "macos-arm64-llvm-tsan",
-            "displayName": "macOS arm64 Homebrew LLVM / tsan",
-            "inherits": [
-                "tsan-options",
-                "macos-llvm-toolchain"
-            ]
-        },
-        {
-            "name": "macos-arm64-llvm-ubsan",
-            "displayName": "macOS arm64 Homebrew LLVM / ubsan",
-            "inherits": [
-                "ubsan-options",
                 "macos-llvm-toolchain"
             ]
         }
@@ -84,17 +63,17 @@
         },
         {
             "name": "macos-arm64-llvm-asan",
-            "configurePreset": "macos-arm64-llvm-asan",
+            "configurePreset": "macos-arm64-llvm",
             "configuration": "AddressSanitizer"
         },
         {
             "name": "macos-arm64-llvm-tsan",
-            "configurePreset": "macos-arm64-llvm-tsan",
+            "configurePreset": "macos-arm64-llvm",
             "configuration": "ThreadSanitizer"
         },
         {
             "name": "macos-arm64-llvm-ubsan",
-            "configurePreset": "macos-arm64-llvm-ubsan",
+            "configurePreset": "macos-arm64-llvm",
             "configuration": "UndefinedSanitizer"
         }
     ],
@@ -120,19 +99,19 @@
         {
             "name": "macos-arm64-llvm-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "macos-arm64-llvm-asan",
+            "configurePreset": "macos-arm64-llvm",
             "configuration": "AddressSanitizer"
         },
         {
             "name": "macos-arm64-llvm-tsan",
             "inherits": "tsan-test-base",
-            "configurePreset": "macos-arm64-llvm-tsan",
+            "configurePreset": "macos-arm64-llvm",
             "configuration": "ThreadSanitizer"
         },
         {
             "name": "macos-arm64-llvm-ubsan",
             "inherits": "ubsan-test-base",
-            "configurePreset": "macos-arm64-llvm-ubsan",
+            "configurePreset": "macos-arm64-llvm",
             "configuration": "UndefinedSanitizer"
         }
     ],
@@ -206,7 +185,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "macos-arm64-llvm-asan"
+                    "name": "macos-arm64-llvm"
                 },
                 {
                     "type": "build",
@@ -223,7 +202,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "macos-arm64-llvm-tsan"
+                    "name": "macos-arm64-llvm"
                 },
                 {
                     "type": "build",
@@ -240,7 +219,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "macos-arm64-llvm-ubsan"
+                    "name": "macos-arm64-llvm"
                 },
                 {
                     "type": "build",

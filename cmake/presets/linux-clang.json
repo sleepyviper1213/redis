@@ -9,11 +9,14 @@
         {
             "name": "linux-clang",
             "displayName": "Linux Clang",
-            "description": "Debug, Release and RelWithDebInfo.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "linux-clang-toolchain"
-            ]
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address;Thread;Undefined"
+            }
         },
         {
             "name": "linux-clang-coverage",
@@ -28,30 +31,6 @@
             "displayName": "Linux Clang / analysis",
             "inherits": [
                 "analysis-options",
-                "linux-clang-toolchain"
-            ]
-        },
-        {
-            "name": "linux-clang-asan",
-            "displayName": "Linux Clang / asan",
-            "inherits": [
-                "asan-options",
-                "linux-clang-toolchain"
-            ]
-        },
-        {
-            "name": "linux-clang-tsan",
-            "displayName": "Linux Clang / tsan",
-            "inherits": [
-                "tsan-options",
-                "linux-clang-toolchain"
-            ]
-        },
-        {
-            "name": "linux-clang-ubsan",
-            "displayName": "Linux Clang / ubsan",
-            "inherits": [
-                "ubsan-options",
                 "linux-clang-toolchain"
             ]
         }
@@ -84,17 +63,17 @@
         },
         {
             "name": "linux-clang-asan",
-            "configurePreset": "linux-clang-asan",
+            "configurePreset": "linux-clang",
             "configuration": "AddressSanitizer"
         },
         {
             "name": "linux-clang-tsan",
-            "configurePreset": "linux-clang-tsan",
+            "configurePreset": "linux-clang",
             "configuration": "ThreadSanitizer"
         },
         {
             "name": "linux-clang-ubsan",
-            "configurePreset": "linux-clang-ubsan",
+            "configurePreset": "linux-clang",
             "configuration": "UndefinedSanitizer"
         }
     ],
@@ -120,19 +99,19 @@
         {
             "name": "linux-clang-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "linux-clang-asan",
+            "configurePreset": "linux-clang",
             "configuration": "AddressSanitizer"
         },
         {
             "name": "linux-clang-tsan",
             "inherits": "tsan-test-base",
-            "configurePreset": "linux-clang-tsan",
+            "configurePreset": "linux-clang",
             "configuration": "ThreadSanitizer"
         },
         {
             "name": "linux-clang-ubsan",
             "inherits": "ubsan-test-base",
-            "configurePreset": "linux-clang-ubsan",
+            "configurePreset": "linux-clang",
             "configuration": "UndefinedSanitizer"
         }
     ],
@@ -206,7 +185,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-clang-asan"
+                    "name": "linux-clang"
                 },
                 {
                     "type": "build",
@@ -223,7 +202,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-clang-tsan"
+                    "name": "linux-clang"
                 },
                 {
                     "type": "build",
@@ -240,7 +219,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-clang-ubsan"
+                    "name": "linux-clang"
                 },
                 {
                     "type": "build",

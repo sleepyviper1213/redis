@@ -40,45 +40,6 @@
                 "REDIS_ENABLE_IPO": "OFF",
                 "REDIS_ENABLE_CCACHE": "ON"
             }
-        },
-        {
-            "name": "sanitizer-options",
-            "hidden": true,
-            "description": "Shared by every sanitizer preset. IPO is off: LTO inlines away the frames a sanitizer report is made of.",
-            "inherits": "vcpkg-base",
-            "cacheVariables": {
-                "REDIS_ENABLE_CCACHE": "ON",
-                "REDIS_ENABLE_STATIC_ANALYZERS": "OFF",
-                "REDIS_ENABLE_COVERAGE": "OFF",
-                "REDIS_ENABLE_IPO": "OFF"
-            }
-        },
-        {
-            "name": "asan-options",
-            "hidden": true,
-            "inherits": "sanitizer-options",
-            "cacheVariables": {
-                "CMAKE_CONFIGURATION_TYPES": "AddressSanitizer",
-                "REDIS_SANITIZER": "Address"
-            }
-        },
-        {
-            "name": "tsan-options",
-            "hidden": true,
-            "inherits": "sanitizer-options",
-            "cacheVariables": {
-                "CMAKE_CONFIGURATION_TYPES": "ThreadSanitizer",
-                "REDIS_SANITIZER": "Thread"
-            }
-        },
-        {
-            "name": "ubsan-options",
-            "hidden": true,
-            "inherits": "sanitizer-options",
-            "cacheVariables": {
-                "CMAKE_CONFIGURATION_TYPES": "UndefinedSanitizer",
-                "REDIS_SANITIZER": "Undefined"
-            }
         }
     ]
 }

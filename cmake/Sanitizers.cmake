@@ -72,7 +72,8 @@ macro(_redis_register_sanitizer_config config_name)
 endmacro()
 
 # ---------------------------------------------------------------------------
-# Exactly one family
+# Families: each one registers its own configuration type, and its flags apply
+# only to that configuration, so several families can share one build tree.
 # ---------------------------------------------------------------------------
 function(_redis_normalize_sanitizer_token token out_var)
     string(TOUPPER "${token}" _u)
@@ -98,25 +99,27 @@ function(_redis_normalize_sanitizer_token token out_var)
     endif()
 endfunction()
 
-if(REDIS_SANITIZER MATCHES "[,;]")
-    message(
-        FATAL_ERROR
-            "REDIS_SANITIZER='${REDIS_SANITIZER}' selects more than one family. "
-            "ASan and TSan cannot be mixed — pick exactly one of: "
-            "Address, Thread, Undefined. "
-            "Use a second build tree for a second sanitizer.")
-endif()
+string(REPLACE "," ";" _rd_san_tokens "${REDIS_SANITIZER}")
+set(_rd_san_families "")
+foreach(_rd_san_token IN LISTS _rd_san_tokens)
+    _redis_normalize_sanitizer_token("${_rd_san_token}" _rd_san_family)
+    if(NOT _rd_san_family)
+        message(
+            FATAL_ERROR
+                "REDIS_SANITIZER='${REDIS_SANITIZER}' has '${_rd_san_token}', "
+                "which is not one of: Address, Thread, Undefined.")
+    endif()
+    list(APPEND _rd_san_families "${_rd_san_family}")
+endforeach()
+list(REMOVE_DUPLICATES _rd_san_families)
 
-_redis_normalize_sanitizer_token("${REDIS_SANITIZER}" _rd_san)
-if(NOT _rd_san)
-    message(
-        FATAL_ERROR
-            "REDIS_SANITIZER='${REDIS_SANITIZER}' is not one of: "
-            "Address, Thread, Undefined.")
-endif()
-
-include("${CMAKE_CURRENT_LIST_DIR}/sanitizers/${_rd_san}.cmake")
-unset(_rd_san)
+foreach(_rd_san_family IN LISTS _rd_san_families)
+    include("${CMAKE_CURRENT_LIST_DIR}/sanitizers/${_rd_san_family}.cmake")
+endforeach()
+unset(_rd_san_tokens)
+unset(_rd_san_token)
+unset(_rd_san_families)
+unset(_rd_san_family)
 
 set(REDIS_SANITIZER_CONFIGS
     "${REDIS_SANITIZER_CONFIGS}"

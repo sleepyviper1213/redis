@@ -36,8 +36,8 @@ jobs:
           - { preset: linux-gcc-release, configure: linux-gcc,      config: Release }
           - { preset: linux-clang-debug, configure: linux-clang,    config: Debug }
           # The AddressSanitizer config folds UBSan in on GCC/Clang.
-          - { preset: linux-gcc-asan,    configure: linux-gcc-asan, config: AddressSanitizer }
-          - { preset: linux-gcc-tsan,    configure: linux-gcc-tsan, config: ThreadSanitizer }
+          - { preset: linux-gcc-asan,    configure: linux-gcc,      config: AddressSanitizer }
+          - { preset: linux-gcc-tsan,    configure: linux-gcc,      config: ThreadSanitizer }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7

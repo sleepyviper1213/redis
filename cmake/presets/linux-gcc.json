@@ -9,11 +9,14 @@
         {
             "name": "linux-gcc",
             "displayName": "Linux GCC",
-            "description": "Debug, Release and RelWithDebInfo.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "linux-gcc-toolchain"
-            ]
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address;Thread;Undefined"
+            }
         },
         {
             "name": "linux-gcc-coverage",
@@ -28,30 +31,6 @@
             "displayName": "Linux GCC / analysis",
             "inherits": [
                 "analysis-options",
-                "linux-gcc-toolchain"
-            ]
-        },
-        {
-            "name": "linux-gcc-asan",
-            "displayName": "Linux GCC / asan",
-            "inherits": [
-                "asan-options",
-                "linux-gcc-toolchain"
-            ]
-        },
-        {
-            "name": "linux-gcc-tsan",
-            "displayName": "Linux GCC / tsan",
-            "inherits": [
-                "tsan-options",
-                "linux-gcc-toolchain"
-            ]
-        },
-        {
-            "name": "linux-gcc-ubsan",
-            "displayName": "Linux GCC / ubsan",
-            "inherits": [
-                "ubsan-options",
                 "linux-gcc-toolchain"
             ]
         }
@@ -84,17 +63,17 @@
         },
         {
             "name": "linux-gcc-asan",
-            "configurePreset": "linux-gcc-asan",
+            "configurePreset": "linux-gcc",
             "configuration": "AddressSanitizer"
         },
         {
             "name": "linux-gcc-tsan",
-            "configurePreset": "linux-gcc-tsan",
+            "configurePreset": "linux-gcc",
             "configuration": "ThreadSanitizer"
         },
         {
             "name": "linux-gcc-ubsan",
-            "configurePreset": "linux-gcc-ubsan",
+            "configurePreset": "linux-gcc",
             "configuration": "UndefinedSanitizer"
         }
     ],
@@ -120,19 +99,19 @@
         {
             "name": "linux-gcc-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "linux-gcc-asan",
+            "configurePreset": "linux-gcc",
             "configuration": "AddressSanitizer"
         },
         {
             "name": "linux-gcc-tsan",
             "inherits": "tsan-test-base",
-            "configurePreset": "linux-gcc-tsan",
+            "configurePreset": "linux-gcc",
             "configuration": "ThreadSanitizer"
         },
         {
             "name": "linux-gcc-ubsan",
             "inherits": "ubsan-test-base",
-            "configurePreset": "linux-gcc-ubsan",
+            "configurePreset": "linux-gcc",
             "configuration": "UndefinedSanitizer"
         }
     ],
@@ -206,7 +185,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc-asan"
+                    "name": "linux-gcc"
                 },
                 {
                     "type": "build",
@@ -223,7 +202,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc-tsan"
+                    "name": "linux-gcc"
                 },
                 {
                     "type": "build",
@@ -240,7 +219,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc-ubsan"
+                    "name": "linux-gcc"
                 },
                 {
                     "type": "build",
