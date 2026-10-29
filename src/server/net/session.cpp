@@ -10,6 +10,7 @@
 
 #include <array>
 #include <string>
+#include <tuple>
 
 using boost::asio::ip::tcp;
 
@@ -27,6 +28,8 @@ Session::Session(tcp::socket socket, Executor &executor,
 	  handler_(handler),
 	  ctx_(ctx) {
 	boost::system::error_code ec;
+	// Needed for the immediate write in loop(); async operations are unaffected.
+	socket_.non_blocking(true, ec);
 	const auto peer = socket_.remote_endpoint(ec);
 	if (!ec) log().debug("Accepted from {}", peer);
 }
@@ -89,8 +92,20 @@ net::awaitable<void> Session::loop() {
 		}
 
 		if (!replies.empty()) {
-			const auto [write_err, _] =
-				co_await net::async_write(socket_, net::buffer(replies));
+			// Try the write right away, as Redis does before returning to its
+			// event loop: a small reply almost always fits the socket buffer,
+			// which saves a round trip through the I/O context. Only what the
+			// kernel did not take is handed to async_write.
+			boost::system::error_code write_err;
+			size_t sent = socket_.write_some(net::buffer(replies), write_err);
+			if (write_err == net::error::would_block ||
+				write_err == net::error::try_again) {
+				sent      = 0;
+				write_err = {};
+			}
+			if (!write_err && sent < replies.size())
+				std::tie(write_err, std::ignore) = co_await net::async_write(
+					socket_, net::buffer(replies) + sent);
 			if (write_err) co_return log().error("Write: {}", write_err);
 			replies.clear();
 		}
