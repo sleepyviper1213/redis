@@ -22,12 +22,12 @@ endif()
 
 if(NOT EXISTS "${HOMEBREW_LLVM_PREFIX}/bin/clang++")
     message(FATAL_ERROR
-            "Homebrew LLVM not found at '${HOMEBREW_LLVM_PREFIX}'. "
-            "Install it with `brew install llvm`, or pass "
-            "-DHOMEBREW_LLVM_PREFIX=<prefix> (see `brew --prefix llvm`).")
+        "Homebrew LLVM not found at '${HOMEBREW_LLVM_PREFIX}'. "
+        "Install it with `brew install llvm`, or pass "
+        "-DHOMEBREW_LLVM_PREFIX=<prefix> (see `brew --prefix llvm`).")
 endif()
 
-set(CMAKE_C_COMPILER   "${HOMEBREW_LLVM_PREFIX}/bin/clang"   CACHE FILEPATH "Homebrew LLVM clang"   FORCE)
+set(CMAKE_C_COMPILER "${HOMEBREW_LLVM_PREFIX}/bin/clang" CACHE FILEPATH "Homebrew LLVM clang" FORCE)
 set(CMAKE_CXX_COMPILER "${HOMEBREW_LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "Homebrew LLVM clang++" FORCE)
 
 # Use the LLVM toolchain's own runtime libraries and bake an rpath so binaries
@@ -35,7 +35,10 @@ set(CMAKE_CXX_COMPILER "${HOMEBREW_LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "Hom
 set(_hb_llvm_link
     "-L${HOMEBREW_LLVM_PREFIX}/lib/c++ -Wl,-rpath,${HOMEBREW_LLVM_PREFIX}/lib/c++ \
 -L${HOMEBREW_LLVM_PREFIX}/lib/unwind -lunwind")
-set(CMAKE_EXE_LINKER_FLAGS_INIT    "${_hb_llvm_link}")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "${_hb_llvm_link}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "${_hb_llvm_link}")
 set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_hb_llvm_link}")
 unset(_hb_llvm_link)
+set(CMAKE_SYSTEM_NAME Darwin)
+set(CMAKE_SYSTEM_PROCESSOR "arm64" CACHE STRING "" FORCE)
+set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)

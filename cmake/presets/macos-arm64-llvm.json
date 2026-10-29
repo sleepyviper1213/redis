@@ -15,7 +15,8 @@
                 "macos-llvm-toolchain"
             ],
             "cacheVariables": {
-                "REDIS_SANITIZER": "Address;Thread;Undefined"
+                "REDIS_SANITIZER": "Address;Thread;Undefined",
+                "CMAKE_MAKE_PROGRAM": "/opt/homebrew/bin/ninja"
             }
         },
         {
