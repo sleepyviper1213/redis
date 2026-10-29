@@ -141,10 +141,10 @@ private:
 	/// Remove \p key if its deadline has passed. \return true if removed.
 	bool expire_if_due(std::string_view key);
 
-	void erase_deadline(StringMap<time_point>::iterator it);
+	void erase_deadline(KeyMap<time_point>::iterator it);
 
-	StringMap<Object> dict_;
-	StringMap<time_point> expires_;
+	KeyMap<Object> dict_;
+	KeyMap<time_point> expires_;
 	std::set<std::pair<time_point, std::string>> by_deadline_;
 };
 

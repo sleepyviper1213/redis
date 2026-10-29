@@ -90,7 +90,7 @@ bool Database::expire_if_due(std::string_view key) {
 	return true;
 }
 
-void Database::erase_deadline(StringMap<time_point>::iterator it) {
+void Database::erase_deadline(KeyMap<time_point>::iterator it) {
 	by_deadline_.erase({it->second, it->first});
 	expires_.erase(it);
 }

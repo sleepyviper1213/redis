@@ -1,13 +1,20 @@
 {
   "dependencies": [
     "boost-asio",
+    "boost-unordered",
+    "abseil",
     "spdlog",
     "cereal",
     "catch2",
     "hiredis",
     "magic-enum",
     "fast-float",
-    { "name": "stdexec", "features": ["asio"] },
-	"cli11"
+    {
+      "name": "stdexec",
+      "features": [
+        "asio"
+      ]
+    },
+    "cli11"
   ]
 }
