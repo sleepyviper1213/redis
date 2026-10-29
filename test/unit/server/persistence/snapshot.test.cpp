@@ -142,7 +142,10 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 		WHEN("BGSAVE is called and the child finishes") {
 			const auto reply   = server.run({"BGSAVE"});
 			const auto overlap = server.run({"BGSAVE"});
-			for (int i = 0; i < 100 &&
+			// Up to 10 s: a forked child is slow under ThreadSanitizer (its
+			// shadow memory is copy-on-write) and the suite runs in parallel.
+			// A passing run leaves the loop as soon as the child is reaped.
+			for (int i = 0; i < 1000 &&
 							server.persistence.background_save_in_progress();
 				 ++i) {
 				std::this_thread::sleep_for(10ms);
