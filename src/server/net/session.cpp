@@ -47,8 +47,18 @@ net::awaitable<void> Session::loop() {
 	std::array<char, READ_CHUNK_SIZE> chunk{};
 
 	while (socket_.is_open()) {
-		const auto [ec, bytes_transferred] =
-			co_await socket_.async_read_some(net::buffer(chunk));
+		// Wait for readability, then read in place. async_read_some would first
+		// try a speculative recv that, on a request/response connection, almost
+		// always finds nothing yet: a wasted syscall per request (about a
+		// quarter of the server's time at one client, in a sampled profile).
+		auto [ec] = co_await socket_.async_wait(net::socket_base::wait_read);
+		size_t bytes_transferred = 0;
+		if (!ec) {
+			bytes_transferred = socket_.read_some(net::buffer(chunk), ec);
+			// Readiness can be spurious; go back to waiting.
+			if (ec == net::error::would_block || ec == net::error::try_again)
+				continue;
+		}
 
 		if (ec == net::error::eof)
 			co_return log().debug("Client disconnected normally");
