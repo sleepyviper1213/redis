@@ -89,8 +89,11 @@ bool Parser::is_crlf(std::string_view s) { return s == CRLF; }
 
 std::expected<int64_t, std::errc> Parser::parse_integer(std::string_view s) {
 	int64_t val{};
-	auto [ptr, ec] = fast_float::from_chars(s.begin(), s.end(), val);
-	if (ec != std::errc() || ptr != s.end()) FAILED(ec);
+	auto [ptr, ec] = fast_float::from_chars(s.data(), s.data() + s.size(), val);
+	// Trailing garbage after a valid prefix ("12abc") reports no error code.
+	if (ec == std::errc() && ptr != s.data() + s.size())
+		ec = std::errc::invalid_argument;
+	if (ec != std::errc()) FAILED(ec);
 	return val;
 }
 
