@@ -35,6 +35,18 @@ WORKDIR="$(mktemp -d)"
     --dump "$WORKDIR/dump.snap" ${SERVER_ARGS:-} >/dev/null 2>&1 &
 SERVER_PID=$!
 cleanup() {
+    local status=$?
+    if [[ $status -ne 0 ]]; then
+        # A reset connection usually means the server died: say so, and show
+        # its log before the work directory is removed.
+        if kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "note: the server is still running (it closed the connection)" >&2
+        else
+            echo "error: the server exited during the run" >&2
+        fi
+        echo "--- last server log lines ---" >&2
+        tail -n 20 "$WORKDIR/server.log" >&2 2>/dev/null || true
+    fi
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
     rm -rf "$WORKDIR"
