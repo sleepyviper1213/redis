@@ -525,3 +525,55 @@ SCENARIO("Parser rejects or bounds client-declared lengths",
 		REQUIRE(Parser::is_incomplete(result.error()));
 	}
 }
+
+SCENARIO("Parsing decimal integers", "[resp][parser][integer]") {
+	THEN("valid decimals parse, including the int64 bounds") {
+		CHECK(Parser::parse_integer("0") == 0);
+		CHECK(Parser::parse_integer("42") == 42);
+		CHECK(Parser::parse_integer("-7") == -7);
+		CHECK(Parser::parse_integer("9223372036854775807") == INT64_MAX);
+		CHECK(Parser::parse_integer("-9223372036854775808") == INT64_MIN);
+	}
+
+	THEN("input with no digits is invalid") {
+		for (const std::string_view s : {"", "-", "abc"}) {
+			INFO("input " << s);
+			const auto result = Parser::parse_integer(s);
+			REQUIRE(!result);
+			CHECK(result.error() == std::errc::invalid_argument);
+		}
+	}
+
+	THEN("trailing characters after the digits are invalid") {
+		for (const std::string_view s : {"12abc", "1.5", "7 "}) {
+			INFO("input " << s);
+			const auto result = Parser::parse_integer(s);
+			REQUIRE(!result);
+			CHECK(result.error() == std::errc::invalid_argument);
+		}
+	}
+
+	THEN("values outside int64 are out of range") {
+		for (const std::string_view s :
+			 {"9223372036854775808", "-9223372036854775809",
+			  "99999999999999999999"}) {
+			INFO("input " << s);
+			const auto result = Parser::parse_integer(s);
+			REQUIRE(!result);
+			CHECK(result.error() == std::errc::result_out_of_range);
+		}
+	}
+
+	THEN("a RESP integer with trailing garbage is a protocol error") {
+		const auto result = Parser::parse(":12abc\r\n");
+		REQUIRE(!result);
+		CHECK(result.error() == Parser::RespError::PARSE_NUMBER);
+		CHECK(!Parser::is_incomplete(result.error()));
+	}
+
+	THEN("a negative RESP integer parses") {
+		const auto result = Parser::parse(":-5\r\n");
+		REQUIRE(result.has_value());
+		CHECK(result->as_integer() == -5);
+	}
+}

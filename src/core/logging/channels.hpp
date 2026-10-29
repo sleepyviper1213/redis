@@ -21,8 +21,6 @@
 
 #include <spdlog/logger.h>
 
-#include <cstdint>
-
 namespace redis::logging {
 
 /**
@@ -31,7 +29,7 @@ namespace redis::logging {
  * Named for the subject rather than the module path, because that is what a
  * reader is scanning for.
  */
-enum class channel : std::uint8_t {
+enum class channel : uint8_t {
 	server,      ///< startup, shutdown, signals, the periodic cron
 	net,         ///< connections: accept, disconnect, protocol errors
 	commands,    ///< requests and replies (trace level)

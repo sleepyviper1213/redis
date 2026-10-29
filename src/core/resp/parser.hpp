@@ -13,7 +13,7 @@ namespace resp {
  */
 class Parser {
 public:
-	enum class RespError {
+	enum class RespError : uint8_t {
 		UNEXPECTED_EOF,
 		MISSING_CRLF,
 		EMPTY_LINE,
@@ -62,7 +62,7 @@ public:
 	parse_recursive(std::string_view data, size_t &pos);
 
 	/**
-	 * rief Whether \p err means the input is a valid but incomplete prefix.
+	 * \brief Whether \p err means the input is a valid but incomplete prefix.
 	 *
 	 * Network reads deliver arbitrary byte chunks, so a frame may be split
 	 * across reads. Callers should buffer more bytes and retry on these
@@ -71,13 +71,13 @@ public:
 	[[nodiscard]] static bool is_incomplete(RespError err) noexcept;
 
 	/**
-	 * rief Largest bulk string accepted (same default as Redis'
+	 * \brief Largest bulk string accepted (same default as Redis'
 	 * proto-max-bulk-len).
 	 */
 	static constexpr int64_t MAX_BULK_LENGTH = 512LL * 1024 * 1024;
 
 	/**
-	 * rief Largest number of array elements pre-allocated up front. Bigger
+	 * \brief Largest number of array elements pre-allocated up front. Bigger
 	 * arrays still parse, but memory grows only as elements actually arrive,
 	 * so a client cannot make the server allocate by just declaring a length.
 	 */
