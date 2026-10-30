@@ -1,13 +1,17 @@
 #pragma once
+#include "core/utils/attributes.hpp"
+#include "server/storage/database_fwd.hpp"
 #include "server/storage/object.hpp"
 
 #include <chrono>
 #include <cstddef>
 #include <expected>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <set>
-#include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace redis {
@@ -29,17 +33,50 @@ struct WrongType {};
  *
  * Deadlines use the wall clock because EXPIREAT, PXAT and snapshot files
  * exchange absolute Unix times.
+ *
+ * \tparam A A standard Allocator. Keys, values, the tables and the deadline
+ *         index all allocate from the one the database is constructed with.
  */
-class Database {
+template <typename Allocator>
+class BasicDatabase {
+	using Types = BasicValueTypes<Allocator>;
+
+	template <typename V>
+	using KeyMap = typename Types::template KeyMap<V>;
+
+	template <typename T>
+	using rebound = typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
+
 public:
-	using clock      = std::chrono::system_clock;
-	using time_point = clock::time_point;
+	using allocator_type = Allocator;
+	using clock          = std::chrono::system_clock;
+	using time_point     = clock::time_point;
+	using String         = typename Types::String;
+	using Key            = typename Types::Key;
+	using Object         = BasicObject<Allocator>;
+
+	BasicDatabase() requires std::is_default_constructible_v<Allocator>
+		: BasicDatabase(Allocator()) {}
+
+	explicit BasicDatabase(const Allocator &alloc)
+		: alloc_(alloc),
+		  dict_(typename KeyMap<Object>::allocator_type(alloc)),
+		  expires_(typename KeyMap<time_point>::allocator_type(alloc)),
+		  by_deadline_(typename DeadlineIndex::allocator_type(alloc)) {}
+
+	[[nodiscard]] allocator_type get_allocator() const noexcept {
+		return alloc_;
+	}
 
 	/**
 	 * \brief Look up \p key, removing it first if it has expired.
 	 * \return The value, or nullptr if the key does not exist.
 	 */
-	[[nodiscard]] Object *find(std::string_view key);
+	[[nodiscard]] Object *find(std::string_view key) {
+		if (expire_if_due(key)) return nullptr;
+		const auto it = dict_.find(key);
+		return it == dict_.end() ? nullptr : &it->second;
+	}
 
 	/**
 	 * \brief Look up \p key expecting a value of type \p T.
@@ -50,8 +87,36 @@ public:
 	[[nodiscard]] std::expected<T *, WrongType> find_as(std::string_view key) {
 		Object *object = find(key);
 		if (object == nullptr) return nullptr;
-		if (T *value = std::get_if<T>(object)) return value;
+		if (T *value = object_as<T>(*object)) return value;
 		return std::unexpected(WrongType{});
+	}
+
+	/**
+	 * \brief Look up \p key expecting a string. Strings are read and written
+	 * through the object (string(), assign_string()), since a short one is
+	 * embedded in it rather than held in a String.
+	 * \return nullptr if the key does not exist; WrongType if it holds
+	 *         another type.
+	 */
+	[[nodiscard]] std::expected<Object *, WrongType>
+	find_string(std::string_view key) {
+		Object *object = find(key);
+		if (object == nullptr || object->type() == ObjectType::String)
+			return object;
+		return std::unexpected(WrongType{});
+	}
+
+	/**
+	 * \brief Like find_string(), but stores an empty string when the key is
+	 * missing. Used by APPEND.
+	 */
+	[[nodiscard]] std::expected<Object *, WrongType>
+	find_or_create_string(std::string_view key) {
+		auto found = find_string(key);
+		if (!found || *found != nullptr) return found;
+		auto [it, _] =
+			dict_.emplace(make_key(key), Object::make_string(alloc_, {}));
+		return &it->second;
 	}
 
 	/**
@@ -63,61 +128,121 @@ public:
 	find_or_create(std::string_view key) {
 		auto found = find_as<T>(key);
 		if (!found || *found != nullptr) return found;
-		auto [it, _] = dict_.emplace(std::string(key), T{});
-		return &std::get<T>(it->second);
+		auto [it, _] =
+			dict_.emplace(make_key(key), Object::template make<T>(alloc_));
+		return object_as<T>(it->second);
 	}
 
 	/**
 	 * \brief Store \p value at \p key, replacing any previous value. An
 	 * existing deadline is kept; callers decide whether to clear it.
 	 */
-	void set(std::string_view key, Object value);
+	void set(std::string_view key, Object value) {
+		if (auto it = dict_.find(key); it != dict_.end())
+			it->second = std::move(value);
+		else dict_.emplace(make_key(key), std::move(value));
+	}
 
 	/**
 	 * \brief Remove \p key and its deadline.
 	 * \return true if the key existed.
 	 */
-	bool erase(std::string_view key);
+	bool erase(std::string_view key) {
+		if (!expires_.empty())
+			if (auto it = expires_.find(key); it != expires_.end())
+				erase_deadline(it);
+		const auto it = dict_.find(key);
+		if (it == dict_.end()) return false;
+		dict_.erase(it);
+		return true;
+	}
 
 	/**
 	 * \brief Remove \p key if it holds an empty collection. Redis never keeps
 	 * empty lists, sets or hashes; commands that remove elements call this.
 	 */
-	void erase_if_empty(std::string_view key);
+	void erase_if_empty(std::string_view key) {
+		const auto it = dict_.find(key);
+		if (it == dict_.end()) return;
+		const bool empty = it->second.visit([]<typename T>(const T &value) {
+			if constexpr (std::is_same_v<T, std::string_view>) return false;
+			else return value.empty();
+		});
+		if (empty) erase(key);
+	}
 
-	[[nodiscard]] bool contains(std::string_view key);
+	[[nodiscard]] bool contains(std::string_view key) {
+		return find(key) != nullptr;
+	}
 
 	/// Number of keys, including expired ones not yet removed.
 	[[nodiscard]] size_t size() const noexcept { return dict_.size(); }
 
-	void clear() noexcept;
+	void clear() noexcept {
+		dict_.clear();
+		expires_.clear();
+		by_deadline_.clear();
+	}
 
 	/**
 	 * \brief Expire \p key at \p deadline. A deadline in the past deletes the
 	 * key immediately, as EXPIRE with a non-positive TTL does in Redis.
 	 * \return false if the key does not exist.
 	 */
-	bool set_expiry(std::string_view key, time_point deadline);
+	bool set_expiry(std::string_view key, time_point deadline) {
+		if (!contains(key)) return false;
+		if (deadline <= clock::now()) {
+			erase(key);
+			return true;
+		}
+		if (auto it = expires_.find(key); it != expires_.end())
+			erase_deadline(it);
+		auto [it, _] = expires_.emplace(make_key(key), deadline);
+		by_deadline_.emplace(deadline, it->first);
+		return true;
+	}
 
 	/**
 	 * \brief Remove the deadline of \p key, making it persistent.
 	 * \return true if a deadline was removed.
 	 */
-	bool persist(std::string_view key);
+	bool persist(std::string_view key) {
+		// Most keyspaces have few or no deadlines: skip the hash of the key.
+		if (expires_.empty()) return false;
+		const auto it = expires_.find(key);
+		if (it == expires_.end()) return false;
+		erase_deadline(it);
+		return true;
+	}
 
 	/**
 	 * \brief The deadline of \p key, or std::nullopt if it has none. The key
 	 * must exist; check with contains() or find() first.
 	 */
 	[[nodiscard]] std::optional<time_point>
-	expiry(std::string_view key) const;
+	expiry(std::string_view key) const {
+		const auto it = expires_.find(key);
+		if (it == expires_.end()) return std::nullopt;
+		return it->second;
+	}
 
 	/**
 	 * \brief Remove up to \p max_keys keys whose deadline has passed, oldest
 	 * first. Bounded so one cycle never stalls the event loop.
 	 * \return Number of keys removed.
 	 */
-	size_t active_expire_cycle(size_t max_keys);
+	size_t active_expire_cycle(size_t max_keys) {
+		const auto now = clock::now();
+		size_t removed = 0;
+		while (removed < max_keys && !by_deadline_.empty() &&
+			   by_deadline_.begin()->first <= now) {
+			// Copy: erase() destroys the set node that owns the key.
+			const Key key = by_deadline_.begin()->second;
+			erase(key);
+			++removed;
+		}
+		return removed;
+	}
 
 	/**
 	 * \brief Call \p fn(key, value, deadline) for every live key. \p deadline
@@ -138,14 +263,32 @@ public:
 	}
 
 private:
+	using DeadlineIndex =
+		std::set<std::pair<time_point, Key>, std::less<>,
+				 rebound<std::pair<time_point, Key>>>;
+
+	[[nodiscard]] Key make_key(std::string_view key) const {
+		return Key(key, rebound<char>(alloc_));
+	}
+
 	/// Remove \p key if its deadline has passed. \return true if removed.
-	bool expire_if_due(std::string_view key);
+	bool expire_if_due(std::string_view key) {
+		if (expires_.empty()) return false;
+		const auto it = expires_.find(key);
+		if (it == expires_.end() || it->second > clock::now()) return false;
+		erase(key);
+		return true;
+	}
 
-	void erase_deadline(KeyMap<time_point>::iterator it);
+	void erase_deadline(typename KeyMap<time_point>::iterator it) {
+		by_deadline_.erase({it->second, it->first});
+		expires_.erase(it);
+	}
 
+	REDIS_NO_UNIQUE_ADDRESS Allocator alloc_;
 	KeyMap<Object> dict_;
 	KeyMap<time_point> expires_;
-	std::set<std::pair<time_point, std::string>> by_deadline_;
+	DeadlineIndex by_deadline_;
 };
 
 } // namespace redis

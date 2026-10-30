@@ -15,6 +15,8 @@ add_executable(redis_unit_test
     unit/core/resp/parser.test.cpp
     unit/core/resp/request.test.cpp
     unit/core/utils/glob.test.cpp
+    unit/core/utils/ring_buffer.test.cpp
+    unit/core/utils/saturating.test.cpp
 
     unit/server/commands/hash.test.cpp
     unit/server/commands/keyspace.test.cpp
@@ -25,7 +27,9 @@ add_executable(redis_unit_test
     unit/server/net/executor.test.cpp
     unit/server/net/pipeline.test.cpp
     unit/server/persistence/snapshot.test.cpp
+    unit/server/storage/allocator.test.cpp
     unit/server/storage/database.test.cpp
+    unit/server/storage/simple_dynamic_string.test.cpp
 )
 target_link_libraries(redis_unit_test PRIVATE Catch2::Catch2WithMain
                                               redis::server_lib)

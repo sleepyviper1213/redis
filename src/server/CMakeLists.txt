@@ -23,8 +23,6 @@ add_library(
     persistence/persistence.cpp
     persistence/snapshot.cpp
 
-    storage/database.cpp
-
     setup_cli_options.cpp)
 
 add_library(redis::server_lib ALIAS redis_server_lib)
@@ -50,9 +48,9 @@ else()
     target_link_libraries(redis_server_lib PUBLIC Boost::thread Boost::system)
 endif()
 
-# Keyspace hash map: boost (default), absl or std. Build each into its own
-# tree to compare them, e.g. cmake --preset <p> -DREDIS_KEYSPACE_MAP=absl
-set(REDIS_KEYSPACE_MAP "boost" CACHE STRING "Keyspace map: boost, absl or std")
+# Keyspace hash map: absl (default), boost or std. Build each into its own
+# tree to compare them, e.g. cmake --preset <p> -DREDIS_KEYSPACE_MAP=boost
+set(REDIS_KEYSPACE_MAP "absl" CACHE STRING "Keyspace map: absl, boost or std")
 set_property(CACHE REDIS_KEYSPACE_MAP PROPERTY STRINGS boost absl std)
 if(REDIS_KEYSPACE_MAP STREQUAL "absl")
     find_package(absl CONFIG REQUIRED)

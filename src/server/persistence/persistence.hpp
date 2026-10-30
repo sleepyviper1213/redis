@@ -1,5 +1,6 @@
 #pragma once
 #include "server/persistence/posix.hpp"
+#include "server/storage/database_fwd.hpp"
 
 #include <chrono>
 #include <expected>
@@ -8,7 +9,6 @@
 #include <string>
 
 namespace redis {
-class Database;
 
 /**
  * \brief Snapshot persistence for one keyspace: SAVE, BGSAVE, LASTSAVE,

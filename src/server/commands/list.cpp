@@ -47,7 +47,7 @@ Value pop(CommandContext &ctx, Args args) {
 
 	auto take_one = [&] {
 		auto &l = **list;
-		std::string element;
+		String element;
 		if constexpr (Where == End::Head) {
 			element = std::move(l.front());
 			l.pop_front();

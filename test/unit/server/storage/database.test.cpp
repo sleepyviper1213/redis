@@ -15,10 +15,10 @@ SCENARIO("Typed lookups", "[storage]") {
 		db.set("s", String("v"));
 
 		WHEN("it is looked up as a string") {
-			const auto found = db.find_as<String>("s");
+			const auto found = db.find_string("s");
 			THEN("the value is returned") {
 				REQUIRE(found.has_value());
-				CHECK(**found == "v");
+				CHECK((*found)->string() == "v");
 			}
 		}
 

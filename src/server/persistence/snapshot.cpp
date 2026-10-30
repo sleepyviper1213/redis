@@ -55,20 +55,25 @@ Database::time_point from_unix_ms(int64_t ms) {
 template <typename Range>
 void write_strings(OutArchive &out, const Range &range) {
 	out(static_cast<uint64_t>(std::size(range)));
-	for (const std::string &s : range) out(s);
+	for (const String &s : range) out(s);
+}
+
+/// Write \p s exactly as cereal writes a std::string: a size tag, then the
+/// bytes. Keys and embedded values have no std::string to hand cereal.
+void write_string(OutArchive &out, std::string_view s) {
+	out(cereal::make_size_tag(static_cast<cereal::size_type>(s.size())));
+	out(cereal::binary_data(s.data(), s.size()));
 }
 
 void write_object(OutArchive &out, const Object &object) {
-	out(static_cast<uint8_t>(object.index()));
-	std::visit(
-		[&out]<typename T>(const T &value) {
-			if constexpr (std::is_same_v<T, String>) out(value);
-			else if constexpr (std::is_same_v<T, Hash>) {
-				out(static_cast<uint64_t>(value.size()));
-				for (const auto &[field, v] : value) out(field, v);
-			} else write_strings(out, value);
-		},
-		object);
+	out(static_cast<uint8_t>(object.type()));
+	object.visit([&out]<typename T>(const T &value) {
+		if constexpr (std::is_same_v<T, std::string_view>) write_string(out, value);
+		else if constexpr (std::is_same_v<T, Hash>) {
+			out(static_cast<uint64_t>(value.size()));
+			for (const auto &[field, v] : value) out(field, v);
+		} else write_strings(out, value);
+	});
 }
 
 uint64_t read_size(InArchive &in) {
@@ -89,25 +94,25 @@ Object read_object(InArchive &in) {
 	case 1: {
 		List list;
 		for (auto n = read_size(in); n > 0; --n) in(list.emplace_back());
-		return list;
+		return make_object(std::move(list));
 	}
 	case 2: {
 		Set set;
 		for (auto n = read_size(in); n > 0; --n) {
-			std::string member;
+			String member;
 			in(member);
 			set.insert(std::move(member));
 		}
-		return set;
+		return make_object(std::move(set));
 	}
 	case 3: {
 		Hash hash;
 		for (auto n = read_size(in); n > 0; --n) {
-			std::string field, value;
+			String field, value;
 			in(field, value);
 			hash.insert_or_assign(std::move(field), std::move(value));
 		}
-		return hash;
+		return make_object(std::move(hash));
 	}
 	default:
 		throw cereal::Exception(fmt::format("unknown value type {}", type));
@@ -136,11 +141,12 @@ std::expected<void, std::string> save_snapshot(const Database &db,
 			db.for_each([&](auto &&...) { ++count; });
 			out(count);
 
-			db.for_each([&](const std::string &key,
+			db.for_each([&](std::string_view key,
 							const Object &value,
 							std::optional<Database::time_point>
 								deadline) {
-				out(key, deadline ? to_unix_ms(*deadline) : NO_DEADLINE);
+				write_string(out, key);
+				out(deadline ? to_unix_ms(*deadline) : NO_DEADLINE);
 				write_object(out, value);
 			});
 		}
@@ -186,7 +192,7 @@ std::expected<void, std::string> load_snapshot(Database &db,
 		Database loaded;
 		const auto now = Database::clock::now();
 		for (auto n = read_size(in); n > 0; --n) {
-			std::string key;
+			String key;
 			int64_t deadline_ms = 0;
 			in(key, deadline_ms);
 			Object value = read_object(in);

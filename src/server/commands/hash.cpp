@@ -18,8 +18,8 @@ Value hset(CommandContext &ctx, Args args) {
 	int64_t added = 0;
 	for (size_t i = 2; i < args.size(); i += 2) {
 		const auto [_, inserted] =
-			(*hash)->insert_or_assign(std::string(args[i]),
-									  std::string(args[i + 1]));
+			(*hash)->insert_or_assign(String(args[i]),
+									  String(args[i + 1]));
 		added += inserted ? 1 : 0;
 	}
 	return reply::integer(added);

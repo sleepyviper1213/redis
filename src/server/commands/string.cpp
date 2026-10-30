@@ -1,5 +1,6 @@
 // String commands: SET, GET, INCR and friends, MSET/MGET, APPEND, STRLEN.
 #include "command.hpp"
+#include "core/utils/saturating.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/storage/database.hpp"
 
@@ -68,18 +69,19 @@ Value set(CommandContext &ctx, Args args) {
 	// A plain SET (no NX, XX or GET) overwrites whatever is there, so it does
 	// not need to look the key up first; the set() below does the one lookup.
 	if (opts->nx || opts->xx || opts->get) {
-		const auto current = ctx.db.find_as<String>(key);
+		const auto current = ctx.db.find_string(key);
 		// SET ... GET must read a string first.
 		if (!current && opts->get) return reply::wrong_type();
 		const bool exists = !current || *current != nullptr;
 
-		if (opts->get && exists) previous = reply::bulk(**current);
+		if (opts->get && exists)
+			previous = reply::bulk(std::string((*current)->string()));
 
 		if ((opts->nx && exists) || (opts->xx && !exists))
 			return opts->get ? previous : reply::nil();
 	}
 
-	ctx.db.set(key, std::string(args[2]));
+	ctx.db.set(key, String(args[2]));
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.
 	if (opts->deadline) ctx.db.set_expiry(key, *opts->deadline);
 	else if (!opts->keep_ttl) ctx.db.persist(key);
@@ -88,30 +90,30 @@ Value set(CommandContext &ctx, Args args) {
 }
 
 Value get(CommandContext &ctx, Args args) {
-	const auto value = ctx.db.find_as<String>(args[1]);
+	const auto value = ctx.db.find_string(args[1]);
 	if (!value) return reply::wrong_type();
 	if (*value == nullptr) return reply::nil();
-	return reply::bulk(**value);
+	return reply::bulk(std::string((*value)->string()));
 }
 
 // INCR, DECR, INCRBY, DECRBY: the stored string must be an int64, and the
 // result must not overflow.
 Value increment_by(CommandContext &ctx, std::string_view key, int64_t delta) {
-	const auto value = ctx.db.find_as<String>(key);
+	const auto value = ctx.db.find_string(key);
 	if (!value) return reply::wrong_type();
 
 	int64_t current = 0;
 	if (*value != nullptr) {
-		const auto parsed = parse_int(**value);
+		const auto parsed = parse_int((*value)->string());
 		if (!parsed) return reply::not_integer();
 		current = *parsed;
 	}
 
 	int64_t result = 0;
-	if (__builtin_add_overflow(current, delta, &result))
+	if (add_overflow(current, delta, &result))
 		return reply::error("ERR increment or decrement would overflow");
 
-	if (*value != nullptr) **value = std::to_string(result);
+	if (*value != nullptr) (*value)->assign_string(std::to_string(result));
 	else ctx.db.set(key, std::to_string(result));
 	return reply::integer(result);
 }
@@ -142,7 +144,7 @@ Value mset(CommandContext &ctx, Args args) {
 	if (args.size() % 2 != 1)
 		return reply::error("ERR wrong number of arguments for 'mset' command");
 	for (size_t i = 1; i < args.size(); i += 2) {
-		ctx.db.set(args[i], std::string(args[i + 1]));
+		ctx.db.set(args[i], String(args[i + 1]));
 		ctx.db.persist(args[i]);
 	}
 	return reply::ok();
@@ -153,24 +155,27 @@ Value mget(CommandContext &ctx, Args args) {
 	values.reserve(args.size() - 1);
 	for (const std::string_view key : args.subspan(1)) {
 		// MGET reports keys of other types as nil instead of failing.
-		const auto value = ctx.db.find_as<String>(key);
-		values.push_back(value && *value != nullptr ? reply::bulk(**value)
-													: reply::nil());
+		const auto value = ctx.db.find_string(key);
+		values.push_back(value && *value != nullptr
+							 ? reply::bulk(std::string((*value)->string()))
+							 : reply::nil());
 	}
 	return Value::from_array(std::move(values));
 }
 
 Value append(CommandContext &ctx, Args args) {
-	const auto value = ctx.db.find_or_create<String>(args[1]);
+	const auto value = ctx.db.find_or_create_string(args[1]);
 	if (!value) return reply::wrong_type();
-	(*value)->append(args[2]);
-	return reply::integer(static_cast<int64_t>((*value)->size()));
+	String &string = (*value)->mutable_string();
+	string.append(args[2]);
+	return reply::integer(static_cast<int64_t>(string.size()));
 }
 
 Value strlen(CommandContext &ctx, Args args) {
-	const auto value = ctx.db.find_as<String>(args[1]);
+	const auto value = ctx.db.find_string(args[1]);
 	if (!value) return reply::wrong_type();
-	return reply::integer(*value ? static_cast<int64_t>((*value)->size()) : 0);
+	return reply::integer(
+		*value ? static_cast<int64_t>((*value)->string().size()) : 0);
 }
 
 constexpr std::array COMMANDS{

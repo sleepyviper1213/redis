@@ -1,5 +1,6 @@
 #pragma once
 #include "core/resp/value.hpp"
+#include "server/storage/database_fwd.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -8,7 +9,6 @@
 #include <string_view>
 
 namespace redis {
-class Database;
 class Persistence;
 
 /// Everything a command may act on.

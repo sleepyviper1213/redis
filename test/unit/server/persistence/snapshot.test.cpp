@@ -135,6 +135,9 @@ SCENARIO("Saving through commands", "[persistence][commands]") {
 }
 
 SCENARIO("Saving in the background", "[persistence][commands][fork]") {
+#ifdef _WIN32
+	SKIP("BGSAVE forks, and Windows cannot");
+#endif
 	GIVEN("a keyspace with data") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");

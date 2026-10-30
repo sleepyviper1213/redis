@@ -33,8 +33,9 @@ Value exists(CommandContext &ctx, Args args) {
 Value keys(CommandContext &ctx, Args args) {
 	const std::string_view pattern = args[1];
 	Value::Array matches;
-	ctx.db.for_each([&](const std::string &key, auto &&...) {
-		if (glob_match(pattern, key)) matches.push_back(reply::bulk(key));
+	ctx.db.for_each([&](std::string_view key, auto &&...) {
+		if (glob_match(pattern, key))
+			matches.push_back(reply::bulk(std::string(key)));
 	});
 	return Value::from_array(std::move(matches));
 }

@@ -1,12 +1,9 @@
 #pragma once
+#include "server/storage/database_fwd.hpp"
 
 #include <expected>
 #include <filesystem>
 #include <string>
-
-namespace redis {
-class Database;
-} // namespace redis
 
 namespace redis::persistence {
 
