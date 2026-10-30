@@ -20,50 +20,50 @@ Value members_reply(const Set &set) {
 }
 
 Value sadd(CommandContext &ctx, Args args) {
-	const auto set = ctx.db.find_or_create<Set>(args[1].as_string());
+	const auto set = ctx.db.find_or_create<Set>(args[1]);
 	if (!set) return reply::wrong_type();
 	int64_t added = 0;
-	for (const Value &member : args.subspan(2))
-		added += (*set)->insert(member.as_string()).second ? 1 : 0;
+	for (const std::string_view member : args.subspan(2))
+		added += (*set)->emplace(member).second ? 1 : 0;
 	return reply::integer(added);
 }
 
 Value srem(CommandContext &ctx, Args args) {
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 	const auto set         = ctx.db.find_as<Set>(key);
 	if (!set) return reply::wrong_type();
 	if (*set == nullptr) return reply::integer(0);
 
 	int64_t removed = 0;
-	for (const Value &member : args.subspan(2))
-		removed += static_cast<int64_t>((*set)->erase(member.as_string()));
+	for (const std::string_view member : args.subspan(2))
+		removed += static_cast<int64_t>((*set)->erase(member));
 	ctx.db.erase_if_empty(key);
 	return reply::integer(removed);
 }
 
 Value scard(CommandContext &ctx, Args args) {
-	const auto set = ctx.db.find_as<Set>(args[1].as_string());
+	const auto set = ctx.db.find_as<Set>(args[1]);
 	if (!set) return reply::wrong_type();
 	return reply::integer(*set ? static_cast<int64_t>((*set)->size()) : 0);
 }
 
 Value smembers(CommandContext &ctx, Args args) {
-	const auto set = ctx.db.find_as<Set>(args[1].as_string());
+	const auto set = ctx.db.find_as<Set>(args[1]);
 	if (!set) return reply::wrong_type();
 	return *set ? members_reply(**set) : Value::from_array({});
 }
 
 Value sismember(CommandContext &ctx, Args args) {
-	const auto set = ctx.db.find_as<Set>(args[1].as_string());
+	const auto set = ctx.db.find_as<Set>(args[1]);
 	if (!set) return reply::wrong_type();
-	return reply::integer(*set && (*set)->contains(args[2].as_string()) ? 1 : 0);
+	return reply::integer(*set && (*set)->contains(args[2]) ? 1 : 0);
 }
 
 Value sinter(CommandContext &ctx, Args args) {
 	std::vector<const Set *> sets;
 	sets.reserve(args.size() - 1);
-	for (const Value &key : args.subspan(1)) {
-		const auto set = ctx.db.find_as<Set>(key.as_string());
+	for (const std::string_view key : args.subspan(1)) {
+		const auto set = ctx.db.find_as<Set>(key);
 		if (!set) return reply::wrong_type();
 		// A missing key is an empty set, so the intersection is empty.
 		if (*set == nullptr) return Value::from_array({});
@@ -106,12 +106,12 @@ Value spop(CommandContext &ctx, Args args) {
 		return reply::error("ERR wrong number of arguments for 'spop' command");
 	std::optional<int64_t> count;
 	if (args.size() == 3) {
-		count = parse_int(args[2].as_string());
+		count = parse_int(args[2]);
 		if (!count || *count < 0)
 			return reply::error("ERR value is out of range, must be positive");
 	}
 
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 	const auto set         = ctx.db.find_as<Set>(key);
 	if (!set) return reply::wrong_type();
 	if (*set == nullptr) return count ? Value::from_array({}) : reply::nil();

@@ -14,12 +14,12 @@ enum class End : bool { Head, Tail };
 
 template <End Where>
 Value push(CommandContext &ctx, Args args) {
-	const auto list = ctx.db.find_or_create<List>(args[1].as_string());
+	const auto list = ctx.db.find_or_create<List>(args[1]);
 	if (!list) return reply::wrong_type();
-	for (const Value &element : args.subspan(2))
+	for (const std::string_view element : args.subspan(2))
 		if constexpr (Where == End::Head)
-			(*list)->push_front(element.as_string());
-		else (*list)->push_back(element.as_string());
+			(*list)->emplace_front(element);
+		else (*list)->emplace_back(element);
 	return reply::integer(static_cast<int64_t>((*list)->size()));
 }
 
@@ -35,12 +35,12 @@ Value pop(CommandContext &ctx, Args args) {
 
 	std::optional<int64_t> count;
 	if (args.size() == 3) {
-		count = parse_int(args[2].as_string());
+		count = parse_int(args[2]);
 		if (!count || *count < 0)
 			return reply::error("ERR value is out of range, must be positive");
 	}
 
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 	const auto list        = ctx.db.find_as<List>(key);
 	if (!list) return reply::wrong_type();
 	if (*list == nullptr) return reply::nil();
@@ -75,7 +75,7 @@ Value pop(CommandContext &ctx, Args args) {
 }
 
 Value llen(CommandContext &ctx, Args args) {
-	const auto list = ctx.db.find_as<List>(args[1].as_string());
+	const auto list = ctx.db.find_as<List>(args[1]);
 	if (!list) return reply::wrong_type();
 	return reply::integer(*list ? static_cast<int64_t>((*list)->size()) : 0);
 }
@@ -86,11 +86,11 @@ int64_t normalize_index(int64_t index, int64_t size) {
 }
 
 Value lrange(CommandContext &ctx, Args args) {
-	const auto start_arg = parse_int(args[2].as_string());
-	const auto stop_arg  = parse_int(args[3].as_string());
+	const auto start_arg = parse_int(args[2]);
+	const auto stop_arg  = parse_int(args[3]);
 	if (!start_arg || !stop_arg) return reply::not_integer();
 
-	const auto list = ctx.db.find_as<List>(args[1].as_string());
+	const auto list = ctx.db.find_as<List>(args[1]);
 	if (!list) return reply::wrong_type();
 	if (*list == nullptr) return Value::from_array({});
 
@@ -107,10 +107,10 @@ Value lrange(CommandContext &ctx, Args args) {
 }
 
 Value lindex(CommandContext &ctx, Args args) {
-	const auto index_arg = parse_int(args[2].as_string());
+	const auto index_arg = parse_int(args[2]);
 	if (!index_arg) return reply::not_integer();
 
-	const auto list = ctx.db.find_as<List>(args[1].as_string());
+	const auto list = ctx.db.find_as<List>(args[1]);
 	if (!list) return reply::wrong_type();
 	if (*list == nullptr) return reply::nil();
 

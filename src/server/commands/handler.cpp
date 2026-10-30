@@ -1,13 +1,16 @@
 #include "handler.hpp"
 
 #include "core/logging.hpp"
+#include "core/utils/toupper.hpp"
 
 #include <fast_float/fast_float.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <vector>
 
 namespace redis {
 namespace {
@@ -66,27 +69,37 @@ std::string CommandHandler::execute(CommandContext &ctx,
 
 void CommandHandler::execute(CommandContext &ctx, const Value &request,
 							 std::string &out) const {
-	log().trace("Query: {:?}", request);
-
+	std::vector<std::string_view> args;
+	// Not Value::is_string(): a null Value holds an empty string too.
 	const bool well_formed =
-		request.is_array() && !request.as_array().empty() &&
-		std::ranges::all_of(request.as_array(), &Value::is_string);
-	if (!well_formed) {
+		request.is_array() &&
+		std::ranges::all_of(request.as_array(), [](const Value &arg) {
+			return arg.is_bulk_string() || arg.is_simple_string();
+		});
+	if (well_formed)
+		for (const Value &arg : request.as_array())
+			args.push_back(arg.as_string());
+	execute(ctx, args, out);
+}
+
+void CommandHandler::execute(CommandContext &ctx, Args args,
+							 std::string &out) const {
+	log().trace("Query: {::?}", args);
+
+	if (args.empty()) {
 		resp::encode_to(out,
 						reply::error("ERR Protocol error: expected a "
 									 "non-empty array of bulk strings"));
 		return;
 	}
 
-	const Args args = request.as_array();
 	std::array<char, MAX_COMMAND_NAME> name_buf;
 
 	Value response = Value::from_null();
-	if (const auto it =
-			commands_.find(upper_name(args[0].as_string(), name_buf));
+	if (const auto it = commands_.find(upper_name(args[0], name_buf));
 		it == commands_.end()) {
-		response = reply::error(
-			fmt::format("ERR unknown command '{}'", args[0].as_string()));
+		response =
+			reply::error(fmt::format("ERR unknown command '{}'", args[0]));
 	} else {
 		const CommandInfo &info = it->second;
 		const auto argc         = static_cast<int>(args.size());
@@ -95,16 +108,9 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 		if (arity_ok) {
 			response = info.fn(ctx, args);
 		} else {
-			std::string lowered(info.name); // already upper case
-			std::ranges::transform(lowered,
-								   lowered.begin(),
-								   [](unsigned char c) {
-									   return static_cast<char>(
-										   std::tolower(c));
-								   });
 			response = reply::error(
 				fmt::format("ERR wrong number of arguments for '{}' command",
-							lowered));
+							tolower(std::string{info.name})));
 		}
 	}
 

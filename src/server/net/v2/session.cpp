@@ -51,6 +51,10 @@ Session::Session(tcp::socket socket, Executor &executor,
 }
 
 bool Session::ingest(size_t bytes) {
+	// The previous batch has run, so the bytes its requests viewed can go
+	// (execute_pending has already dropped them when there is no executor
+	// thread).
+	drop_consumed(pending_, batch_);
 	pending_.append(chunk_.data(), bytes);
 	if (pending_.size() > MAX_QUERY_BUFFER) {
 		log().warn("Query buffer limit exceeded, closing connection");
@@ -62,14 +66,14 @@ bool Session::ingest(size_t bytes) {
 
 	// Parse here on the strand, so other sessions parse while this batch
 	// executes.
-	batch_ = parse_pending(pending_);
-	return !batch_.requests.empty() || !batch_.protocol_error.empty();
+	parse_pending(pending_, batch_);
+	return batch_.size() != 0 || !batch_.protocol_error.empty();
 }
 
 void Session::run_batch() {
 	after_ = executor_.is_threaded()
 				 ? execute_batch(batch_, replies_, handler_, ctx_)
-				 : execute_pending(pending_, replies_, handler_, ctx_);
+				 : execute_pending(pending_, batch_, replies_, handler_, ctx_);
 }
 
 void Session::fail(std::exception_ptr error) {

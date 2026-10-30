@@ -2,15 +2,16 @@
 
 #include <fast_float/fast_float.h>
 
-#include <string>
+#include <algorithm>
 #include <utility>
 
 namespace redis::resp {
 namespace {
 using RespError = Parser::RespError;
 
-std::expected<std::optional<Value>, RespError>
-parse_inline(std::string_view data, size_t &pos) {
+std::expected<RequestKind, RespError>
+parse_inline(std::string_view data, size_t &pos,
+			 std::vector<std::string_view> &args) {
 	const auto newline = data.find('\n', pos);
 	if (newline == std::string_view::npos) {
 		if (data.size() - pos > MAX_INLINE_LENGTH)
@@ -24,19 +25,16 @@ parse_inline(std::string_view data, size_t &pos) {
 	pos                   = newline + 1;
 	if (line.ends_with('\r')) line.remove_suffix(1);
 
-	Value::Array args;
-	size_t i = 0;
+	const size_t before = args.size();
+	size_t i            = 0;
 	while (i < line.size()) {
 		while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) ++i;
 		const size_t start = i;
 		while (i < line.size() && line[i] != ' ' && line[i] != '\t') ++i;
-		if (i > start)
-			args.push_back(Value::from_bulk_string(
-				std::string(line.substr(start, i - start))));
+		if (i > start) args.push_back(line.substr(start, i - start));
 	}
 
-	if (args.empty()) return std::nullopt;
-	return Value::from_array(std::move(args));
+	return args.size() == before ? RequestKind::Blank : RequestKind::Command;
 }
 
 // Reads a decimal followed by CRLF at `pos` into `out`, moving `pos` past it.
@@ -56,44 +54,49 @@ bool read_length(std::string_view data, size_t &pos, int64_t &out) {
 // per-element recursion, intermediate Values and line scans of the generic
 // parser.
 //
-// Returns std::nullopt, leaving `pos` untouched, for anything else (other
+// Returns false, leaving `pos` and `args` untouched, for anything else (other
 // element types, null bulk strings, incomplete or malformed input), so the
 // generic parser still decides every error and every edge case.
-std::optional<Value> parse_bulk_array(std::string_view data, size_t &pos) {
+bool parse_bulk_array(std::string_view data, size_t &pos,
+					  std::vector<std::string_view> &args) {
 	size_t p      = pos + 1; // past '*'
 	int64_t count = 0;
 	if (!read_length(data, p, count) || count < 1 ||
 		count > Parser::MAX_ARRAY_RESERVE)
-		return std::nullopt;
+		return false;
 
-	Value::Array args;
-	args.reserve(static_cast<size_t>(count));
+	const size_t before = args.size();
+	const auto give_up  = [&] {
+		args.resize(before);
+		return false;
+	};
 	for (int64_t i = 0; i < count; ++i) {
 		int64_t length = 0;
-		if (p >= data.size() || data[p] != '$') return std::nullopt;
+		if (p >= data.size() || data[p] != '$') return give_up();
 		++p;
 		if (!read_length(data, p, length) || length < 0 ||
 			length > Parser::MAX_BULK_LENGTH)
-			return std::nullopt;
+			return give_up();
 		const auto size = static_cast<size_t>(length);
 		if (data.size() - p < size + 2 || data[p + size] != '\r' ||
 			data[p + size + 1] != '\n')
-			return std::nullopt;
-		args.push_back(
-			Value::from_bulk_string(std::string(data.substr(p, size))));
+			return give_up();
+		args.push_back(data.substr(p, size));
 		p += size + 2;
 	}
 	pos = p;
-	return Value::from_array(std::move(args));
+	return true;
 }
 } // namespace
 
-std::expected<std::optional<Value>, Parser::RespError>
-parse_request(std::string_view data, size_t &pos) {
+std::expected<RequestKind, Parser::RespError>
+parse_request(std::string_view data, size_t &pos,
+			  std::vector<std::string_view> &args,
+			  std::deque<std::string> &owned) {
 	if (pos >= data.size()) return std::unexpected(RespError::UNEXPECTED_EOF);
-	if (data[pos] != '*') return parse_inline(data, pos);
+	if (data[pos] != '*') return parse_inline(data, pos, args);
 
-	if (auto fast = parse_bulk_array(data, pos)) return fast;
+	if (parse_bulk_array(data, pos, args)) return RequestKind::Command;
 
 	// The generic parser advances `pos` as it reads, even when it then fails
 	// for lack of bytes; restore it so an error consumes nothing.
@@ -103,7 +106,17 @@ parse_request(std::string_view data, size_t &pos) {
 		pos = start;
 		return std::unexpected(value.error());
 	}
-	return std::optional<Value>(std::move(*value));
+
+	// Not Value::is_string(): a null Value holds an empty string too.
+	const auto is_argument = [](const Value &v) {
+		return v.is_bulk_string() || v.is_simple_string();
+	};
+	const bool well_formed = value->is_array() && !value->as_array().empty() &&
+							 std::ranges::all_of(value->as_array(), is_argument);
+	if (!well_formed) return RequestKind::Malformed;
+	for (const Value &arg : value->as_array())
+		args.push_back(owned.emplace_back(arg.as_string()));
+	return RequestKind::Command;
 }
 
 } // namespace redis::resp

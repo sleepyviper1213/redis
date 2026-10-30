@@ -18,20 +18,20 @@ using std::chrono::seconds;
 
 Value del(CommandContext &ctx, Args args) {
 	int64_t removed = 0;
-	for (const Value &key : args.subspan(1))
-		removed += ctx.db.erase(key.as_string()) ? 1 : 0;
+	for (const std::string_view key : args.subspan(1))
+		removed += ctx.db.erase(key) ? 1 : 0;
 	return reply::integer(removed);
 }
 
 Value exists(CommandContext &ctx, Args args) {
 	int64_t count = 0;
-	for (const Value &key : args.subspan(1))
-		count += ctx.db.contains(key.as_string()) ? 1 : 0;
+	for (const std::string_view key : args.subspan(1))
+		count += ctx.db.contains(key) ? 1 : 0;
 	return reply::integer(count);
 }
 
 Value keys(CommandContext &ctx, Args args) {
-	const std::string &pattern = args[1].as_string();
+	const std::string_view pattern = args[1];
 	Value::Array matches;
 	ctx.db.for_each([&](const std::string &key, auto &&...) {
 		if (glob_match(pattern, key)) matches.push_back(reply::bulk(key));
@@ -40,7 +40,7 @@ Value keys(CommandContext &ctx, Args args) {
 }
 
 Value type(CommandContext &ctx, Args args) {
-	const Object *object = ctx.db.find(args[1].as_string());
+	const Object *object = ctx.db.find(args[1]);
 	return Value::from_simple_string(
 		std::string(object ? type_name(*object) : "none"));
 }
@@ -49,10 +49,10 @@ Value type(CommandContext &ctx, Args args) {
 // becomes a deadline.
 template <auto ToDeadline>
 Value expire_generic(CommandContext &ctx, Args args) {
-	const auto amount = parse_int(args[2].as_string());
+	const auto amount = parse_int(args[2]);
 	if (!amount) return reply::not_integer();
 	return reply::integer(
-		ctx.db.set_expiry(args[1].as_string(), ToDeadline(*amount)) ? 1 : 0);
+		ctx.db.set_expiry(args[1], ToDeadline(*amount)) ? 1 : 0);
 }
 
 constexpr auto after_seconds = [](int64_t n) {
@@ -69,7 +69,7 @@ constexpr auto at_millis = [](int64_t n) {
 };
 
 Value persist(CommandContext &ctx, Args args) {
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 	return reply::integer(ctx.db.contains(key) && ctx.db.persist(key) ? 1 : 0);
 }
 
@@ -77,7 +77,7 @@ Value persist(CommandContext &ctx, Args args) {
 // as integers, so clients can tell the cases apart.
 template <bool InMillis>
 Value ttl_generic(CommandContext &ctx, Args args) {
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 	if (!ctx.db.contains(key)) return reply::integer(-2);
 	const auto deadline = ctx.db.expiry(key);
 	if (!deadline) return reply::integer(-1);

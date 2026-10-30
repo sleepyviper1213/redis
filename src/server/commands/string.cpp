@@ -27,7 +27,7 @@ std::expected<SetOptions, Value> parse_set_options(Args args) {
 	bool has_expiry = false; // EX, PX, EXAT, PXAT or KEEPTTL seen
 
 	for (size_t i = 3; i < args.size(); ++i) {
-		const std::string opt = toupper(args[i].as_string());
+		const std::string opt = toupper(std::string(args[i]));
 		if (opt == "NX" && !opts.xx) opts.nx = true;
 		else if (opt == "XX" && !opts.nx) opts.xx = true;
 		else if (opt == "GET") opts.get = true;
@@ -37,7 +37,7 @@ std::expected<SetOptions, Value> parse_set_options(Args args) {
 				  opt == "PXAT") &&
 				 !has_expiry && i + 1 < args.size()) {
 			has_expiry      = true;
-			const auto time = parse_int(args[++i].as_string());
+			const auto time = parse_int(args[++i]);
 			if (!time) return std::unexpected(reply::not_integer());
 			if (*time <= 0)
 				return std::unexpected(
@@ -60,7 +60,7 @@ Value set(CommandContext &ctx, Args args) {
 	const auto opts = parse_set_options(args);
 	if (!opts) return opts.error();
 
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 
 	// With GET, the reply is the previous value (or nil) instead of OK.
 	Value previous = reply::nil();
@@ -79,7 +79,7 @@ Value set(CommandContext &ctx, Args args) {
 			return opts->get ? previous : reply::nil();
 	}
 
-	ctx.db.set(key, args[2].as_string());
+	ctx.db.set(key, std::string(args[2]));
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.
 	if (opts->deadline) ctx.db.set_expiry(key, *opts->deadline);
 	else if (!opts->keep_ttl) ctx.db.persist(key);
@@ -88,7 +88,7 @@ Value set(CommandContext &ctx, Args args) {
 }
 
 Value get(CommandContext &ctx, Args args) {
-	const auto value = ctx.db.find_as<String>(args[1].as_string());
+	const auto value = ctx.db.find_as<String>(args[1]);
 	if (!value) return reply::wrong_type();
 	if (*value == nullptr) return reply::nil();
 	return reply::bulk(**value);
@@ -96,7 +96,7 @@ Value get(CommandContext &ctx, Args args) {
 
 // INCR, DECR, INCRBY, DECRBY: the stored string must be an int64, and the
 // result must not overflow.
-Value increment_by(CommandContext &ctx, const std::string &key, int64_t delta) {
+Value increment_by(CommandContext &ctx, std::string_view key, int64_t delta) {
 	const auto value = ctx.db.find_as<String>(key);
 	if (!value) return reply::wrong_type();
 
@@ -117,33 +117,33 @@ Value increment_by(CommandContext &ctx, const std::string &key, int64_t delta) {
 }
 
 Value incr(CommandContext &ctx, Args args) {
-	return increment_by(ctx, args[1].as_string(), 1);
+	return increment_by(ctx, args[1], 1);
 }
 
 Value decr(CommandContext &ctx, Args args) {
-	return increment_by(ctx, args[1].as_string(), -1);
+	return increment_by(ctx, args[1], -1);
 }
 
 Value incrby(CommandContext &ctx, Args args) {
-	const auto delta = parse_int(args[2].as_string());
+	const auto delta = parse_int(args[2]);
 	if (!delta) return reply::not_integer();
-	return increment_by(ctx, args[1].as_string(), *delta);
+	return increment_by(ctx, args[1], *delta);
 }
 
 Value decrby(CommandContext &ctx, Args args) {
-	const auto delta = parse_int(args[2].as_string());
+	const auto delta = parse_int(args[2]);
 	// Negating INT64_MIN overflows, so it is out of range here.
 	if (!delta || *delta == std::numeric_limits<int64_t>::min())
 		return reply::not_integer();
-	return increment_by(ctx, args[1].as_string(), -*delta);
+	return increment_by(ctx, args[1], -*delta);
 }
 
 Value mset(CommandContext &ctx, Args args) {
 	if (args.size() % 2 != 1)
 		return reply::error("ERR wrong number of arguments for 'mset' command");
 	for (size_t i = 1; i < args.size(); i += 2) {
-		ctx.db.set(args[i].as_string(), args[i + 1].as_string());
-		ctx.db.persist(args[i].as_string());
+		ctx.db.set(args[i], std::string(args[i + 1]));
+		ctx.db.persist(args[i]);
 	}
 	return reply::ok();
 }
@@ -151,9 +151,9 @@ Value mset(CommandContext &ctx, Args args) {
 Value mget(CommandContext &ctx, Args args) {
 	Value::Array values;
 	values.reserve(args.size() - 1);
-	for (const Value &key : args.subspan(1)) {
+	for (const std::string_view key : args.subspan(1)) {
 		// MGET reports keys of other types as nil instead of failing.
-		const auto value = ctx.db.find_as<String>(key.as_string());
+		const auto value = ctx.db.find_as<String>(key);
 		values.push_back(value && *value != nullptr ? reply::bulk(**value)
 													: reply::nil());
 	}
@@ -161,14 +161,14 @@ Value mget(CommandContext &ctx, Args args) {
 }
 
 Value append(CommandContext &ctx, Args args) {
-	const auto value = ctx.db.find_or_create<String>(args[1].as_string());
+	const auto value = ctx.db.find_or_create<String>(args[1]);
 	if (!value) return reply::wrong_type();
-	(*value)->append(args[2].as_string());
+	(*value)->append(args[2]);
 	return reply::integer(static_cast<int64_t>((*value)->size()));
 }
 
 Value strlen(CommandContext &ctx, Args args) {
-	const auto value = ctx.db.find_as<String>(args[1].as_string());
+	const auto value = ctx.db.find_as<String>(args[1]);
 	if (!value) return reply::wrong_type();
 	return reply::integer(*value ? static_cast<int64_t>((*value)->size()) : 0);
 }

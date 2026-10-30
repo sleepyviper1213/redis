@@ -26,12 +26,18 @@ public:
 									  const resp::Value &request) const;
 
 	/**
-	 * \brief Like the above, but appends the reply to \p out. The hot path
-	 * uses this to build a whole batch of replies in one buffer, without a
-	 * temporary string per request.
+	 * \brief Like the above, but appends the reply to \p out.
 	 */
 	void execute(CommandContext &ctx, const resp::Value &request,
 				 std::string &out) const;
+
+	/**
+	 * \brief Execute one request given as its arguments, appending the reply
+	 * to \p out. The hot path: arguments are views into the client's buffer
+	 * and a whole batch of replies builds up in one string, so nothing is
+	 * allocated per request. Empty \p args is a malformed request.
+	 */
+	void execute(CommandContext &ctx, Args args, std::string &out) const;
 
 private:
 	StringMap<CommandInfo> commands_;

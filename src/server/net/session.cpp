@@ -47,6 +47,8 @@ net::awaitable<void> Session::loop() {
 	// rather than assumed to line up with read boundaries.
 	std::string pending;
 	std::string replies;
+	// Reused from batch to batch so its vectors keep their capacity.
+	ParsedBatch batch;
 	std::array<char, READ_CHUNK_SIZE> chunk{};
 
 	while (socket_.is_open()) {
@@ -80,15 +82,16 @@ net::awaitable<void> Session::loop() {
 		// The hot path runs as plain function calls; see pipeline.hpp.
 		AfterReplies after = AfterReplies::KeepOpen;
 		if (!executor_.is_threaded()) {
-			after = execute_pending(pending, replies, handler_, ctx_);
+			after = execute_pending(pending, batch, replies, handler_, ctx_);
 		} else {
 			// Parse here, on this I/O thread; hop to the keyspace thread only
 			// to execute, so other sessions parse while this batch runs.
-			const ParsedBatch batch = parse_pending(pending);
-			if (!batch.requests.empty() || !batch.protocol_error.empty())
+			parse_pending(pending, batch);
+			if (batch.size() != 0 || !batch.protocol_error.empty())
 				after = co_await executor_.run([&] {
 					return execute_batch(batch, replies, handler_, ctx_);
 				});
+			drop_consumed(pending, batch);
 		}
 
 		if (!replies.empty()) {

@@ -19,11 +19,11 @@ Value ping(CommandContext &, Args args) {
 	if (args.size() > 2)
 		return reply::error("ERR wrong number of arguments for 'ping' command");
 	if (args.size() == 1) return Value::from_simple_string("PONG");
-	return reply::bulk(args[1].as_string());
+	return reply::bulk(std::string(args[1]));
 }
 
 Value echo(CommandContext &, Args args) {
-	return reply::bulk(args[1].as_string());
+	return reply::bulk(std::string(args[1]));
 }
 
 Value save(CommandContext &ctx, Args) {
@@ -48,7 +48,7 @@ Value lastsave(CommandContext &ctx, Args) {
 // CONFIG GET <pattern>: read-only view of the settings clients commonly probe
 // (redis-benchmark asks for "save" and "appendonly" on startup).
 Value config(CommandContext &ctx, Args args) {
-	if (toupper(args[1].as_string()) != "GET" || args.size() != 3)
+	if (toupper(std::string(args[1])) != "GET" || args.size() != 3)
 		return reply::error("ERR CONFIG supports only 'CONFIG GET <pattern>'");
 
 	const std::pair<std::string, std::string> parameters[] = {
@@ -58,7 +58,7 @@ Value config(CommandContext &ctx, Args args) {
 		{"save", ""},
 	};
 
-	const std::string &pattern = args[2].as_string();
+	const std::string_view pattern = args[2];
 	Value::Array result;
 	for (const auto &[name, value] : parameters) {
 		if (!glob_match(pattern, name)) continue;

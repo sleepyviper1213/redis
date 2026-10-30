@@ -2,17 +2,28 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <deque>
 #include <string>
 #include <vector>
 
 using namespace redis::resp;
 
 namespace {
-std::vector<std::string> strings(const Value &request) {
-	std::vector<std::string> out;
-	for (const auto &arg : request.as_array()) out.push_back(arg.as_string());
-	return out;
+// One parse_request() call, with the arguments copied out so they outlive the
+// views.
+struct Parsed {
+	std::expected<RequestKind, Parser::RespError> result;
+	std::vector<std::string> args;
+};
+
+Parsed parse(std::string_view data, size_t &pos) {
+	std::vector<std::string_view> views;
+	std::deque<std::string> owned;
+	auto result = parse_request(data, pos, views, owned);
+	return {result, {views.begin(), views.end()}};
 }
+
+using Args = std::vector<std::string>;
 } // namespace
 
 SCENARIO("Parsing inline commands", "[resp][request]") {
@@ -21,15 +32,14 @@ SCENARIO("Parsing inline commands", "[resp][request]") {
 		size_t pos                  = 0;
 
 		WHEN("both are parsed in turn") {
-			const auto first  = parse_request(data, pos);
-			const auto second = parse_request(data, pos);
+			const auto first  = parse(data, pos);
+			const auto second = parse(data, pos);
 
 			THEN("each is split into its arguments") {
-				REQUIRE(first.has_value());
-				REQUIRE(second.has_value());
-				CHECK(strings(**first) ==
-					  std::vector<std::string>{"SET", "key", "value"});
-				CHECK(strings(**second) == std::vector<std::string>{"PING"});
+				REQUIRE(first.result == RequestKind::Command);
+				REQUIRE(second.result == RequestKind::Command);
+				CHECK(first.args == Args{"SET", "key", "value"});
+				CHECK(second.args == Args{"PING"});
 			}
 			THEN("all input is consumed") { CHECK(pos == data.size()); }
 		}
@@ -39,11 +49,11 @@ SCENARIO("Parsing inline commands", "[resp][request]") {
 		size_t pos = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request("\r\n", pos);
+			const auto blank = parse("\r\n", pos);
 
 			THEN("it is consumed and yields no request") {
-				REQUIRE(result.has_value());
-				CHECK_FALSE(result->has_value());
+				REQUIRE(blank.result == RequestKind::Blank);
+				CHECK(blank.args.empty());
 				CHECK(pos == 2);
 			}
 		}
@@ -53,11 +63,11 @@ SCENARIO("Parsing inline commands", "[resp][request]") {
 		size_t pos = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request("PIN", pos);
+			const auto partial = parse("PIN", pos);
 
 			THEN("the parser asks for more bytes and consumes nothing") {
-				REQUIRE_FALSE(result.has_value());
-				CHECK(Parser::is_incomplete(result.error()));
+				REQUIRE_FALSE(partial.result.has_value());
+				CHECK(Parser::is_incomplete(partial.result.error()));
 				CHECK(pos == 0);
 			}
 		}
@@ -68,7 +78,7 @@ SCENARIO("Parsing inline commands", "[resp][request]") {
 		size_t pos = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request(huge, pos);
+			const auto result = parse(huge, pos).result;
 
 			THEN("it is rejected instead of buffered forever") {
 				REQUIRE_FALSE(result.has_value());
@@ -85,12 +95,71 @@ SCENARIO("Parsing RESP array requests", "[resp][request]") {
 		size_t pos                  = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request(data, pos);
+			const auto request = parse(data, pos);
 
 			THEN("the arguments come back in order and all input is consumed") {
-				REQUIRE(result.has_value());
-				CHECK(strings(**result) == std::vector<std::string>{"GET", "k"});
+				REQUIRE(request.result == RequestKind::Command);
+				CHECK(request.args == Args{"GET", "k"});
 				CHECK(pos == data.size());
+			}
+		}
+	}
+}
+
+SCENARIO("Request arguments are not copied", "[resp][request]") {
+	std::vector<std::string_view> args;
+	std::deque<std::string> owned;
+	size_t pos = 0;
+
+	const auto inside = [](std::string_view view, std::string_view data) {
+		return view.data() >= data.data() &&
+			   view.data() + view.size() <= data.data() + data.size();
+	};
+
+	GIVEN("a RESP array and an inline command") {
+		const std::string data = "*2\r\n$3\r\nGET\r\n$1\r\nk\r\nPING\r\n";
+
+		WHEN("both are parsed") {
+			REQUIRE(parse_request(data, pos, args, owned) ==
+					RequestKind::Command);
+			REQUIRE(parse_request(data, pos, args, owned) ==
+					RequestKind::Command);
+
+			THEN("every argument views the input buffer") {
+				REQUIRE(args.size() == 3);
+				for (const auto arg : args) CHECK(inside(arg, data));
+				CHECK(owned.empty());
+			}
+		}
+	}
+
+	GIVEN("an array of simple strings, which only the generic parser reads") {
+		const std::string data = "*2\r\n+GET\r\n+k\r\n";
+
+		WHEN("it is parsed") {
+			REQUIRE(parse_request(data, pos, args, owned) ==
+					RequestKind::Command);
+
+			THEN("the decoded arguments live in the owned store") {
+				CHECK(args == std::vector<std::string_view>{"GET", "k"});
+				CHECK(owned.size() == 2);
+				CHECK(pos == data.size());
+			}
+		}
+	}
+
+	GIVEN("arguments already collected and a request cut short") {
+		args.emplace_back("earlier");
+		const std::string data = "*2\r\n$3\r\nGET\r\n$1";
+
+		WHEN("it is parsed") {
+			const auto result = parse_request(data, pos, args, owned);
+
+			THEN("nothing is appended and nothing consumed") {
+				REQUIRE_FALSE(result.has_value());
+				CHECK(Parser::is_incomplete(result.error()));
+				CHECK(args == std::vector<std::string_view>{"earlier"});
+				CHECK(pos == 0);
 			}
 		}
 	}
@@ -104,15 +173,14 @@ SCENARIO("Parsing RESP arrays outside the bulk-string fast path",
 		size_t pos = 0;
 
 		WHEN("both are parsed in turn") {
-			const auto first  = parse_request(data, pos);
-			const auto second = parse_request(data, pos);
+			const auto first  = parse(data, pos);
+			const auto second = parse(data, pos);
 
 			THEN("each comes back whole and all input is consumed") {
-				REQUIRE(first.has_value());
-				REQUIRE(second.has_value());
-				CHECK(strings(**first) ==
-					  std::vector<std::string>{"SET", "k", ""});
-				CHECK(strings(**second) == std::vector<std::string>{"PING"});
+				REQUIRE(first.result == RequestKind::Command);
+				REQUIRE(second.result == RequestKind::Command);
+				CHECK(first.args == Args{"SET", "k", ""});
+				CHECK(second.args == Args{"PING"});
 				CHECK(pos == data.size());
 			}
 		}
@@ -123,11 +191,12 @@ SCENARIO("Parsing RESP arrays outside the bulk-string fast path",
 
 		THEN("each prefix asks for more bytes and consumes nothing") {
 			for (size_t n = 1; n < full.size(); ++n) {
-				size_t pos        = 0;
-				const auto result = parse_request(full.substr(0, n), pos);
+				size_t pos         = 0;
+				const auto partial = parse(full.substr(0, n), pos);
 				INFO("prefix length " << n);
-				REQUIRE_FALSE(result.has_value());
-				CHECK(Parser::is_incomplete(result.error()));
+				REQUIRE_FALSE(partial.result.has_value());
+				CHECK(Parser::is_incomplete(partial.result.error()));
+				CHECK(partial.args.empty());
 				CHECK(pos == 0);
 			}
 		}
@@ -138,11 +207,11 @@ SCENARIO("Parsing RESP arrays outside the bulk-string fast path",
 		size_t pos                  = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request(data, pos);
+			const auto request = parse(data, pos);
 
-			THEN("the generic parser still accepts it") {
-				REQUIRE(result.has_value());
-				CHECK((**result).as_array().size() == 2);
+			THEN("it is consumed as a malformed request") {
+				REQUIRE(request.result == RequestKind::Malformed);
+				CHECK(request.args.empty());
 				CHECK(pos == data.size());
 			}
 		}
@@ -152,7 +221,7 @@ SCENARIO("Parsing RESP arrays outside the bulk-string fast path",
 		size_t pos = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request("*1\r\n$3x\r\nGET\r\n", pos);
+			const auto result = parse("*1\r\n$3x\r\nGET\r\n", pos).result;
 
 			THEN("it is a protocol error, not a request for more bytes") {
 				REQUIRE_FALSE(result.has_value());
@@ -169,29 +238,24 @@ SCENARIO("Parsing request lengths and payloads", "[resp][request]") {
 		size_t pos             = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request(data, pos);
+			const auto request = parse(data, pos);
 
 			THEN("the payload is cut by its length, not by line breaks") {
-				REQUIRE(result.has_value());
-				CHECK(strings(**result) ==
-					  std::vector<std::string>{"a\r\n\0b"s});
+				REQUIRE(request.result == RequestKind::Command);
+				CHECK(request.args == Args{"a\r\n\0b"s});
 				CHECK(pos == data.size());
 			}
 		}
 	}
 
 	GIVEN("an empty and a null array") {
-		THEN("both still parse through the generic parser") {
-			size_t pos       = 0;
-			const auto empty = parse_request("*0\r\n", pos);
-			REQUIRE(empty.has_value());
-			CHECK((**empty).as_array().empty());
+		THEN("both are consumed as malformed requests") {
+			size_t pos = 0;
+			CHECK(parse("*0\r\n", pos).result == RequestKind::Malformed);
 			CHECK(pos == 4);
 
-			pos             = 0;
-			const auto null = parse_request("*-1\r\n", pos);
-			REQUIRE(null.has_value());
-			CHECK((**null).is_null());
+			pos = 0;
+			CHECK(parse("*-1\r\n", pos).result == RequestKind::Malformed);
 			CHECK(pos == 5);
 		}
 	}
@@ -201,14 +265,11 @@ SCENARIO("Parsing request lengths and payloads", "[resp][request]") {
 		size_t pos                  = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request(data, pos);
+			const auto request = parse(data, pos);
 
-			THEN("the null element is kept") {
-				REQUIRE(result.has_value());
-				const auto &args = (**result).as_array();
-				REQUIRE(args.size() == 2);
-				CHECK(args[0].as_string() == "GET");
-				CHECK(args[1].is_null());
+			THEN("it is consumed as a malformed request") {
+				REQUIRE(request.result == RequestKind::Malformed);
+				CHECK(request.args.empty());
 				CHECK(pos == data.size());
 			}
 		}
@@ -221,11 +282,11 @@ SCENARIO("Parsing request lengths and payloads", "[resp][request]") {
 		size_t pos = 0;
 
 		WHEN("it is parsed") {
-			const auto result = parse_request(data, pos);
+			const auto request = parse(data, pos);
 
 			THEN("every element arrives") {
-				REQUIRE(result.has_value());
-				CHECK((**result).as_array().size() == count);
+				REQUIRE(request.result == RequestKind::Command);
+				CHECK(request.args.size() == count);
 				CHECK(pos == data.size());
 			}
 		}
@@ -242,7 +303,7 @@ SCENARIO("Parsing request lengths and payloads", "[resp][request]") {
 			};
 			for (const auto &[data, expected] : cases) {
 				size_t pos        = 0;
-				const auto result = parse_request(data, pos);
+				const auto result = parse(data, pos).result;
 				INFO("input " << data);
 				REQUIRE_FALSE(result.has_value());
 				CHECK(result.error() == expected);

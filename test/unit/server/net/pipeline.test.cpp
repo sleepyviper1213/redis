@@ -12,36 +12,45 @@ SCENARIO("Splitting the hot path into stages", "[net][pipeline]") {
 		test::Server server;
 		const CommandHandler handler;
 		std::string replies;
+		ParsedBatch batch;
 
 		WHEN("a buffer with pipelined and half a request is parsed") {
 			std::string pending = "PING\r\n*2\r\n$3\r\nGET\r\n$1\r\nk\r\n"
 								  "*2\r\n$3\r\nGET\r\n$1";
-			const auto batch = parse_pending(pending);
+			const std::string received = pending;
+			parse_pending(pending, batch);
 
-			THEN("only complete requests are cut off, nothing is executed") {
-				CHECK(batch.requests.size() == 2);
+			THEN("complete requests are cut, but their bytes stay for now") {
+				REQUIRE(batch.size() == 2);
+				CHECK(batch.request(0).size() == 1);
+				CHECK(batch.request(1).size() == 2);
 				CHECK(batch.protocol_error.empty());
-				CHECK(pending == "*2\r\n$3\r\nGET\r\n$1");
+				CHECK(pending == received);
 				CHECK(replies.empty());
 			}
 
-			AND_WHEN("the batch is executed") {
+			AND_WHEN("the batch is executed and its bytes dropped") {
 				const auto after =
 					execute_batch(batch, replies, handler, server.ctx);
+				drop_consumed(pending, batch);
 
 				THEN("replies come back in request order") {
 					CHECK(after == AfterReplies::KeepOpen);
 					CHECK(replies == "+PONG\r\n$-1\r\n");
+				}
+				THEN("only the partial request is left") {
+					CHECK(pending == "*2\r\n$3\r\nGET\r\n$1");
+					CHECK(batch.size() == 0);
 				}
 			}
 		}
 
 		WHEN("a malformed request follows a valid one") {
 			std::string pending = "PING\r\n*1\r\n$3\r\nabcXY";
-			const auto batch    = parse_pending(pending);
+			parse_pending(pending, batch);
 
 			THEN("the valid request is kept and the error is recorded") {
-				CHECK(batch.requests.size() == 1);
+				CHECK(batch.size() == 1);
 				CHECK(batch.protocol_error.starts_with("-ERR Protocol error"));
 			}
 
@@ -63,6 +72,7 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 		test::Server server;
 		const CommandHandler handler;
 		std::string replies;
+		ParsedBatch batch;
 
 		WHEN("the buffer holds several pipelined requests") {
 			std::string pending =
@@ -70,7 +80,7 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 				"*2\r\n$3\r\nGET\r\n$1\r\nk\r\n"
 				"PING\r\n";
 			const auto after =
-				execute_pending(pending, replies, handler, server.ctx);
+				execute_pending(pending, batch, replies, handler, server.ctx);
 
 			THEN("every reply is appended in order and the buffer is drained") {
 				CHECK(after == AfterReplies::KeepOpen);
@@ -82,7 +92,7 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 		WHEN("the buffer ends with half a request") {
 			std::string pending = "PING\r\n*2\r\n$3\r\nGET\r\n$1";
 			const auto after =
-				execute_pending(pending, replies, handler, server.ctx);
+				execute_pending(pending, batch, replies, handler, server.ctx);
 
 			THEN("complete requests run and the partial one is kept") {
 				CHECK(after == AfterReplies::KeepOpen);
@@ -94,7 +104,7 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 				pending += "\r\nk\r\n";
 				replies.clear();
 				const auto rest =
-					execute_pending(pending, replies, handler, server.ctx);
+					execute_pending(pending, batch, replies, handler, server.ctx);
 
 				THEN("it runs as one request") {
 					CHECK(rest == AfterReplies::KeepOpen);
@@ -108,7 +118,7 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 			// Declares 3 bytes but "abc" is followed by "XY", not CRLF.
 			std::string pending = "PING\r\n*1\r\n$3\r\nabcXY";
 			const auto after =
-				execute_pending(pending, replies, handler, server.ctx);
+				execute_pending(pending, batch, replies, handler, server.ctx);
 
 			THEN("the valid one is answered, then the error, then close") {
 				CHECK(after == AfterReplies::Close);
@@ -117,10 +127,23 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 			}
 		}
 
+		WHEN("a well-formed RESP value that is not a command comes first") {
+			std::string pending = "*0\r\nPING\r\n";
+			const auto after    = execute_pending(pending, batch, replies,
+												  handler, server.ctx);
+
+			THEN("it gets an error reply and the connection stays open") {
+				CHECK(after == AfterReplies::KeepOpen);
+				CHECK(replies.starts_with("-ERR Protocol error"));
+				CHECK(replies.ends_with("\r\n+PONG\r\n"));
+				CHECK(pending.empty());
+			}
+		}
+
 		WHEN("the buffer holds only blank inline lines") {
 			std::string pending = "\r\n\r\n";
 			const auto after =
-				execute_pending(pending, replies, handler, server.ctx);
+				execute_pending(pending, batch, replies, handler, server.ctx);
 
 			THEN("they are consumed without a reply") {
 				CHECK(after == AfterReplies::KeepOpen);

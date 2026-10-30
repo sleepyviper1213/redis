@@ -12,38 +12,38 @@ namespace {
 Value hset(CommandContext &ctx, Args args) {
 	if (args.size() % 2 != 0)
 		return reply::error("ERR wrong number of arguments for 'hset' command");
-	const auto hash = ctx.db.find_or_create<Hash>(args[1].as_string());
+	const auto hash = ctx.db.find_or_create<Hash>(args[1]);
 	if (!hash) return reply::wrong_type();
 
 	int64_t added = 0;
 	for (size_t i = 2; i < args.size(); i += 2) {
 		const auto [_, inserted] =
-			(*hash)->insert_or_assign(args[i].as_string(),
-									  args[i + 1].as_string());
+			(*hash)->insert_or_assign(std::string(args[i]),
+									  std::string(args[i + 1]));
 		added += inserted ? 1 : 0;
 	}
 	return reply::integer(added);
 }
 
 Value hget(CommandContext &ctx, Args args) {
-	const auto hash = ctx.db.find_as<Hash>(args[1].as_string());
+	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) return reply::wrong_type();
 	if (*hash == nullptr) return reply::nil();
-	const auto it = (*hash)->find(args[2].as_string());
+	const auto it = (*hash)->find(args[2]);
 	return it == (*hash)->end() ? reply::nil() : reply::bulk(it->second);
 }
 
 Value hmget(CommandContext &ctx, Args args) {
-	const auto hash = ctx.db.find_as<Hash>(args[1].as_string());
+	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) return reply::wrong_type();
 	Value::Array values;
 	values.reserve(args.size() - 2);
-	for (const Value &field : args.subspan(2)) {
+	for (const std::string_view field : args.subspan(2)) {
 		if (*hash == nullptr) {
 			values.push_back(reply::nil());
 			continue;
 		}
-		const auto it = (*hash)->find(field.as_string());
+		const auto it = (*hash)->find(field);
 		values.push_back(it == (*hash)->end() ? reply::nil()
 											  : reply::bulk(it->second));
 	}
@@ -51,20 +51,20 @@ Value hmget(CommandContext &ctx, Args args) {
 }
 
 Value hdel(CommandContext &ctx, Args args) {
-	const std::string &key = args[1].as_string();
+	const std::string_view key = args[1];
 	const auto hash        = ctx.db.find_as<Hash>(key);
 	if (!hash) return reply::wrong_type();
 	if (*hash == nullptr) return reply::integer(0);
 
 	int64_t removed = 0;
-	for (const Value &field : args.subspan(2))
-		removed += static_cast<int64_t>((*hash)->erase(field.as_string()));
+	for (const std::string_view field : args.subspan(2))
+		removed += static_cast<int64_t>((*hash)->erase(field));
 	ctx.db.erase_if_empty(key);
 	return reply::integer(removed);
 }
 
 Value hgetall(CommandContext &ctx, Args args) {
-	const auto hash = ctx.db.find_as<Hash>(args[1].as_string());
+	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) return reply::wrong_type();
 	Value::Array flat;
 	if (*hash != nullptr) {
@@ -78,15 +78,15 @@ Value hgetall(CommandContext &ctx, Args args) {
 }
 
 Value hlen(CommandContext &ctx, Args args) {
-	const auto hash = ctx.db.find_as<Hash>(args[1].as_string());
+	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) return reply::wrong_type();
 	return reply::integer(*hash ? static_cast<int64_t>((*hash)->size()) : 0);
 }
 
 Value hexists(CommandContext &ctx, Args args) {
-	const auto hash = ctx.db.find_as<Hash>(args[1].as_string());
+	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) return reply::wrong_type();
-	return reply::integer(*hash && (*hash)->contains(args[2].as_string()) ? 1
+	return reply::integer(*hash && (*hash)->contains(args[2]) ? 1
 																		  : 0);
 }
 
