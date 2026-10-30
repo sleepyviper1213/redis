@@ -21,7 +21,6 @@ add_library(
     net/v2/tcp_server.cpp
 
     persistence/persistence.cpp
-    persistence/posix.cpp
     persistence/snapshot.cpp
 
     storage/database.cpp
@@ -29,6 +28,15 @@ add_library(
     setup_cli_options.cpp)
 
 add_library(redis::server_lib ALIAS redis_server_lib)
+
+if(WIN32)
+    target_sources(redis_server_lib PRIVATE persistence/windows.cpp)
+    # Asio's Windows sockets; 0x0A00 is Windows 10.
+    target_compile_definitions(redis_server_lib PUBLIC _WIN32_WINNT=0x0A00)
+    target_link_libraries(redis_server_lib PUBLIC ws2_32 mswsock)
+else()
+    target_sources(redis_server_lib PRIVATE persistence/posix.cpp)
+endif()
 
 target_compile_definitions(redis_server_lib PUBLIC BOOST_ASIO_NO_DEPRECATED)
 target_link_libraries(redis_server_lib PUBLIC redis::core CLI11::CLI11

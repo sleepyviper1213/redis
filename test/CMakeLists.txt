@@ -32,7 +32,12 @@ target_link_libraries(redis_unit_test PRIVATE Catch2::Catch2WithMain
 set_warnings(redis_unit_test)
 enable_coverage(redis_unit_test)
 copy_sanitizer_runtime(redis_unit_test)
-catch_discover_tests(redis_unit_test)
+if(WIN32)
+    # Windows cannot fork, so BGSAVE is unavailable there.
+    catch_discover_tests(redis_unit_test TEST_SPEC "~[fork]")
+else()
+    catch_discover_tests(redis_unit_test)
+endif()
 
 # Integration tests: drive a running redis_server through hiredis, the C client
 # real applications use. Run via scripts/test_server.sh, which starts the server.

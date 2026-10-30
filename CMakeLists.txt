@@ -7,10 +7,11 @@ project(
     LANGUAGES CXX)
 
 # The server forks for background saves and fsyncs snapshots: it targets
-# Linux and macOS. On Windows, develop through WSL.
-if(NOT UNIX)
+# Linux and macOS. MinGW on Windows builds for development only (unit tests,
+# allocation profiling); BGSAVE fails there. Otherwise use WSL.
+if(NOT UNIX AND NOT MINGW)
     message(FATAL_ERROR "redis targets Unix-like systems (Linux, macOS). "
-                        "On Windows, build inside WSL.")
+                        "On Windows, build with MinGW or inside WSL.")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
