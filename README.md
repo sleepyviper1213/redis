@@ -61,10 +61,13 @@ client ──TCP──► net/session ──► resp::parse_request ──► co
                                                  active expiry, reap BGSAVE child
 ```
 
-- **One thread, no locks.** Like Redis, every client is served by a single
-  event loop (Boost.Asio, C++20 coroutines), so commands run one at a time and
-  the keyspace needs no synchronisation. Latency comes from keeping each
-  command and each housekeeping step short and bounded.
+- **One command thread, no locks.** Like Redis, commands run one at a time on
+  a single thread, so the keyspace needs no synchronisation. By default that
+  thread also runs the event loop (Boost.Asio, C++20 coroutines). With
+  `--io-threads N` (N > 1) reading, parsing and writing spread over N I/O
+  threads, and parsed batches are handed through stdexec to one dedicated
+  thread that executes them. Latency comes from keeping each command and each
+  housekeeping step short and bounded.
 - **Framing is separate from execution.** The session buffers bytes and cuts
   out complete requests; a frame split across reads waits for more bytes, and
   a batch of pipelined frames is answered with a single write.
@@ -133,6 +136,8 @@ scripts/run.sh linux-gcc Release -- --port 6379 --dump ./dump.snap
 | Option | Default | |
 |--------|---------|-|
 | `--host`, `--port` | `127.0.0.1`, `6379` | Listen address (`REDIS_HOST`, `REDIS_PORT`) |
+| `--io-threads` | `1` | Network I/O threads; above 1, commands run on a separate thread (`REDIS_IO_THREADS`) |
+| `--sender-sessions` | off | Serve clients with sender-based (stdexec) sessions instead of coroutines (`REDIS_SENDER_SESSIONS`) |
 | `--dump` | `dump.snap` | Snapshot file (`REDIS_DUMP_FILE`) |
 | `--log-level` | `info` | `trace` … `critical`, or `off` (`REDIS_LOGLEVEL`) |
 | `--log-file` | `redis_server.log` | Log file in addition to stderr (`REDIS_LOGFILE`) |
