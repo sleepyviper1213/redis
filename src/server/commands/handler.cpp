@@ -84,7 +84,8 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 
 void CommandHandler::execute(CommandContext &ctx, Args args,
 							 std::string &out) const {
-	log().trace("Query: {::?}", args);
+	spdlog::logger &logger = log();
+	logger.trace("Query: {::?}", args);
 
 	if (args.empty()) {
 		resp::encode_to(out,
@@ -114,7 +115,7 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 		}
 	}
 
-	log().trace("Response: {:?}", response);
+	logger.trace("Response: {:?}", response);
 	resp::encode_to(out, response);
 }
 
