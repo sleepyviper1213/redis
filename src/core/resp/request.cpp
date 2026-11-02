@@ -1,7 +1,5 @@
 #include "request.hpp"
 
-#include <fast_float/fast_float.h>
-
 #include <algorithm>
 #include <utility>
 
@@ -37,15 +35,25 @@ parse_inline(std::string_view data, size_t &pos,
 	return args.size() == before ? RequestKind::Blank : RequestKind::Command;
 }
 
-// Reads a decimal followed by CRLF at `pos` into `out`, moving `pos` past it.
+// Reads an unsigned decimal followed by CRLF at `pos` into `out`, moving `pos`
+// past it. Anything else (a sign, more than 18 digits, no CRLF yet) is left to
+// the generic parser, which is why this is a plain digit loop and not a general
+// integer parser: it runs for every header of every request.
 bool read_length(std::string_view data, size_t &pos, int64_t &out) {
-	const char *first    = data.data() + pos;
-	const char *last     = data.data() + data.size();
-	const auto [end, ec] = fast_float::from_chars(first, last, out);
-	if (ec != std::errc() || end == first || last - end < 2 || end[0] != '\r' ||
-		end[1] != '\n')
+	constexpr size_t MAX_DIGITS = 18; // 19 digits could overflow an int64_t
+	constexpr int64_t BASE      = 10;
+
+	size_t i      = pos;
+	int64_t value = 0;
+	while (i < data.size() && data[i] >= '0' && data[i] <= '9') {
+		if (i - pos == MAX_DIGITS) return false;
+		value = value * BASE + (data[i] - '0');
+		++i;
+	}
+	if (i == pos || data.size() - i < 2 || data[i] != '\r' || data[i + 1] != '\n')
 		return false;
-	pos = static_cast<size_t>(end - data.data()) + 2;
+	out = value;
+	pos = i + 2;
 	return true;
 }
 

@@ -106,6 +106,58 @@ SCENARIO("Parsing RESP array requests", "[resp][request]") {
 	}
 }
 
+SCENARIO("Length headers of RESP array requests", "[resp][request]") {
+	GIVEN("a bulk string with a multi-digit length") {
+		const std::string payload(123, 'x');
+		const std::string data = "*1\r\n$123\r\n" + payload + "\r\n";
+		size_t pos             = 0;
+
+		THEN("it is read whole") {
+			const auto request = parse(data, pos);
+			REQUIRE(request.result == RequestKind::Command);
+			CHECK(request.args == Args{payload});
+			CHECK(pos == data.size());
+		}
+	}
+
+	GIVEN("a length header cut off before its CRLF") {
+		size_t pos = 0;
+
+		THEN("the parser asks for more bytes and consumes nothing") {
+			for (const std::string_view cut : {"*2\r", "*2\r\n$3", "*2\r\n$3\r"}) {
+				pos                = 0;
+				const auto partial = parse(cut, pos);
+				REQUIRE_FALSE(partial.result.has_value());
+				CHECK(Parser::is_incomplete(partial.result.error()));
+				CHECK(pos == 0);
+			}
+		}
+	}
+
+	GIVEN("a null bulk string in the array") {
+		size_t pos = 0;
+
+		THEN("it is not a command argument") {
+			const auto request = parse("*1\r\n$-1\r\n", pos);
+			CHECK(request.result == RequestKind::Malformed);
+		}
+	}
+
+	GIVEN("a length with a sign or too many digits") {
+		size_t pos = 0;
+
+		THEN("the generic parser rejects it instead of overflowing") {
+			for (const std::string_view data :
+				 {"*1\r\n$+3\r\nabc\r\n", "*1\r\n$99999999999999999999\r\nabc\r\n"}) {
+				pos                = 0;
+				const auto request = parse(data, pos);
+				CHECK_FALSE(request.result.has_value());
+				CHECK_FALSE(Parser::is_incomplete(request.result.error()));
+			}
+		}
+	}
+}
+
 SCENARIO("Request arguments are not copied", "[resp][request]") {
 	std::vector<std::string_view> args;
 	std::deque<std::string> owned;
