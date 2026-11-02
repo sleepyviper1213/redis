@@ -2,6 +2,7 @@
 
 #include "core/resp/request.hpp"
 #include "server/commands/handler.hpp"
+#include "server/storage/database.hpp"
 
 #include <fmt/format.h>
 
@@ -33,8 +34,26 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 	batch.consumed = consumed;
 }
 
+namespace {
+// Below this many keys the table fits in the CPU caches and a lookup does not
+// miss, so prefetching would only hash every key twice.
+constexpr size_t PREFETCH_MIN_KEYS = size_t{1} << 16;
+
+// Start loading the table memory of every request's first argument (the key,
+// for the commands that take one) before running any of them, so the cache
+// misses of a pipelined batch overlap instead of happening one at a time.
+void prefetch_keys(const ParsedBatch &batch, const Database &db) {
+	if (batch.size() < 2 || db.size() < PREFETCH_MIN_KEYS) return;
+	for (size_t i = 0; i < batch.size(); ++i) {
+		const Args request = batch.request(i);
+		if (request.size() >= 2) db.prefetch(request[1]);
+	}
+}
+} // namespace
+
 AfterReplies execute_batch(const ParsedBatch &batch, std::string &replies,
 						   const CommandHandler &handler, CommandContext &ctx) {
+	prefetch_keys(batch, ctx.db);
 	for (size_t i = 0; i < batch.size(); ++i)
 		handler.execute(ctx, batch.request(i), replies);
 

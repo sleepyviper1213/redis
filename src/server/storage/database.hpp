@@ -178,6 +178,17 @@ public:
 	/// Number of keys, including expired ones not yet removed.
 	[[nodiscard]] size_t size() const noexcept { return dict_.size(); }
 
+	/**
+	 * \brief Ask the CPU to start loading the table memory a lookup of \p key
+	 * will read, so the loads of several keys overlap. Changes nothing
+	 * observable; a no-op for the maps without such an operation.
+	 */
+	void prefetch([[maybe_unused]] std::string_view key) const noexcept {
+#if defined(REDIS_KEYSPACE_MAP_ABSL)
+		dict_.prefetch(key);
+#endif
+	}
+
 	void clear() noexcept {
 		dict_.clear();
 		expires_.clear();
