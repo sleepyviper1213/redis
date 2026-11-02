@@ -148,13 +148,13 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 			}
 
 			WHEN("it is edited in place") {
-				object.mutable_string().append(" and more");
+				object.mutable_string().append(" and a whole lot more");
 
 				THEN("it moves to the heap first") {
 					CHECK_FALSE(object.embedded());
-					CHECK(object.string() == "value:12345 and more");
+					CHECK(object.string() == "value:12345 and a whole lot more");
 					// The String's block, then its buffer once the append
-					// outgrows the small-string capacity.
+					// outgrows the small-string capacity (exceeds libc++'s 22-char SSO).
 					CHECK(ledger.allocations == 2);
 				}
 			}
