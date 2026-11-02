@@ -15,6 +15,7 @@ add_executable(redis_unit_test
     unit/core/resp/parser.test.cpp
     unit/core/resp/request.test.cpp
     unit/core/utils/glob.test.cpp
+    unit/core/utils/indirect.test.cpp
     unit/core/utils/ring_buffer.test.cpp
     unit/core/utils/saturating.test.cpp
 
@@ -54,6 +55,10 @@ add_executable(redis_integration_test
 )
 target_link_libraries(redis_integration_test PRIVATE Catch2::Catch2WithMain
                                                      Hiredis::Hiredis)
+if(WIN32)
+    # A static hiredis does not carry its Windows sockets dependency.
+    target_link_libraries(redis_integration_test PRIVATE ws2_32)
+endif()
 copy_sanitizer_runtime(redis_integration_test)
 
 # Stress test: many clients checking every reply against a model, plus
@@ -63,6 +68,9 @@ copy_sanitizer_runtime(redis_integration_test)
 add_executable(redis_stress_test stress/stress.cpp)
 target_link_libraries(redis_stress_test PRIVATE Hiredis::Hiredis CLI11::CLI11
                                                Threads::Threads)
+if(WIN32)
+    target_link_libraries(redis_stress_test PRIVATE ws2_32)
+endif()
 if(boost_asio_FOUND)
     target_link_libraries(redis_stress_test PRIVATE Boost::asio)
 else()

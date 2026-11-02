@@ -80,6 +80,6 @@ docs/doxygen
 
 # Editor settings
 .vscode/
-
+.vs/
 # Snapshot files written by SAVE, BGSAVE and shutdown
 *.snap
