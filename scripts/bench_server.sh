@@ -5,6 +5,8 @@
 #   clients  50 parallel clients, no pipelining  (the default redis-benchmark run)
 #   latency  1 client, one round trip at a time  (per-request overhead)
 #   pipeline 50 clients, 16 commands per batch   (command execution cost)
+#   bigget   GET over KEYSPACE random keys, 16 per batch (cache-miss cost; the
+#            other scenarios touch one key)
 #
 #   scripts/bench_server.sh [configure-preset] [configuration] [port]
 #
@@ -12,7 +14,7 @@
 #   SERVER_ARGS="--sender-sessions --io-threads 4" scripts/bench_server.sh
 #
 # Other knobs: RUNS (repeats per scenario, default 3), REQUESTS (default
-# 200000), and REF_PORT to also benchmark an already running reference server,
+# 200000), KEYSPACE (keys in the bigget scenario, default 2000000), and REF_PORT to also benchmark an already running reference server,
 # e.g. Homebrew's: REF_PORT=6379.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -23,6 +25,7 @@ CONFIG="${2:-Release}"
 PORT="${3:-6381}"
 RUNS="${RUNS:-3}"
 REQUESTS="${REQUESTS:-200000}"
+KEYSPACE="${KEYSPACE:-2000000}"
 
 command -v redis-benchmark >/dev/null ||
     { echo "error: redis-benchmark not found in PATH" >&2; exit 1; }
@@ -70,7 +73,7 @@ run_scenario() {
     shift 2
     local best=0 rps results=()
     for _ in $(seq 1 "$RUNS"); do
-        rps="$(redis-benchmark -p "$port" -t set -q "$@" |
+        rps="$(redis-benchmark -p "$port" -t "${TEST:-set}" -q "$@" |
                tr '\r' '\n' | awk '/requests per second/ { v = $2 } END { print v }')"
         results+=("$rps")
         best="$(awk -v a="$best" -v b="$rps" 'BEGIN { print (b > a) ? b : a }')"
@@ -84,6 +87,11 @@ bench() {
     run_scenario "$port" clients  -n "$REQUESTS"
     run_scenario "$port" latency  -n "$((REQUESTS / 2))" -c 1
     run_scenario "$port" pipeline -n "$((REQUESTS * 2))" -P 16
+    # A keyspace too big for the CPU caches, where every lookup misses: fill it
+    # (random keys, so about 86% of KEYSPACE are hit), then read it back.
+    redis-benchmark -p "$port" -t set -q -n "$((KEYSPACE * 2))" -r "$KEYSPACE" \
+        -P 16 >/dev/null
+    TEST=get run_scenario "$port" bigget -n "$((REQUESTS * 2))" -r "$KEYSPACE" -P 16
 }
 
 wait_for_port "$PORT"
