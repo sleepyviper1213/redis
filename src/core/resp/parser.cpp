@@ -3,11 +3,17 @@
 #include "core/error.hpp"
 #include "value.hpp"
 
-#include <fast_float/fast_float.h>
+#include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace redis {
 namespace resp {
@@ -25,13 +31,14 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 	const auto line_end = data.find("\r\n", pos);
 	if (line_end == std::string_view::npos) FAILED(UNEXPECTED_EOF);
 
-	std::string_view line = data.substr(pos, line_end - pos); // exclude CRLF
+	const std::string_view line =
+		data.substr(pos, line_end - pos); // exclude CRLF
 	pos                   = line_end + 2; // move past "\r\n"
 
 	if (line.empty()) FAILED(EMPTY_LINE);
 
 	const char prefix        = line[0];
-	std::string_view payload = line.substr(1);
+	const std::string_view payload = line.substr(1);
 
 	switch (prefix) {
 	case '+': return Value::from_simple_string(std::string(payload));
@@ -50,7 +57,7 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 		if (pos + size + CRLF.size() > data.size())
 			FAILED(TRUNCATED_BULK_STRING);
 
-		std::string_view bulk_data = data.substr(pos, size);
+		const std::string_view bulk_data = data.substr(pos, size);
 		if (!is_crlf(data.substr(pos + size, CRLF.size())))
 			FAILED(MISSING_CRLF);
 

@@ -3,10 +3,14 @@
 #include "channels.hpp"
 #include "settings.hpp"
 
+#include <fmt/base.h>
 #include <fmt/format.h>
 #include <spdlog/async.h>
 #include <spdlog/async_logger.h>
+#include <spdlog/common.h>
+#include <spdlog/details/log_msg.h>
 #include <spdlog/formatter.h>
+#include <spdlog/logger.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -95,8 +99,9 @@ struct level_choice {
  */
 [[nodiscard]] level_choice read_level(const std::string &name) {
 	const auto parsed = spdlog::level::from_str(name);
-	if (parsed != spdlog::level::off || name == "off") return {parsed, true};
-	return {spdlog::level::info, false};
+	if (parsed != spdlog::level::off || name == "off")
+		return {.level = parsed, .recognised = true};
+	return {.level = spdlog::level::info, .recognised = false};
 }
 
 /**

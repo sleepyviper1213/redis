@@ -1,5 +1,7 @@
 #include "channels.hpp"
 
+#include <spdlog/common.h>
+#include <spdlog/logger.h>
 #include <spdlog/spdlog.h>
 
 #include <array>

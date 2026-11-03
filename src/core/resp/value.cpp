@@ -1,11 +1,17 @@
 #include "core/error.hpp"
 #include "core/resp.hpp"
 
+#include <fmt/base.h>
 #include <fmt/ranges.h>
 
 #include <cassert>
 #include <charconv>
+#include <cstdint>
+#include <expected>
 #include <iterator>
+#include <span>
+#include <string>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>

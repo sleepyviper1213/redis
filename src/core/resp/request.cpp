@@ -1,7 +1,12 @@
 #include "request.hpp"
 
+#include "parser.hpp"
+
 #include <algorithm>
-#include <utility>
+#include <cstdint>
+#include <deque>
+#include <expected>
+#include <string>
 
 namespace redis::resp {
 namespace {
@@ -47,7 +52,7 @@ bool read_length(std::string_view data, size_t &pos, int64_t &out) {
 	int64_t value = 0;
 	while (i < data.size() && data[i] >= '0' && data[i] <= '9') {
 		if (i - pos == MAX_DIGITS) return false;
-		value = value * BASE + (data[i] - '0');
+		value = (value * BASE) + (data[i] - '0');
 		++i;
 	}
 	if (i == pos || data.size() - i < 2 || data[i] != '\r' || data[i + 1] != '\n')

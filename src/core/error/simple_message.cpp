@@ -1,6 +1,12 @@
 #include "simple_message.hpp"
 
-#include "errc_formatter.hpp"
+#include "errc_formatter.hpp" // IWYU pragma: keep (fmt formatter for std::errc)
+
+#include <fmt/format.h>
+
+#include <string>
+#include <string_view>
+#include <system_error>
 
 namespace redis {
 SimpleMessage::SimpleMessage(std::string_view message, std::errc code)
