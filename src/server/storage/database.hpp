@@ -1,5 +1,6 @@
 #pragma once
 #include "core/utils/attributes.hpp"
+#include "core/utils/thread_owner.hpp"
 #include "server/storage/database_fwd.hpp"
 #include "server/storage/object.hpp"
 
@@ -69,10 +70,19 @@ public:
 	}
 
 	/**
+	 * \brief Debug builds: make the calling thread the keyspace's owner. Any
+	 * later use from another thread fails an assert, since nothing here is
+	 * synchronized. Commands claim it before they run, so the owner is the
+	 * thread that executes them. Does nothing in release builds.
+	 */
+	void claim_owner() noexcept { owner_.claim(); }
+
+	/**
 	 * \brief Look up \p key, removing it first if it has expired.
 	 * \return The value, or nullptr if the key does not exist.
 	 */
 	[[nodiscard]] Object *find(std::string_view key) {
+		owner_.check();
 		if (expire_if_due(key)) return nullptr;
 		const auto it = dict_.find(key);
 		return it == dict_.end() ? nullptr : &it->second;
@@ -138,6 +148,7 @@ public:
 	 * existing deadline is kept; callers decide whether to clear it.
 	 */
 	void set(std::string_view key, Object value) {
+		owner_.check();
 		if (auto it = dict_.find(key); it != dict_.end())
 			it->second = std::move(value);
 		else dict_.emplace(make_key(key), std::move(value));
@@ -148,6 +159,7 @@ public:
 	 * \return true if the key existed.
 	 */
 	bool erase(std::string_view key) {
+		owner_.check();
 		if (!expires_.empty())
 			if (auto it = expires_.find(key); it != expires_.end())
 				erase_deadline(it);
@@ -162,6 +174,7 @@ public:
 	 * empty lists, sets or hashes; commands that remove elements call this.
 	 */
 	void erase_if_empty(std::string_view key) {
+		owner_.check();
 		const auto it = dict_.find(key);
 		if (it == dict_.end()) return;
 		const bool empty = it->second.visit([]<typename T>(const T &value) {
@@ -190,6 +203,7 @@ public:
 	}
 
 	void clear() noexcept {
+		owner_.check();
 		dict_.clear();
 		expires_.clear();
 		by_deadline_.clear();
@@ -218,6 +232,7 @@ public:
 	 * \return true if a deadline was removed.
 	 */
 	bool persist(std::string_view key) {
+		owner_.check();
 		// Most keyspaces have few or no deadlines: skip the hash of the key.
 		if (expires_.empty()) return false;
 		const auto it = expires_.find(key);
@@ -232,6 +247,7 @@ public:
 	 */
 	[[nodiscard]] std::optional<time_point>
 	expiry(std::string_view key) const {
+		owner_.check();
 		const auto it = expires_.find(key);
 		if (it == expires_.end()) return std::nullopt;
 		return it->second;
@@ -243,6 +259,7 @@ public:
 	 * \return Number of keys removed.
 	 */
 	size_t active_expire_cycle(size_t max_keys) {
+		owner_.check();
 		const auto now = clock::now();
 		size_t removed = 0;
 		while (removed < max_keys && !by_deadline_.empty() &&
@@ -300,6 +317,7 @@ private:
 	KeyMap<Object> dict_;
 	KeyMap<time_point> expires_;
 	DeadlineIndex by_deadline_;
+	REDIS_NO_UNIQUE_ADDRESS ThreadOwner owner_;
 };
 
 } // namespace redis

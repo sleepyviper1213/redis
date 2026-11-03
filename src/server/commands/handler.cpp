@@ -5,6 +5,7 @@
 #include "core/utils/toupper.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/reply.hpp"
+#include "server/storage/database.hpp"
 
 #include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
 #include <fmt/format.h>
@@ -116,6 +117,8 @@ void CommandHandler::dispatch(CommandContext &ctx, Args args,
 							  tolower(std::string{info.name})));
 		return;
 	}
+	// Debug builds: the thread that runs commands owns the keyspace.
+	ctx.db.claim_owner();
 	info.fn(ctx, args, out);
 }
 
