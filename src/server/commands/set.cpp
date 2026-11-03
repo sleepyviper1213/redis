@@ -1,20 +1,29 @@
 // Set commands: SADD, SREM, SCARD, SMEMBERS, SISMEMBER, SINTER, SPOP.
 #include "command.hpp"
+#include "server/commands/reply.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
+#include "server/storage/object.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <optional>
 #include <random>
+#include <span>
 #include <vector>
-#include <version>
+#include <version> // IWYU pragma: keep
 
 namespace redis {
 
 namespace {
 void sadd(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_or_create<Set>(args[1]);
-	if (!set) return out.wrong_type();
+	if (!set) {
+		out.wrong_type();
+		return;
+	}
 	int64_t added = 0;
 	for (const std::string_view member : args.subspan(2))
 		added += (*set)->emplace(member).second ? 1 : 0;
@@ -24,8 +33,14 @@ void sadd(CommandContext &ctx, Args args, ReplyWriter &out) {
 void srem(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
 	const auto set             = ctx.db.find_as<Set>(key);
-	if (!set) return out.wrong_type();
-	if (*set == nullptr) return out.integer(0);
+	if (!set) {
+		out.wrong_type();
+		return;
+	}
+	if (*set == nullptr) {
+		out.integer(0);
+		return;
+	}
 
 	int64_t removed = 0;
 	for (const std::string_view member : args.subspan(2))
@@ -45,22 +60,34 @@ void srem(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void scard(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) return out.wrong_type();
-	out.integer(*set ? static_cast<int64_t>((*set)->size()) : 0);
+	if (!set) {
+		out.wrong_type();
+		return;
+	}
+	out.integer(((*set) != nullptr) ? static_cast<int64_t>((*set)->size()) : 0);
 }
 
 void smembers(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) return out.wrong_type();
-	if (*set == nullptr) return out.array(0);
+	if (!set) {
+		out.wrong_type();
+		return;
+	}
+	if (*set == nullptr) {
+		out.array(0);
+		return;
+	}
 	out.array((*set)->size());
 	for (const auto &member : **set) out.bulk(member);
 }
 
 void sismember(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) return out.wrong_type();
-	out.integer(*set && (*set)->contains(args[2]) ? 1 : 0);
+	if (!set) {
+		out.wrong_type();
+		return;
+	}
+	out.integer(((*set) != nullptr) && (*set)->contains(args[2]) ? 1 : 0);
 }
 
 void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
@@ -68,9 +95,15 @@ void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
 	sets.reserve(args.size() - 1);
 	for (const std::string_view key : args.subspan(1)) {
 		const auto set = ctx.db.find_as<Set>(key);
-		if (!set) return out.wrong_type();
+		if (!set) {
+			out.wrong_type();
+			return;
+		}
 		// A missing key is an empty set, so the intersection is empty.
-		if (*set == nullptr) return out.array(0);
+		if (*set == nullptr) {
+			out.array(0);
+			return;
+		}
 		sets.push_back(*set);
 	}
 
@@ -110,19 +143,30 @@ Set::const_iterator random_member(const Set &set) {
 
 // SPOP key [count]
 void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
-	if (args.size() > 3)
-		return out.error("ERR wrong number of arguments for 'spop' command");
+	if (args.size() > 3) {
+		out.error("ERR wrong number of arguments for 'spop' command");
+		return;
+	}
 	std::optional<int64_t> count;
 	if (args.size() == 3) {
 		count = parse_int(args[2]);
-		if (!count || *count < 0)
-			return out.error("ERR value is out of range, must be positive");
+		if (!count || *count < 0) {
+			out.error("ERR value is out of range, must be positive");
+			return;
+		}
 	}
 
 	const std::string_view key = args[1];
 	const auto set             = ctx.db.find_as<Set>(key);
-	if (!set) return out.wrong_type();
-	if (*set == nullptr) return count ? out.array(0) : out.nil();
+	if (!set) {
+		out.wrong_type();
+		return;
+	}
+	if (*set == nullptr) {
+		if (count) out.array(0);
+		else out.nil();
+		return;
+	}
 
 	auto pop_one = [&] {
 		const auto node = (*set)->extract(random_member(**set));
@@ -141,13 +185,13 @@ void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{"SADD", sadd, -3},
-	CommandInfo{"SREM", srem, -3},
-	CommandInfo{"SCARD", scard, 2},
-	CommandInfo{"SMEMBERS", smembers, 2},
-	CommandInfo{"SISMEMBER", sismember, 3},
-	CommandInfo{"SINTER", sinter, -2},
-	CommandInfo{"SPOP", spop, -2},
+	CommandInfo{.name = "SADD", .fn = sadd, .arity = -3},
+	CommandInfo{.name = "SREM", .fn = srem, .arity = -3},
+	CommandInfo{.name = "SCARD", .fn = scard, .arity = 2},
+	CommandInfo{.name = "SMEMBERS", .fn = smembers, .arity = 2},
+	CommandInfo{.name = "SISMEMBER", .fn = sismember, .arity = 3},
+	CommandInfo{.name = "SINTER", .fn = sinter, .arity = -2},
+	CommandInfo{.name = "SPOP", .fn = spop, .arity = -2},
 };
 } // namespace
 

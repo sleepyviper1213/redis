@@ -1,15 +1,24 @@
 #include "handler.hpp"
 
 #include "core/logging.hpp"
+#include "core/resp/value.hpp"
 #include "core/utils/toupper.hpp"
+#include "server/commands/command.hpp"
+#include "server/commands/reply.hpp"
 
-#include <fast_float/fast_float.h>
+#include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
 #include <fmt/format.h>
-#include <fmt/ranges.h>
+#include <fmt/ranges.h> // IWYU pragma: keep (fmt::join / range formatting)
+#include <spdlog/logger.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace redis {
@@ -90,7 +99,7 @@ void CommandHandler::dispatch(CommandContext &ctx, Args args,
 		return;
 	}
 
-	std::array<char, MAX_COMMAND_NAME> name_buf;
+	std::array<char, MAX_COMMAND_NAME> name_buf{};
 
 	const auto it = commands_.find(upper_name(args[0], name_buf));
 	if (it == commands_.end()) {

@@ -62,7 +62,8 @@ private:
 		out_.append(buf, static_cast<size_t>(end + 2 - buf));
 	}
 
-	std::string &out_;
+	// A short-lived view over the caller's reply buffer, never rebound.
+	std::string &out_; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 };
 
 } // namespace redis

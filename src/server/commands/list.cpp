@@ -1,11 +1,15 @@
 // List commands: LPUSH, RPUSH, LPOP, RPOP, LLEN, LRANGE, LINDEX.
 #include "command.hpp"
+#include "server/commands/reply.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
+#include "server/storage/object.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
-#include <string>
+#include <span>
 
 namespace redis {
 
@@ -15,10 +19,12 @@ enum class End : bool { Head, Tail };
 template <End Where>
 void push(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto list = ctx.db.find_or_create<List>(args[1]);
-	if (!list) return out.wrong_type();
+	if (!list) {
+		out.wrong_type();
+		return;
+	}
 	for (const std::string_view element : args.subspan(2))
-		if constexpr (Where == End::Head)
-			(*list)->emplace_front(element);
+		if constexpr (Where == End::Head) (*list)->emplace_front(element);
 		else (*list)->emplace_back(element);
 	out.integer(static_cast<int64_t>((*list)->size()));
 }
@@ -27,23 +33,32 @@ void push(CommandContext &ctx, Args args, ReplyWriter &out) {
 // element; with one it is an array of up to count elements.
 template <End Where>
 void pop(CommandContext &ctx, Args args, ReplyWriter &out) {
-	if (args.size() > 3)
-		return out.error(
-			Where == End::Head
-				? "ERR wrong number of arguments for 'lpop' command"
-				: "ERR wrong number of arguments for 'rpop' command");
+	if (args.size() > 3) {
+		out.error(Where == End::Head
+					  ? "ERR wrong number of arguments for 'lpop' command"
+					  : "ERR wrong number of arguments for 'rpop' command");
+		return;
+	}
 
 	std::optional<int64_t> count;
 	if (args.size() == 3) {
 		count = parse_int(args[2]);
-		if (!count || *count < 0)
-			return out.error("ERR value is out of range, must be positive");
+		if (!count || *count < 0) {
+			out.error("ERR value is out of range, must be positive");
+			return;
+		}
 	}
 
 	const std::string_view key = args[1];
 	const auto list            = ctx.db.find_as<List>(key);
-	if (!list) return out.wrong_type();
-	if (*list == nullptr) return out.nil();
+	if (!list) {
+		out.wrong_type();
+		return;
+	}
+	if (*list == nullptr) {
+		out.nil();
+		return;
+	}
 
 	// Replies with the element at the end, then drops it.
 	auto take_one = [&] {
@@ -70,8 +85,12 @@ void pop(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void llen(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto list = ctx.db.find_as<List>(args[1]);
-	if (!list) return out.wrong_type();
-	out.integer(*list ? static_cast<int64_t>((*list)->size()) : 0);
+	if (!list) {
+		out.wrong_type();
+		return;
+	}
+	out.integer(((*list) != nullptr) ? static_cast<int64_t>((*list)->size())
+									 : 0);
 }
 
 // Converts a Redis list index (negative counts from the tail) to an offset.
@@ -82,16 +101,28 @@ int64_t normalize_index(int64_t index, int64_t size) {
 void lrange(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto start_arg = parse_int(args[2]);
 	const auto stop_arg  = parse_int(args[3]);
-	if (!start_arg || !stop_arg) return out.not_integer();
+	if (!start_arg || !stop_arg) {
+		out.not_integer();
+		return;
+	}
 
 	const auto list = ctx.db.find_as<List>(args[1]);
-	if (!list) return out.wrong_type();
-	if (*list == nullptr) return out.array(0);
+	if (!list) {
+		out.wrong_type();
+		return;
+	}
+	if (*list == nullptr) {
+		out.array(0);
+		return;
+	}
 
 	const auto size  = static_cast<int64_t>((*list)->size());
 	const auto start = std::max<int64_t>(normalize_index(*start_arg, size), 0);
 	const auto stop  = std::min(normalize_index(*stop_arg, size), size - 1);
-	if (start > stop) return out.array(0);
+	if (start > stop) {
+		out.array(0);
+		return;
+	}
 
 	out.array(static_cast<size_t>(stop - start + 1));
 	for (auto i = start; i <= stop; ++i)
@@ -100,26 +131,38 @@ void lrange(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void lindex(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto index_arg = parse_int(args[2]);
-	if (!index_arg) return out.not_integer();
+	if (!index_arg) {
+		out.not_integer();
+		return;
+	}
 
 	const auto list = ctx.db.find_as<List>(args[1]);
-	if (!list) return out.wrong_type();
-	if (*list == nullptr) return out.nil();
+	if (!list) {
+		out.wrong_type();
+		return;
+	}
+	if (*list == nullptr) {
+		out.nil();
+		return;
+	}
 
 	const auto size  = static_cast<int64_t>((*list)->size());
 	const auto index = normalize_index(*index_arg, size);
-	if (index < 0 || index >= size) return out.nil();
+	if (index < 0 || index >= size) {
+		out.nil();
+		return;
+	}
 	out.bulk((**list)[static_cast<size_t>(index)]);
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{"LPUSH", push<End::Head>, -3},
-	CommandInfo{"RPUSH", push<End::Tail>, -3},
-	CommandInfo{"LPOP", pop<End::Head>, -2},
-	CommandInfo{"RPOP", pop<End::Tail>, -2},
-	CommandInfo{"LLEN", llen, 2},
-	CommandInfo{"LRANGE", lrange, 4},
-	CommandInfo{"LINDEX", lindex, 3},
+	CommandInfo{.name = "LPUSH", .fn = push<End::Head>, .arity = -3},
+	CommandInfo{.name = "RPUSH", .fn = push<End::Tail>, .arity = -3},
+	CommandInfo{.name = "LPOP", .fn = pop<End::Head>, .arity = -2},
+	CommandInfo{.name = "RPOP", .fn = pop<End::Tail>, .arity = -2},
+	CommandInfo{.name = "LLEN", .fn = llen, .arity = 2},
+	CommandInfo{.name = "LRANGE", .fn = lrange, .arity = 4},
+	CommandInfo{.name = "LINDEX", .fn = lindex, .arity = 3},
 };
 } // namespace
 

@@ -5,16 +5,18 @@
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <string>
 #include <string_view>
 
 namespace redis {
 class Persistence;
 
-/// Everything a command may act on.
+/// Everything a command may act on. A borrow: the owner (Services) keeps both
+/// alive and never rebinds or assigns the context.
 struct CommandContext {
+	// NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
 	Database &db;
 	Persistence &persistence;
+	// NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 };
 
 /// A command's arguments; args[0] is the command name itself. They view the

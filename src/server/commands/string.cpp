@@ -2,13 +2,21 @@
 #include "command.hpp"
 #include "core/utils/saturating.hpp"
 #include "core/utils/toupper.hpp"
+#include "server/commands/reply.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
+#include "server/storage/database_fwd.hpp"
+#include "server/storage/object.hpp"
 
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 
 namespace redis {
 
@@ -28,14 +36,17 @@ std::expected<SetOptions, std::string_view> parse_set_options(Args args) {
 
 	for (size_t i = 3; i < args.size(); ++i) {
 		const std::string opt = toupper(std::string(args[i]));
-		if (opt == "NX" && !opts.xx) opts.nx = true;
-		else if (opt == "XX" && !opts.nx) opts.xx = true;
-		else if (opt == "GET") opts.get = true;
-		else if (opt == "KEEPTTL" && !has_expiry)
+		if (opt == "NX" && !opts.xx) {
+			opts.nx = true;
+		} else if (opt == "XX" && !opts.nx) {
+			opts.xx = true;
+		} else if (opt == "GET") {
+			opts.get = true;
+		} else if (opt == "KEEPTTL" && !has_expiry) {
 			has_expiry = opts.keep_ttl = true;
-		else if ((opt == "EX" || opt == "PX" || opt == "EXAT" ||
-				  opt == "PXAT") &&
-				 !has_expiry && i + 1 < args.size()) {
+		} else if ((opt == "EX" || opt == "PX" || opt == "EXAT" ||
+					opt == "PXAT") &&
+				   !has_expiry && i + 1 < args.size()) {
 			has_expiry      = true;
 			const auto time = parse_int(args[++i]);
 			if (!time) return std::unexpected(ReplyWriter::NOT_INTEGER);
@@ -58,7 +69,10 @@ std::expected<SetOptions, std::string_view> parse_set_options(Args args) {
 
 void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto opts = parse_set_options(args);
-	if (!opts) return out.error(opts.error());
+	if (!opts) {
+		out.error(opts.error());
+		return;
+	}
 
 	const std::string_view key = args[1];
 
@@ -67,7 +81,10 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 	if (opts->nx || opts->xx || opts->get) {
 		const auto current = ctx.db.find_string(key);
 		// SET ... GET must read a string first.
-		if (!current && opts->get) return out.wrong_type();
+		if (!current && opts->get) {
+			out.wrong_type();
+			return;
+		}
 		const bool exists = !current || *current != nullptr;
 
 		// With GET, the reply is the previous value (or nil) instead of OK. It
@@ -93,8 +110,14 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void get(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto value = ctx.db.find_string(args[1]);
-	if (!value) return out.wrong_type();
-	if (*value == nullptr) return out.nil();
+	if (!value) {
+		out.wrong_type();
+		return;
+	}
+	if (*value == nullptr) {
+		out.nil();
+		return;
+	}
 	out.bulk((*value)->string());
 }
 
@@ -103,18 +126,26 @@ void get(CommandContext &ctx, Args args, ReplyWriter &out) {
 void increment_by(CommandContext &ctx, std::string_view key, int64_t delta,
 				  ReplyWriter &out) {
 	const auto value = ctx.db.find_string(key);
-	if (!value) return out.wrong_type();
+	if (!value) {
+		out.wrong_type();
+		return;
+	}
 
 	int64_t current = 0;
 	if (*value != nullptr) {
 		const auto parsed = parse_int((*value)->string());
-		if (!parsed) return out.not_integer();
+		if (!parsed) {
+			out.not_integer();
+			return;
+		}
 		current = *parsed;
 	}
 
 	int64_t result = 0;
-	if (add_overflow(current, delta, &result))
-		return out.error("ERR increment or decrement would overflow");
+	if (add_overflow(current, delta, &result)) {
+		out.error("ERR increment or decrement would overflow");
+		return;
+	}
 
 	if (*value != nullptr) (*value)->assign_string(std::to_string(result));
 	else ctx.db.set(key, std::to_string(result));
@@ -131,21 +162,28 @@ void decr(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void incrby(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto delta = parse_int(args[2]);
-	if (!delta) return out.not_integer();
+	if (!delta) {
+		out.not_integer();
+		return;
+	}
 	increment_by(ctx, args[1], *delta, out);
 }
 
 void decrby(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto delta = parse_int(args[2]);
 	// Negating INT64_MIN overflows, so it is out of range here.
-	if (!delta || *delta == std::numeric_limits<int64_t>::min())
-		return out.not_integer();
+	if (!delta || *delta == std::numeric_limits<int64_t>::min()) {
+		out.not_integer();
+		return;
+	}
 	increment_by(ctx, args[1], -*delta, out);
 }
 
 void mset(CommandContext &ctx, Args args, ReplyWriter &out) {
-	if (args.size() % 2 != 1)
-		return out.error("ERR wrong number of arguments for 'mset' command");
+	if (args.size() % 2 != 1) {
+		out.error("ERR wrong number of arguments for 'mset' command");
+		return;
+	}
 	for (size_t i = 1; i < args.size(); i += 2) {
 		ctx.db.set(args[i], String(args[i + 1]));
 		ctx.db.persist(args[i]);
@@ -165,7 +203,10 @@ void mget(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void append(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto value = ctx.db.find_or_create_string(args[1]);
-	if (!value) return out.wrong_type();
+	if (!value) {
+		out.wrong_type();
+		return;
+	}
 	String &string = (*value)->mutable_string();
 	string.append(args[2]);
 	out.integer(static_cast<int64_t>(string.size()));
@@ -173,21 +214,26 @@ void append(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void strlen(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto value = ctx.db.find_string(args[1]);
-	if (!value) return out.wrong_type();
-	out.integer(*value ? static_cast<int64_t>((*value)->string().size()) : 0);
+	if (!value) {
+		out.wrong_type();
+		return;
+	}
+	out.integer(((*value) != nullptr)
+					? static_cast<int64_t>((*value)->string().size())
+					: 0);
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{"SET", set, -3},
-	CommandInfo{"GET", get, 2},
-	CommandInfo{"INCR", incr, 2},
-	CommandInfo{"DECR", decr, 2},
-	CommandInfo{"INCRBY", incrby, 3},
-	CommandInfo{"DECRBY", decrby, 3},
-	CommandInfo{"MSET", mset, -3},
-	CommandInfo{"MGET", mget, -2},
-	CommandInfo{"APPEND", append, 3},
-	CommandInfo{"STRLEN", strlen, 2},
+	CommandInfo{.name = "SET", .fn = set, .arity = -3},
+	CommandInfo{.name = "GET", .fn = get, .arity = 2},
+	CommandInfo{.name = "INCR", .fn = incr, .arity = 2},
+	CommandInfo{.name = "DECR", .fn = decr, .arity = 2},
+	CommandInfo{.name = "INCRBY", .fn = incrby, .arity = 3},
+	CommandInfo{.name = "DECRBY", .fn = decrby, .arity = 3},
+	CommandInfo{.name = "MSET", .fn = mset, .arity = -3},
+	CommandInfo{.name = "MGET", .fn = mget, .arity = -2},
+	CommandInfo{.name = "APPEND", .fn = append, .arity = 3},
+	CommandInfo{.name = "STRLEN", .fn = strlen, .arity = 2},
 };
 } // namespace
 

@@ -2,11 +2,15 @@
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
 #include "core/utils/glob.hpp"
+#include "server/commands/reply.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
+#include "server/storage/object.hpp"
 
 #include <array>
 #include <chrono>
-#include <string>
+#include <cstdint>
+#include <span>
+#include <string_view>
 #include <vector>
 
 namespace redis {
@@ -43,7 +47,8 @@ void keys(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void type(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const Object *object = ctx.db.find(args[1]);
-	out.simple(object ? std::string_view(type_name(*object)) : "none");
+	out.simple((object != nullptr) ? std::string_view(type_name(*object))
+								   : "none");
 }
 
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
@@ -51,7 +56,10 @@ void type(CommandContext &ctx, Args args, ReplyWriter &out) {
 template <auto ToDeadline>
 void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto amount = parse_int(args[2]);
-	if (!amount) return out.not_integer();
+	if (!amount) {
+		out.not_integer();
+		return;
+	}
 	out.integer(ctx.db.set_expiry(args[1], ToDeadline(*amount)) ? 1 : 0);
 }
 
@@ -78,9 +86,15 @@ void persist(CommandContext &ctx, Args args, ReplyWriter &out) {
 template <bool InMillis>
 void ttl_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
-	if (!ctx.db.contains(key)) return out.integer(-2);
+	if (!ctx.db.contains(key)) {
+		out.integer(-2);
+		return;
+	}
 	const auto deadline = ctx.db.expiry(key);
-	if (!deadline) return out.integer(-1);
+	if (!deadline) {
+		out.integer(-1);
+		return;
+	}
 
 	const auto left = std::chrono::duration_cast<milliseconds>(
 						  *deadline - Database::clock::now())
@@ -90,29 +104,33 @@ void ttl_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	out.integer(InMillis ? left : (left + 500) / 1000);
 }
 
-void flushdb(CommandContext &ctx, Args, ReplyWriter &out) {
+void flushdb(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 	ctx.db.clear();
 	out.ok();
 }
 
-void dbsize(CommandContext &ctx, Args, ReplyWriter &out) {
+void dbsize(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 	out.integer(static_cast<int64_t>(ctx.db.size()));
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{"DEL", del, -2},
-	CommandInfo{"EXISTS", exists, -2},
-	CommandInfo{"KEYS", keys, 2},
-	CommandInfo{"TYPE", type, 2},
-	CommandInfo{"EXPIRE", expire_generic<after_seconds>, 3},
-	CommandInfo{"PEXPIRE", expire_generic<after_millis>, 3},
-	CommandInfo{"EXPIREAT", expire_generic<at_seconds>, 3},
-	CommandInfo{"PEXPIREAT", expire_generic<at_millis>, 3},
-	CommandInfo{"PERSIST", persist, 2},
-	CommandInfo{"TTL", ttl_generic<false>, 2},
-	CommandInfo{"PTTL", ttl_generic<true>, 2},
-	CommandInfo{"FLUSHDB", flushdb, -1},
-	CommandInfo{"DBSIZE", dbsize, 1},
+	CommandInfo{.name = "DEL", .fn = del, .arity = -2},
+	CommandInfo{.name = "EXISTS", .fn = exists, .arity = -2},
+	CommandInfo{.name = "KEYS", .fn = keys, .arity = 2},
+	CommandInfo{.name = "TYPE", .fn = type, .arity = 2},
+	CommandInfo{
+		.name = "EXPIRE", .fn = expire_generic<after_seconds>, .arity = 3},
+	CommandInfo{
+		.name = "PEXPIRE", .fn = expire_generic<after_millis>, .arity = 3},
+	CommandInfo{
+		.name = "EXPIREAT", .fn = expire_generic<at_seconds>, .arity = 3},
+	CommandInfo{
+		.name = "PEXPIREAT", .fn = expire_generic<at_millis>, .arity = 3},
+	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2},
+	CommandInfo{.name = "TTL", .fn = ttl_generic<false>, .arity = 2},
+	CommandInfo{.name = "PTTL", .fn = ttl_generic<true>, .arity = 2},
+	CommandInfo{.name = "FLUSHDB", .fn = flushdb, .arity = -1},
+	CommandInfo{.name = "DBSIZE", .fn = dbsize, .arity = 1},
 };
 } // namespace
 

@@ -1,19 +1,28 @@
 // Hash commands: HSET, HGET, HDEL, HGETALL, HLEN, HEXISTS, HMGET.
 #include "command.hpp"
+#include "server/commands/reply.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
+#include "server/storage/object.hpp"
 
 #include <array>
-#include <string>
-#include <version>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <version> // IWYU pragma: keep (feature-test macros)
 
 namespace redis {
 
 namespace {
 void hset(CommandContext &ctx, Args args, ReplyWriter &out) {
-	if (args.size() % 2 != 0)
-		return out.error("ERR wrong number of arguments for 'hset' command");
+	if (args.size() % 2 != 0) {
+		out.error("ERR wrong number of arguments for 'hset' command");
+		return;
+	}
 	const auto hash = ctx.db.find_or_create<Hash>(args[1]);
-	if (!hash) return out.wrong_type();
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
 
 	int64_t added = 0;
 	for (size_t i = 2; i < args.size(); i += 2) {
@@ -26,8 +35,14 @@ void hset(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void hget(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return out.wrong_type();
-	if (*hash == nullptr) return out.nil();
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
+	if (*hash == nullptr) {
+		out.nil();
+		return;
+	}
 	const auto it = (*hash)->find(args[2]);
 	if (it == (*hash)->end()) out.nil();
 	else out.bulk(it->second);
@@ -35,7 +50,10 @@ void hget(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void hmget(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return out.wrong_type();
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
 	out.array(args.size() - 2);
 	for (const std::string_view field : args.subspan(2)) {
 		if (*hash == nullptr) {
@@ -51,8 +69,14 @@ void hmget(CommandContext &ctx, Args args, ReplyWriter &out) {
 void hdel(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
 	const auto hash            = ctx.db.find_as<Hash>(key);
-	if (!hash) return out.wrong_type();
-	if (*hash == nullptr) return out.integer(0);
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
+	if (*hash == nullptr) {
+		out.integer(0);
+		return;
+	}
 
 	int64_t removed = 0;
 	for (const std::string_view field : args.subspan(2))
@@ -72,8 +96,14 @@ void hdel(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void hgetall(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return out.wrong_type();
-	if (*hash == nullptr) return out.array(0);
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
+	if (*hash == nullptr) {
+		out.array(0);
+		return;
+	}
 	out.array((*hash)->size() * 2);
 	for (const auto &[field, value] : **hash) {
 		out.bulk(field);
@@ -83,24 +113,31 @@ void hgetall(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 void hlen(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return out.wrong_type();
-	out.integer(*hash ? static_cast<int64_t>((*hash)->size()) : 0);
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
+	out.integer(((*hash) != nullptr) ? static_cast<int64_t>((*hash)->size())
+									 : 0);
 }
 
 void hexists(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return out.wrong_type();
-	out.integer(*hash && (*hash)->contains(args[2]) ? 1 : 0);
+	if (!hash) {
+		out.wrong_type();
+		return;
+	}
+	out.integer(((*hash) != nullptr) && (*hash)->contains(args[2]) ? 1 : 0);
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{"HSET", hset, -4},
-	CommandInfo{"HGET", hget, 3},
-	CommandInfo{"HMGET", hmget, -3},
-	CommandInfo{"HDEL", hdel, -3},
-	CommandInfo{"HGETALL", hgetall, 2},
-	CommandInfo{"HLEN", hlen, 2},
-	CommandInfo{"HEXISTS", hexists, 3},
+	CommandInfo{.name = "HSET", .fn = hset, .arity = -4},
+	CommandInfo{.name = "HGET", .fn = hget, .arity = 3},
+	CommandInfo{.name = "HMGET", .fn = hmget, .arity = -3},
+	CommandInfo{.name = "HDEL", .fn = hdel, .arity = -3},
+	CommandInfo{.name = "HGETALL", .fn = hgetall, .arity = 2},
+	CommandInfo{.name = "HLEN", .fn = hlen, .arity = 2},
+	CommandInfo{.name = "HEXISTS", .fn = hexists, .arity = 3},
 };
 } // namespace
 
