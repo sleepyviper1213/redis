@@ -1,11 +1,18 @@
+#include "CLI/CLI.hpp"
 #include "core/logging.hpp"
 #include "server/net/redis_server.hpp"
 #include "server/setup_cli_options.hpp"
 
+#include <fmt/base.h>
+
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <string>
 
-int main(int argc, char **argv) {
+namespace {
+int run(int argc, char **argv) {
 	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
 
@@ -16,16 +23,16 @@ int main(int argc, char **argv) {
 	}};
 	auto &log = redis::logging::logger_for(redis::logging::channel::server);
 
-	if (app->count("--config"))
+	if (app->count("--config") != 0u)
 		log.info("Using config file: {}",
 				 app->get_option("--config")->as<std::string>());
 
 	try {
 		redis::RedisServer server(redis::ServerConfig{
-			.host      = app->get_option("--host")->as<std::string>(),
-			.port      = app->get_option("--port")->as<uint16_t>(),
-			.dump_file = app->get_option("--dump")->as<std::string>(),
-			.io_threads = app->get_option("--io-threads")->as<unsigned>(),
+			.host            = app->get_option("--host")->as<std::string>(),
+			.port            = app->get_option("--port")->as<uint16_t>(),
+			.dump_file       = app->get_option("--dump")->as<std::string>(),
+			.io_threads      = app->get_option("--io-threads")->as<unsigned>(),
 			.sender_sessions = app->get_option("--sender-sessions")->as<bool>(),
 		});
 		server.run();
@@ -35,4 +42,16 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
+}
+} // namespace
+
+int main(int argc, char **argv) {
+	// Whatever fails before logging is up (options, log file) has nowhere to
+	// be logged: report it on stderr instead of letting it end the process.
+	try {
+		return run(argc, argv);
+	} catch (const std::exception &e) {
+		fmt::println(stderr, "fatal: {}", e.what());
+		return EXIT_FAILURE;
+	}
 }

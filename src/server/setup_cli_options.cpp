@@ -3,7 +3,11 @@
 #include <CLI/CLI.hpp>
 #include <fmt/format.h>
 
+#include <memory>
+#include <string>
+
 namespace redis {
+namespace {
 struct MyFormatter : public CLI::Formatter {
 	std::string make_option_opts(const CLI::Option *opt) const override {
 		if (opt->get_option_text().empty()) return {};
@@ -24,7 +28,7 @@ struct MyFormatter : public CLI::Formatter {
 			out += "(";
 		}
 
-		if (opt->get_default_str().size() > 0) {
+		if (!opt->get_default_str().empty()) {
 			if (out.back() != '(') out += ", ";
 			out += "default: " + opt->get_default_str();
 		}
@@ -35,6 +39,7 @@ struct MyFormatter : public CLI::Formatter {
 		return out;
 	}
 };
+} // namespace
 
 CLI::App_p setup_cli_options() {
 	auto app = std::make_shared<CLI::App>("Redis-like TcpServer");
