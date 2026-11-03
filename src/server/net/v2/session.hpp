@@ -1,7 +1,6 @@
 #pragma once
 #include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
-#include "server/commands/command.hpp"
 #include "asio_context.hpp"
 #include "server/net/pipeline.hpp"
 
@@ -15,8 +14,7 @@
 #include <string>
 
 namespace redis {
-class CommandHandler;
-class Executor;
+struct Services;
 
 namespace v2 {
 
@@ -41,8 +39,9 @@ using SessionSender = exec::any_sender<exec::any_receiver<
  * hop between schedulers: reading, parsing and writing stay on the session's
  * strand, and only execution moves to the Executor's thread. The Session
  * object lives in the chain's operation state, so there is no coroutine frame
- * and no shared ownership: whoever starts the sender owns the connection until
- * it completes, and stopping the sender cancels the pending Asio operation.
+ * and no shared ownership of the connection: whoever starts the sender owns it
+ * until it completes, and stopping the sender cancels the pending Asio
+ * operation. Only the Services are shared, one set for all sessions.
  */
 class Session {
 public:
@@ -50,15 +49,14 @@ public:
 	 * \brief The sender that serves the client on \p socket. Starting it runs
 	 * the session; it completes when the client disconnects or on a protocol
 	 * or I/O error (logged), and is stopped when its stop token fires.
-	 * \p executor, \p handler and \p ctx must outlive it.
 	 */
 	[[nodiscard]] static SessionSender
-	serve(boost::asio::ip::tcp::socket socket, Executor &executor,
-		  const CommandHandler &handler, CommandContext &ctx);
+	serve(boost::asio::ip::tcp::socket socket,
+		  std::shared_ptr<Services> services);
 
 private:
-	Session(boost::asio::ip::tcp::socket socket, Executor &executor,
-			const CommandHandler &handler, CommandContext &ctx);
+	Session(boost::asio::ip::tcp::socket socket,
+			std::shared_ptr<Services> services);
 
 	// The stages of one round, each a sender. Defined in session.cpp, their
 	// only user, which is why their types can be deduced.
@@ -76,19 +74,17 @@ private:
 	/// Run everything ingested; the replies end up in replies_.
 	void run_batch();
 	/// An error ended the round: log it and end the session.
-	void fail(std::exception_ptr error);
+	void fail(const std::exception_ptr &error);
 
-	static constexpr size_t READ_CHUNK_SIZE = size_t{16} * 1024;
+	static constexpr size_t READ_CHUNK_SIZE = 16uz * 1024;
 
 	/// Same limit as redis::Session.
-	static constexpr size_t MAX_QUERY_BUFFER = 1024ULL * 1024 * 1024;
+	static constexpr size_t MAX_QUERY_BUFFER = 1024uz * 1024 * 1024;
 
 	boost::asio::ip::tcp::socket socket_;
 	/// The socket's strand as a scheduler, to come back to after executing.
 	std::unique_ptr<AsioContext> strand_;
-	Executor &executor_;
-	const CommandHandler &handler_;
-	CommandContext &ctx_;
+	std::shared_ptr<Services> services_;
 
 	std::string chunk_;
 	std::string pending_;

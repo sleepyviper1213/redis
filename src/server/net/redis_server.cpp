@@ -22,9 +22,7 @@
 
 namespace redis {
 namespace {
-spdlog::logger &log() {
-	return logging::logger_for(logging::channel::server);
-}
+spdlog::logger &log() { return logging::logger_for(logging::channel::server); }
 
 std::string_view signal_name(int sig) {
 	switch (sig) {
@@ -39,11 +37,11 @@ RedisServer::RedisServer(ServerConfig config)
 	: config_(std::move(config)),
 	  io_(static_cast<int>(std::max(1U, config_.io_threads))),
 	  signals_(io_, SIGINT, SIGTERM),
-	  persistence_(config_.dump_file),
-	  executor_(config_.io_threads > 1) {}
+	  services_(std::make_shared<Services>(config_.dump_file,
+										   config_.io_threads > 1)) {}
 
 void RedisServer::run() {
-	if (auto loaded = persistence_.load(db_); !loaded) {
+	if (auto loaded = services_->persistence.load(services_->db); !loaded) {
 		// Refuse to start rather than serve an empty keyspace and later
 		// overwrite the unreadable snapshot with it.
 		log().critical("{}", loaded.error());
@@ -54,11 +52,16 @@ void RedisServer::run() {
 	std::optional<TcpServer> server;
 	std::optional<v2::TcpServer> sender_server;
 	if (config_.sender_sessions)
-		sender_server.emplace(io_, config_.host, config_.port, executor_,
-							  handler_, ctx_);
+		sender_server.emplace(io_.get_executor(),
+							  config_.host,
+							  config_.port,
+							  services_);
 	else
-		server.emplace(io_, config_.host, config_.port, executor_, handler_,
-					   ctx_);
+		server.emplace(io_.get_executor(),
+					   config_.host,
+					   config_.port,
+					   services_,
+					   config_.io_threads > 1);
 
 	// Leave the event loop, once. Coroutine sessions are simply dropped with
 	// it. Sender sessions live in a scope that must not be destroyed while
@@ -72,8 +75,8 @@ void RedisServer::run() {
 				return;
 			}
 			sender_server->stop();
-			exec::start_detached(sender_server->drained()
-								 | stdexec::then([this] { io_.stop(); }));
+			exec::start_detached(sender_server->drained() |
+								 stdexec::then([this] { io_.stop(); }));
 		});
 	};
 
@@ -88,7 +91,7 @@ void RedisServer::run() {
 	std::exception_ptr failure;
 	std::once_flag failed;
 	auto record = [&](std::exception_ptr e) {
-		std::call_once(failed, [&] { failure = std::move(e); });
+		std::call_once(failed, [&] { failure = e; });
 		shut_down();
 	};
 	auto rethrow = [&](const std::exception_ptr &e) {
@@ -103,9 +106,7 @@ void RedisServer::run() {
 		const auto run_io = [&] {
 			try {
 				io_.run();
-			} catch (...) {
-				record(std::current_exception());
-			}
+			} catch (...) { record(std::current_exception()); }
 		};
 		std::vector<std::jthread> workers;
 		for (unsigned i = 1; i < config_.io_threads; ++i)
@@ -115,25 +116,26 @@ void RedisServer::run() {
 	if (failure) std::rethrow_exception(failure);
 
 	// A batch may still be executing: wait for it before reading the keyspace.
-	executor_.stop();
+	services_->keyspace.stop();
 
-	if (auto saved = persistence_.save(db_); !saved)
+	if (auto saved = services_->persistence.save(services_->db); !saved)
 		log().error("Final snapshot failed: {}", saved.error());
 	log().info("Redis is now ready to exit, bye bye...");
 }
 
 net::awaitable<void> RedisServer::cron() {
-	net::steady_timer timer(io_);
+	net::steady_timer timer(co_await net::this_coro::executor);
+	const auto services = services_;
 	while (true) {
 		timer.expires_after(CRON_PERIOD);
 		if (auto [ec] = co_await timer.async_wait(); ec) co_return;
 
 		// Touches the keyspace, so it runs where commands run.
-		co_await executor_.run([this] {
+		co_await services->keyspace.run([&services] {
 			if (const auto expired =
-					db_.active_expire_cycle(EXPIRE_KEYS_PER_RUN))
+					services->db.active_expire_cycle(EXPIRE_KEYS_PER_RUN))
 				log().trace("Expired {} keys", expired);
-			persistence_.poll();
+			services->persistence.poll();
 		});
 	}
 }

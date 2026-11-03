@@ -1,5 +1,7 @@
 #include "executor.hpp"
 
+#include <stdexec/execution.hpp>
+
 namespace redis {
 
 Executor::Executor(bool threaded) {

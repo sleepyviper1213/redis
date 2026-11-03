@@ -4,6 +4,7 @@
 #include "executor.hpp"
 #include "formatter.hpp"
 #include "pipeline.hpp"
+#include "services.hpp"
 
 #include <boost/asio/write.hpp>
 #include <spdlog/logger.h>
@@ -21,12 +22,9 @@ spdlog::logger &log() { return logging::logger_for(logging::channel::net); }
 
 inline namespace v1 {
 
-Session::Session(tcp::socket socket, Executor &executor,
-				 const CommandHandler &handler, CommandContext &ctx)
+Session::Session(tcp::socket socket, std::shared_ptr<Services> services)
 	: socket_(std::move(socket)),
-	  executor_(executor),
-	  handler_(handler),
-	  ctx_(ctx) {
+	  services_(std::move(services)) {
 	boost::system::error_code ec;
 	// Needed for the immediate write in loop(); async operations are unaffected.
 	socket_.non_blocking(true, ec);
@@ -34,10 +32,9 @@ Session::Session(tcp::socket socket, Executor &executor,
 	if (!ec) log().debug("Accepted from {}", peer);
 }
 
-net::awaitable<void> Session::serve(tcp::socket socket, Executor &executor,
-									const CommandHandler &handler,
-									CommandContext &ctx) {
-	Session session(std::move(socket), executor, handler, ctx);
+net::awaitable<void> Session::serve(tcp::socket socket,
+									std::shared_ptr<Services> services) {
+	Session session(std::move(socket), std::move(services));
 	co_await session.loop();
 }
 
@@ -45,6 +42,7 @@ net::awaitable<void> Session::loop() {
 	// Bytes received but not yet parsed. TCP is a byte stream: one read may
 	// hold half a request or several pipelined ones, so requests are cut here
 	// rather than assumed to line up with read boundaries.
+	Services &services = *services_;
 	std::string pending;
 	std::string replies;
 	// Reused from batch to batch so its vectors keep their capacity.
@@ -81,15 +79,17 @@ net::awaitable<void> Session::loop() {
 
 		// The hot path runs as plain function calls; see pipeline.hpp.
 		AfterReplies after = AfterReplies::KeepOpen;
-		if (!executor_.is_threaded()) {
-			after = execute_pending(pending, batch, replies, handler_, ctx_);
+		if (!services.keyspace.is_threaded()) {
+			after = execute_pending(pending, batch, replies, services.handler,
+									services.ctx);
 		} else {
 			// Parse here, on this I/O thread; hop to the keyspace thread only
 			// to execute, so other sessions parse while this batch runs.
 			parse_pending(pending, batch);
 			if (batch.size() != 0 || !batch.protocol_error.empty())
-				after = co_await executor_.run([&] {
-					return execute_batch(batch, replies, handler_, ctx_);
+				after = co_await services.keyspace.run([&] {
+					return execute_batch(batch, replies, services.handler,
+										 services.ctx);
 				});
 			drop_consumed(pending, batch);
 		}

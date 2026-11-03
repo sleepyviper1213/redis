@@ -2,19 +2,18 @@
 
 #include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
-#include "server/commands/command.hpp"
 #include "asio_context.hpp"
 #include "session.hpp"
 
-#include <boost/asio/io_context.hpp>
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <stdexec/execution.hpp>
 
+#include <memory>
 #include <string>
 
 namespace redis {
-class CommandHandler;
-class Executor;
+struct Services;
 
 namespace v2 {
 
@@ -32,11 +31,10 @@ namespace v2 {
 class [[nodiscard]] TcpServer {
 public:
 	/// Bind and listen on \p host:\p port (IPv4). Throws on failure, e.g.
-	/// when the port is in use. \p executor, \p handler and \p ctx must
-	/// outlive every session.
-	TcpServer(boost::asio::io_context &ioc, const std::string &host,
-			  boost::asio::ip::port_type port, Executor &executor,
-			  const CommandHandler &handler, CommandContext &ctx);
+	/// when the port is in use. \p services is shared with every session.
+	TcpServer(boost::asio::any_io_executor ex, const std::string &host,
+			  boost::asio::ip::port_type port,
+			  std::shared_ptr<Services> services);
 
 	/// Start accepting. Returns at once; the loop runs on the I/O threads.
 	void start();
@@ -53,11 +51,9 @@ public:
 	}
 
 private:
-	boost::asio::io_context &ioc_;
+	boost::asio::any_io_executor ex_;
 	boost::asio::ip::tcp::acceptor acceptor_;
-	Executor &executor_;
-	const CommandHandler &handler_;
-	CommandContext &ctx_;
+	std::shared_ptr<Services> services_;
 	/// Where drained() completes: join needs a scheduler to complete on.
 	AsioContext drain_context_;
 	stdexec::counting_scope scope_;

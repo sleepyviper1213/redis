@@ -1,16 +1,15 @@
 #pragma once
 // Makes co_await on Asio operations return (error_code, result) tuples.
 #include "nothrow_awaitable_t.hpp" // IWYU pragma: keep
-#include "server/commands/command.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
 #include <cstddef>
+#include <memory>
 
 namespace redis {
-class CommandHandler;
-class Executor;
+struct Services;
 
 namespace net = boost::asio;
 
@@ -30,7 +29,8 @@ inline namespace v1 {
  *
  * A session lives in the frame of the serve() coroutine that runs it, so it
  * is destroyed when that coroutine finishes (or is destroyed): nothing else
- * refers to it and there is no shared ownership to manage.
+ * refers to it. Only the Services it works with are shared, one set for all
+ * sessions, and the session keeps them alive while it runs.
  */
 class Session {
 public:
@@ -38,20 +38,16 @@ public:
 	 * \brief Serve the client on \p socket until it disconnects, a protocol
 	 * error closes it, or the I/O context is destroyed.
 	 *
-	 * Spawn it on the socket's executor. \p executor, \p handler and \p ctx
-	 * must outlive the coroutine.
+	 * Spawn it on the socket's executor.
 	 */
 	static net::awaitable<void> serve(net::ip::tcp::socket socket,
-									  Executor &executor,
-									  const CommandHandler &handler,
-									  CommandContext &ctx);
+									  std::shared_ptr<Services> services);
 
 	Session(const Session &)            = delete;
 	Session &operator=(const Session &) = delete;
 
 private:
-	Session(net::ip::tcp::socket socket, Executor &executor,
-			const CommandHandler &handler, CommandContext &ctx);
+	Session(net::ip::tcp::socket socket, std::shared_ptr<Services> services);
 
 	net::awaitable<void> loop();
 
@@ -62,12 +58,10 @@ private:
 	 * default as Redis' client-query-buffer-limit), so a slow or malicious
 	 * client cannot grow server memory without bound.
 	 */
-	static constexpr size_t MAX_QUERY_BUFFER = 1024ULL * 1024 * 1024;
+	static constexpr size_t MAX_QUERY_BUFFER = 1024uz * 1024 * 1024;
 
 	net::ip::tcp::socket socket_;
-	Executor &executor_;
-	const CommandHandler &handler_;
-	CommandContext &ctx_;
+	std::shared_ptr<Services> services_;
 };
 } // namespace v1
 } // namespace redis

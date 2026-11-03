@@ -1,10 +1,16 @@
 #include "pipeline.hpp"
 
+#include "core/resp/parser.hpp"
 #include "core/resp/request.hpp"
+#include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
-#include "server/storage/database.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep (db.size(), db.prefetch())
+#include "server/storage/database_fwd.hpp"
 
 #include <fmt/format.h>
+
+#include <cstddef>
+#include <string_view>
 
 namespace redis {
 

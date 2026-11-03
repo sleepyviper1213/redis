@@ -1,10 +1,9 @@
 #include "session.hpp"
 
 #include "core/logging.hpp"
-#include "server/commands/handler.hpp"
-#include "server/net/executor.hpp"
 #include "server/net/formatter.hpp"
 #include "server/net/pipeline.hpp"
+#include "server/net/services.hpp"
 
 #include <boost/asio/write.hpp>
 #include <exec/asio/use_sender.hpp>
@@ -37,13 +36,10 @@ auto run_if(bool condition, Sender sender) {
 }
 } // namespace
 
-Session::Session(tcp::socket socket, Executor &executor,
-				 const CommandHandler &handler, CommandContext &ctx)
+Session::Session(tcp::socket socket, std::shared_ptr<Services> services)
 	: socket_(std::move(socket)),
 	  strand_(std::make_unique<AsioContext>(socket_.get_executor())),
-	  executor_(executor),
-	  handler_(handler),
-	  ctx_(ctx),
+	  services_(std::move(services)),
 	  chunk_(READ_CHUNK_SIZE, '\0') {
 	boost::system::error_code ec;
 	const auto peer = socket_.remote_endpoint(ec);
@@ -62,7 +58,7 @@ bool Session::ingest(size_t bytes) {
 		return false;
 	}
 	// Without an executor thread, execute_pending parses and executes in one.
-	if (!executor_.is_threaded()) return true;
+	if (!services_->keyspace.is_threaded()) return true;
 
 	// Parse here on the strand, so other sessions parse while this batch
 	// executes.
@@ -71,12 +67,15 @@ bool Session::ingest(size_t bytes) {
 }
 
 void Session::run_batch() {
-	after_ = executor_.is_threaded()
-				 ? execute_batch(batch_, replies_, handler_, ctx_)
-				 : execute_pending(pending_, batch_, replies_, handler_, ctx_);
+	Services &services = *services_;
+	after_ = services.keyspace.is_threaded()
+				 ? execute_batch(batch_, replies_, services.handler,
+								 services.ctx)
+				 : execute_pending(pending_, batch_, replies_, services.handler,
+								   services.ctx);
 }
 
-void Session::fail(std::exception_ptr error) {
+void Session::fail(const std::exception_ptr &error) {
 	done_ = true;
 	try {
 		std::rethrow_exception(error);
@@ -98,7 +97,8 @@ auto Session::read() {
 auto Session::execute() {
 	// On the executor's thread and back on this strand afterwards, or right
 	// here if there is no such thread.
-	return executor_.run_on([this] { run_batch(); }, strand_->get_scheduler());
+	return services_->keyspace.run_on([this] { run_batch(); },
+									  strand_->get_scheduler());
 }
 
 auto Session::write() {
@@ -119,23 +119,22 @@ auto Session::round() {
 			   // A client whose request is still incomplete gets no reply.
 			   return run_if(!replies_.empty(), write());
 		   })
-		 | stdexec::let_error([this](std::exception_ptr error) {
-			   fail(std::move(error));
+		 | stdexec::let_error([this](const std::exception_ptr &error) {
+			   fail(error);
 			   return just();
 		   })
 		 | stdexec::then([this] { return done_; });
 }
 
-SessionSender Session::serve(tcp::socket socket, Executor &executor,
-							 const CommandHandler &handler,
-							 CommandContext &ctx) {
-	return stdexec::just(Session(std::move(socket), executor, handler, ctx))
+SessionSender Session::serve(tcp::socket socket,
+							 std::shared_ptr<Services> services) {
+	return stdexec::just(Session(std::move(socket), std::move(services)))
 		 | stdexec::let_value([](Session &session) {
 			   return exec::repeat_until(session.round());
 		   })
 		 // The chain's only failures are the ones round() did not already turn
 		 // into "the session is over"; log them and finish normally.
-		 | stdexec::upon_error([](std::exception_ptr e) noexcept {
+		 | stdexec::upon_error([](const std::exception_ptr &e) noexcept {
 			   try {
 				   std::rethrow_exception(e);
 			   } catch (const std::exception &ex) {

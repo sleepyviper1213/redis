@@ -2,12 +2,7 @@
 // Must precede every Asio include: makes co_await on Asio operations return
 // (error_code, result) tuples.
 #include "nothrow_awaitable_t.hpp" // IWYU pragma: keep
-#include "executor.hpp"
-
-#include "server/commands/command.hpp"
-#include "server/commands/handler.hpp"
-#include "server/persistence/persistence.hpp"
-#include "server/storage/database.hpp"
+#include "services.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
@@ -15,6 +10,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 namespace redis {
@@ -68,12 +64,7 @@ private:
 	net::io_context io_;
 	net::signal_set signals_;
 
-	Database db_;
-	Persistence persistence_;
-	CommandHandler handler_;
-	CommandContext ctx_{db_, persistence_};
-	/// Declared last so it is destroyed first: its thread, the only one
-	/// touching the keyspace, is joined before the keyspace goes away.
-	Executor executor_;
+	/// Shared with the front end and every session; see Services.
+	std::shared_ptr<Services> services_;
 };
 } // namespace redis

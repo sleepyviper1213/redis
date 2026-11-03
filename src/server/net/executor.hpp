@@ -26,8 +26,9 @@ namespace net = boost::asio;
  * must still execute commands one at a time: the keyspace has no locks. A
  * session hands its parsed batch to run(), which runs it on this thread (a
  * stdexec thread pool of one) and resumes the coroutine back on its own I/O
- * executor once the batch has run; v2 sessions use run_on() to the same end. Commands from every session therefore interleave on one
- * thread, exactly as they do on a single-threaded server.
+ * executor once the batch has run; v2 sessions use run_on() to the same end.
+ * Commands from every session therefore interleave on one thread, exactly as
+ * they do on a single-threaded server.
  *
  * Built unthreaded, run() calls the function inline instead and nothing is
  * handed off, so the single-threaded server pays nothing for this class.
@@ -63,17 +64,15 @@ public:
 	 */
 	template <std::invocable F>
 	net::awaitable<std::invoke_result_t<F>> run(F fn) {
-		using Result = std::invoke_result_t<F>;
 		if (!is_threaded()) co_return fn();
 
-		// co_spawn onto the pool's own Asio executor runs the lambda there and
+		// co_spawn onto the pool's own Asio executor runs the call there and
 		// completes on this coroutine's executor, so the coroutine is never
 		// resumed on the keyspace thread. The pool is stdexec's; only its Asio
 		// face is used here.
-		co_return co_await net::co_spawn(
-			pool_->get_executor(),
-			[&fn]() -> net::awaitable<Result> { co_return fn(); },
-			net::use_awaitable);
+		co_return co_await net::co_spawn(pool_->get_executor(),
+										 call(std::move(fn)),
+										 net::use_awaitable);
 	}
 
 	/**
@@ -99,6 +98,14 @@ public:
 	}
 
 private:
+	/// What run() hands to the pool. A named coroutine taking \p fn by value
+	/// rather than a lambda capturing it: a coroutine's frame, unlike a
+	/// closure's captures, is guaranteed to outlive the suspended call.
+	template <std::invocable F>
+	static net::awaitable<std::invoke_result_t<F>> call(F fn) {
+		co_return fn();
+	}
+
 	/// One thread: tasks run one at a time, in the order they were queued.
 	std::optional<exec::asio::asio_thread_pool> pool_;
 };
