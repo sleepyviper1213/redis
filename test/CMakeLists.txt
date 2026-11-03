@@ -22,6 +22,7 @@ add_executable(redis_unit_test
     unit/server/commands/hash.test.cpp
     unit/server/commands/keyspace.test.cpp
     unit/server/commands/list.test.cpp
+    unit/server/commands/reply.test.cpp
     unit/server/commands/set.test.cpp
     unit/server/commands/set_ttl.test.cpp
     unit/server/commands/string.test.cpp

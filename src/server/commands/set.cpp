@@ -4,84 +4,82 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
 
 namespace redis {
-using resp::Value;
 
 namespace {
-Value members_reply(const Set &set) {
-	Value::Array members;
-	members.reserve(set.size());
-	for (const auto &member : set) members.push_back(reply::bulk(member));
-	return Value::from_array(std::move(members));
-}
-
-Value sadd(CommandContext &ctx, Args args) {
+void sadd(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_or_create<Set>(args[1]);
-	if (!set) return reply::wrong_type();
+	if (!set) return out.wrong_type();
 	int64_t added = 0;
 	for (const std::string_view member : args.subspan(2))
 		added += (*set)->emplace(member).second ? 1 : 0;
-	return reply::integer(added);
+	out.integer(added);
 }
 
-Value srem(CommandContext &ctx, Args args) {
+void srem(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
-	const auto set         = ctx.db.find_as<Set>(key);
-	if (!set) return reply::wrong_type();
-	if (*set == nullptr) return reply::integer(0);
+	const auto set             = ctx.db.find_as<Set>(key);
+	if (!set) return out.wrong_type();
+	if (*set == nullptr) return out.integer(0);
 
 	int64_t removed = 0;
 	for (const std::string_view member : args.subspan(2))
 		removed += static_cast<int64_t>((*set)->erase(member));
 	ctx.db.erase_if_empty(key);
-	return reply::integer(removed);
+	out.integer(removed);
 }
 
-Value scard(CommandContext &ctx, Args args) {
+void scard(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) return reply::wrong_type();
-	return reply::integer(*set ? static_cast<int64_t>((*set)->size()) : 0);
+	if (!set) return out.wrong_type();
+	out.integer(*set ? static_cast<int64_t>((*set)->size()) : 0);
 }
 
-Value smembers(CommandContext &ctx, Args args) {
+void smembers(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) return reply::wrong_type();
-	return *set ? members_reply(**set) : Value::from_array({});
+	if (!set) return out.wrong_type();
+	if (*set == nullptr) return out.array(0);
+	out.array((*set)->size());
+	for (const auto &member : **set) out.bulk(member);
 }
 
-Value sismember(CommandContext &ctx, Args args) {
+void sismember(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) return reply::wrong_type();
-	return reply::integer(*set && (*set)->contains(args[2]) ? 1 : 0);
+	if (!set) return out.wrong_type();
+	out.integer(*set && (*set)->contains(args[2]) ? 1 : 0);
 }
 
-Value sinter(CommandContext &ctx, Args args) {
+void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
 	std::vector<const Set *> sets;
 	sets.reserve(args.size() - 1);
 	for (const std::string_view key : args.subspan(1)) {
 		const auto set = ctx.db.find_as<Set>(key);
-		if (!set) return reply::wrong_type();
+		if (!set) return out.wrong_type();
 		// A missing key is an empty set, so the intersection is empty.
-		if (*set == nullptr) return Value::from_array({});
+		if (*set == nullptr) return out.array(0);
 		sets.push_back(*set);
 	}
 
-	// Probe from the smallest set: O(min size * number of sets).
+	// Probe from the smallest set: O(min size * number of sets). The array
+	// header needs the count, so the members are collected before they are
+	// written.
 	std::ranges::sort(sets, {}, &Set::size);
-	Value::Array result;
+	std::vector<std::string_view> result;
 	for (const auto &member : *sets.front()) {
 		const bool in_all = std::all_of(sets.begin() + 1,
 										sets.end(),
 										[&](const Set *s) {
 											return s->contains(member);
 										});
-		if (in_all) result.push_back(reply::bulk(member));
+		if (in_all) result.emplace_back(member);
 	}
-	return Value::from_array(std::move(result));
+	out.array(result.size());
+	for (const std::string_view member : result) out.bulk(member);
 }
 
 // Picks a random member in O(buckets) worst case without copying the set:
@@ -101,39 +99,35 @@ Set::const_iterator random_member(const Set &set) {
 }
 
 // SPOP key [count]
-Value spop(CommandContext &ctx, Args args) {
+void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
 	if (args.size() > 3)
-		return reply::error("ERR wrong number of arguments for 'spop' command");
+		return out.error("ERR wrong number of arguments for 'spop' command");
 	std::optional<int64_t> count;
 	if (args.size() == 3) {
 		count = parse_int(args[2]);
 		if (!count || *count < 0)
-			return reply::error("ERR value is out of range, must be positive");
+			return out.error("ERR value is out of range, must be positive");
 	}
 
 	const std::string_view key = args[1];
-	const auto set         = ctx.db.find_as<Set>(key);
-	if (!set) return reply::wrong_type();
-	if (*set == nullptr) return count ? Value::from_array({}) : reply::nil();
+	const auto set             = ctx.db.find_as<Set>(key);
+	if (!set) return out.wrong_type();
+	if (*set == nullptr) return count ? out.array(0) : out.nil();
 
 	auto pop_one = [&] {
-		auto node = (*set)->extract(random_member(**set));
-		return reply::bulk(std::move(node.value()));
+		const auto node = (*set)->extract(random_member(**set));
+		out.bulk(node.value());
 	};
 
-	Value result = reply::nil();
 	if (!count) {
-		result = pop_one();
+		pop_one();
 	} else {
 		const auto n =
 			std::min<size_t>(static_cast<size_t>(*count), (*set)->size());
-		Value::Array popped;
-		popped.reserve(n);
-		for (size_t i = 0; i < n; ++i) popped.push_back(pop_one());
-		result = Value::from_array(std::move(popped));
+		out.array(n);
+		for (size_t i = 0; i < n; ++i) pop_one();
 	}
 	ctx.db.erase_if_empty(key);
-	return result;
 }
 
 constexpr std::array COMMANDS{

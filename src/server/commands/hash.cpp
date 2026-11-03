@@ -6,88 +6,81 @@
 #include <string>
 
 namespace redis {
-using resp::Value;
 
 namespace {
-Value hset(CommandContext &ctx, Args args) {
+void hset(CommandContext &ctx, Args args, ReplyWriter &out) {
 	if (args.size() % 2 != 0)
-		return reply::error("ERR wrong number of arguments for 'hset' command");
+		return out.error("ERR wrong number of arguments for 'hset' command");
 	const auto hash = ctx.db.find_or_create<Hash>(args[1]);
-	if (!hash) return reply::wrong_type();
+	if (!hash) return out.wrong_type();
 
 	int64_t added = 0;
 	for (size_t i = 2; i < args.size(); i += 2) {
 		const auto [_, inserted] =
-			(*hash)->insert_or_assign(String(args[i]),
-									  String(args[i + 1]));
+			(*hash)->insert_or_assign(String(args[i]), String(args[i + 1]));
 		added += inserted ? 1 : 0;
 	}
-	return reply::integer(added);
+	out.integer(added);
 }
 
-Value hget(CommandContext &ctx, Args args) {
+void hget(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return reply::wrong_type();
-	if (*hash == nullptr) return reply::nil();
+	if (!hash) return out.wrong_type();
+	if (*hash == nullptr) return out.nil();
 	const auto it = (*hash)->find(args[2]);
-	return it == (*hash)->end() ? reply::nil() : reply::bulk(it->second);
+	if (it == (*hash)->end()) out.nil();
+	else out.bulk(it->second);
 }
 
-Value hmget(CommandContext &ctx, Args args) {
+void hmget(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return reply::wrong_type();
-	Value::Array values;
-	values.reserve(args.size() - 2);
+	if (!hash) return out.wrong_type();
+	out.array(args.size() - 2);
 	for (const std::string_view field : args.subspan(2)) {
 		if (*hash == nullptr) {
-			values.push_back(reply::nil());
+			out.nil();
 			continue;
 		}
 		const auto it = (*hash)->find(field);
-		values.push_back(it == (*hash)->end() ? reply::nil()
-											  : reply::bulk(it->second));
+		if (it == (*hash)->end()) out.nil();
+		else out.bulk(it->second);
 	}
-	return Value::from_array(std::move(values));
 }
 
-Value hdel(CommandContext &ctx, Args args) {
+void hdel(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
-	const auto hash        = ctx.db.find_as<Hash>(key);
-	if (!hash) return reply::wrong_type();
-	if (*hash == nullptr) return reply::integer(0);
+	const auto hash            = ctx.db.find_as<Hash>(key);
+	if (!hash) return out.wrong_type();
+	if (*hash == nullptr) return out.integer(0);
 
 	int64_t removed = 0;
 	for (const std::string_view field : args.subspan(2))
 		removed += static_cast<int64_t>((*hash)->erase(field));
 	ctx.db.erase_if_empty(key);
-	return reply::integer(removed);
+	out.integer(removed);
 }
 
-Value hgetall(CommandContext &ctx, Args args) {
+void hgetall(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return reply::wrong_type();
-	Value::Array flat;
-	if (*hash != nullptr) {
-		flat.reserve((*hash)->size() * 2);
-		for (const auto &[field, value] : **hash) {
-			flat.push_back(reply::bulk(field));
-			flat.push_back(reply::bulk(value));
-		}
+	if (!hash) return out.wrong_type();
+	if (*hash == nullptr) return out.array(0);
+	out.array((*hash)->size() * 2);
+	for (const auto &[field, value] : **hash) {
+		out.bulk(field);
+		out.bulk(value);
 	}
-	return Value::from_array(std::move(flat));
 }
 
-Value hlen(CommandContext &ctx, Args args) {
+void hlen(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return reply::wrong_type();
-	return reply::integer(*hash ? static_cast<int64_t>((*hash)->size()) : 0);
+	if (!hash) return out.wrong_type();
+	out.integer(*hash ? static_cast<int64_t>((*hash)->size()) : 0);
 }
 
-Value hexists(CommandContext &ctx, Args args) {
+void hexists(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
-	if (!hash) return reply::wrong_type();
-	return reply::integer(*hash && (*hash)->contains(args[2]) ? 1
-																		  : 0);
+	if (!hash) return out.wrong_type();
+	out.integer(*hash && (*hash)->contains(args[2]) ? 1 : 0);
 }
 
 constexpr std::array COMMANDS{

@@ -10,50 +10,49 @@
 #include <vector>
 
 namespace redis {
-using resp::Value;
 
 namespace {
 using std::chrono::milliseconds;
 using std::chrono::seconds;
 
-Value del(CommandContext &ctx, Args args) {
+void del(CommandContext &ctx, Args args, ReplyWriter &out) {
 	int64_t removed = 0;
 	for (const std::string_view key : args.subspan(1))
 		removed += ctx.db.erase(key) ? 1 : 0;
-	return reply::integer(removed);
+	out.integer(removed);
 }
 
-Value exists(CommandContext &ctx, Args args) {
+void exists(CommandContext &ctx, Args args, ReplyWriter &out) {
 	int64_t count = 0;
 	for (const std::string_view key : args.subspan(1))
 		count += ctx.db.contains(key) ? 1 : 0;
-	return reply::integer(count);
+	out.integer(count);
 }
 
-Value keys(CommandContext &ctx, Args args) {
+void keys(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view pattern = args[1];
-	Value::Array matches;
+	// The array header needs the count, so the matches are collected first.
+	// The keys live in the table, which nothing changes meanwhile.
+	std::vector<std::string_view> matches;
 	ctx.db.for_each([&](std::string_view key, auto &&...) {
-		if (glob_match(pattern, key))
-			matches.push_back(reply::bulk(std::string(key)));
+		if (glob_match(pattern, key)) matches.push_back(key);
 	});
-	return Value::from_array(std::move(matches));
+	out.array(matches.size());
+	for (const std::string_view key : matches) out.bulk(key);
 }
 
-Value type(CommandContext &ctx, Args args) {
+void type(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const Object *object = ctx.db.find(args[1]);
-	return Value::from_simple_string(
-		std::string(object ? type_name(*object) : "none"));
+	out.simple(object ? std::string_view(type_name(*object)) : "none");
 }
 
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
 template <auto ToDeadline>
-Value expire_generic(CommandContext &ctx, Args args) {
+void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto amount = parse_int(args[2]);
-	if (!amount) return reply::not_integer();
-	return reply::integer(
-		ctx.db.set_expiry(args[1], ToDeadline(*amount)) ? 1 : 0);
+	if (!amount) return out.not_integer();
+	out.integer(ctx.db.set_expiry(args[1], ToDeadline(*amount)) ? 1 : 0);
 }
 
 constexpr auto after_seconds = [](int64_t n) {
@@ -69,35 +68,35 @@ constexpr auto at_millis = [](int64_t n) {
 	return Database::time_point(milliseconds(n));
 };
 
-Value persist(CommandContext &ctx, Args args) {
+void persist(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
-	return reply::integer(ctx.db.contains(key) && ctx.db.persist(key) ? 1 : 0);
+	out.integer(ctx.db.contains(key) && ctx.db.persist(key) ? 1 : 0);
 }
 
 // TTL and PTTL reply -2 for a missing key and -1 for a key without expiry,
 // as integers, so clients can tell the cases apart.
 template <bool InMillis>
-Value ttl_generic(CommandContext &ctx, Args args) {
+void ttl_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
-	if (!ctx.db.contains(key)) return reply::integer(-2);
+	if (!ctx.db.contains(key)) return out.integer(-2);
 	const auto deadline = ctx.db.expiry(key);
-	if (!deadline) return reply::integer(-1);
+	if (!deadline) return out.integer(-1);
 
 	const auto left = std::chrono::duration_cast<milliseconds>(
 						  *deadline - Database::clock::now())
 						  .count();
 	// Round to the nearest second like Redis; truncating would report 99
 	// immediately after SET ... EX 100.
-	return reply::integer(InMillis ? left : (left + 500) / 1000);
+	out.integer(InMillis ? left : (left + 500) / 1000);
 }
 
-Value flushdb(CommandContext &ctx, Args) {
+void flushdb(CommandContext &ctx, Args, ReplyWriter &out) {
 	ctx.db.clear();
-	return reply::ok();
+	out.ok();
 }
 
-Value dbsize(CommandContext &ctx, Args) {
-	return reply::integer(static_cast<int64_t>(ctx.db.size()));
+void dbsize(CommandContext &ctx, Args, ReplyWriter &out) {
+	out.integer(static_cast<int64_t>(ctx.db.size()));
 }
 
 constexpr std::array COMMANDS{

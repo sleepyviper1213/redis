@@ -21,10 +21,8 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 											   batch.owned);
 		if (!found) {
 			if (resp::Parser::is_incomplete(found.error())) break;
-			batch.protocol_error =
-				fmt::format("{:e}",
-							reply::error(fmt::format("ERR Protocol error: {}",
-													 found.error())));
+			ReplyWriter(batch.protocol_error)
+				.error(fmt::format("ERR Protocol error: {}", found.error()));
 			break;
 		}
 		consumed = pos;

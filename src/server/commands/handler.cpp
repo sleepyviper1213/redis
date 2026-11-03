@@ -82,41 +82,44 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 	execute(ctx, args, out);
 }
 
-void CommandHandler::execute(CommandContext &ctx, Args args,
-							 std::string &out) const {
-	spdlog::logger &logger = log();
-	logger.trace("Query: {::?}", args);
-
+void CommandHandler::dispatch(CommandContext &ctx, Args args,
+							  ReplyWriter &out) const {
 	if (args.empty()) {
-		resp::encode_to(out,
-						reply::error("ERR Protocol error: expected a "
-									 "non-empty array of bulk strings"));
+		out.error("ERR Protocol error: expected a non-empty array of bulk "
+				  "strings");
 		return;
 	}
 
 	std::array<char, MAX_COMMAND_NAME> name_buf;
 
-	Value response = Value::from_null();
-	if (const auto it = commands_.find(upper_name(args[0], name_buf));
-		it == commands_.end()) {
-		response =
-			reply::error(fmt::format("ERR unknown command '{}'", args[0]));
-	} else {
-		const CommandInfo &info = it->second;
-		const auto argc         = static_cast<int>(args.size());
-		const bool arity_ok =
-			info.arity >= 0 ? argc == info.arity : argc >= -info.arity;
-		if (arity_ok) {
-			response = info.fn(ctx, args);
-		} else {
-			response = reply::error(
-				fmt::format("ERR wrong number of arguments for '{}' command",
-							tolower(std::string{info.name})));
-		}
+	const auto it = commands_.find(upper_name(args[0], name_buf));
+	if (it == commands_.end()) {
+		out.error(fmt::format("ERR unknown command '{}'", args[0]));
+		return;
 	}
 
-	logger.trace("Response: {:?}", response);
-	resp::encode_to(out, response);
+	const CommandInfo &info = it->second;
+	const auto argc         = static_cast<int>(args.size());
+	const bool arity_ok =
+		info.arity >= 0 ? argc == info.arity : argc >= -info.arity;
+	if (!arity_ok) {
+		out.error(fmt::format("ERR wrong number of arguments for '{}' command",
+							  tolower(std::string{info.name})));
+		return;
+	}
+	info.fn(ctx, args, out);
+}
+
+void CommandHandler::execute(CommandContext &ctx, Args args,
+							 std::string &out) const {
+	spdlog::logger &logger = log();
+	logger.trace("Query: {::?}", args);
+
+	const size_t reply_start = out.size();
+	ReplyWriter writer(out);
+	dispatch(ctx, args, writer);
+
+	logger.trace("Response: {:?}", std::string_view(out).substr(reply_start));
 }
 
 } // namespace redis

@@ -40,6 +40,8 @@ public:
 	void execute(CommandContext &ctx, Args args, std::string &out) const;
 
 private:
+	void dispatch(CommandContext &ctx, Args args, ReplyWriter &out) const;
+
 	StringMap<CommandInfo> commands_;
 };
 } // namespace redis
