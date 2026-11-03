@@ -21,7 +21,7 @@ void exit_child(bool success) noexcept { std::_Exit(success ? 0 : 1); }
 pid_type current_pid() noexcept { return ::_getpid(); }
 
 // fork_process() never succeeds, so there is never a child to reap.
-std::optional<bool> reap(pid_type, bool) { return false; }
+std::optional<bool> reap(pid_type /*child*/, bool /*wait*/) { return false; }
 
 std::error_code sync_file(const std::filesystem::path &path) {
 	HANDLE file = ::CreateFileW(path.c_str(), GENERIC_WRITE,
@@ -30,13 +30,15 @@ std::error_code sync_file(const std::filesystem::path &path) {
 	if (file == INVALID_HANDLE_VALUE)
 		return {static_cast<int>(::GetLastError()), std::system_category()};
 	std::error_code ec;
-	if (!::FlushFileBuffers(file))
+	if (::FlushFileBuffers(file) == 0)
 		ec = {static_cast<int>(::GetLastError()), std::system_category()};
 	::CloseHandle(file);
 	return ec;
 }
 
 // Windows has no way to flush a directory entry; NTFS journals renames.
-std::error_code sync_directory(const std::filesystem::path &) { return {}; }
+std::error_code sync_directory(const std::filesystem::path & /*dir*/) {
+	return {};
+}
 
 } // namespace redis::persistence::posix

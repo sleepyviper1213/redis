@@ -1,13 +1,20 @@
 #include "persistence.hpp"
 
 #include "core/logging.hpp"
-#include "server/storage/database.hpp"
+#include "server/persistence/posix.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep (db.size())
+#include "server/storage/database_fwd.hpp"
 #include "snapshot.hpp"
 
-#include <fmt/chrono.h>
-#include <fmt/format.h>
-#include <fmt/std.h>
+#include <fmt/chrono.h> // IWYU pragma: keep (fmt formatters used by the logger)
+#include <fmt/format.h> // IWYU pragma: keep
+#include <fmt/std.h>    // IWYU pragma: keep
+#include <spdlog/logger.h>
 
+#include <chrono>
+#include <expected>
+#include <filesystem>
+#include <string>
 #include <utility>
 
 namespace redis {
@@ -19,7 +26,8 @@ spdlog::logger &log() {
 
 Persistence::Persistence(std::filesystem::path file) : file_(std::move(file)) {}
 
-Persistence::~Persistence() {
+// Only logging can throw here; ending the process on that is acceptable.
+Persistence::~Persistence() { // NOLINT(bugprone-exception-escape)
 	if (child_)
 		finish_background_save(*persistence::posix::reap(*child_, true));
 }

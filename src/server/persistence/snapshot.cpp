@@ -2,19 +2,28 @@
 
 #include "posix.hpp"
 #include "server/storage/database.hpp"
+#include "server/storage/database_fwd.hpp"
+#include "server/storage/object.hpp"
 
 #include <cereal/archives/portable_binary.hpp>
-#include <cereal/types/string.hpp>
+#include <cereal/cereal.hpp>
+#include <cereal/details/helpers.hpp>
+#include <cereal/types/string.hpp> // IWYU pragma: keep (std::string serialization)
 #include <fmt/format.h>
 
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <exception>
+#include <expected>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 
 // File layout (cereal portable binary, little-endian):
 //
@@ -68,11 +77,14 @@ void write_string(OutArchive &out, std::string_view s) {
 void write_object(OutArchive &out, const Object &object) {
 	out(static_cast<uint8_t>(object.type()));
 	object.visit([&out]<typename T>(const T &value) {
-		if constexpr (std::is_same_v<T, std::string_view>) write_string(out, value);
-		else if constexpr (std::is_same_v<T, Hash>) {
+		if constexpr (std::is_same_v<T, std::string_view>) {
+			write_string(out, value);
+		} else if constexpr (std::is_same_v<T, Hash>) {
 			out(static_cast<uint64_t>(value.size()));
 			for (const auto &[field, v] : value) out(field, v);
-		} else write_strings(out, value);
+		} else {
+			write_strings(out, value);
+		}
 	});
 }
 
@@ -108,7 +120,8 @@ Object read_object(InArchive &in) {
 	case 3: {
 		Hash hash;
 		for (auto n = read_size(in); n > 0; --n) {
-			String field, value;
+			String field;
+			String value;
 			in(field, value);
 			hash.insert_or_assign(std::move(field), std::move(value));
 		}
@@ -134,7 +147,7 @@ std::expected<void, std::string> save_snapshot(const Database &db,
 			stream.exceptions(std::ios::badbit | std::ios::failbit);
 
 			OutArchive out(stream);
-			for (char c : MAGIC) out(c);
+			for (const char c : MAGIC) out(c);
 			out(FORMAT_VERSION);
 
 			uint64_t count = 0;

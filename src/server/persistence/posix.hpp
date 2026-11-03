@@ -56,6 +56,10 @@ std::expected<pid_type, std::error_code> fork_and_run(Task &&task) {
 		try {
 			success = task();
 		} catch (...) {
+			// Not rethrown: unwinding would run the parent's destructors in
+			// this copy of it. A task that threw failed, which exit status 1
+			// tells the parent.
+			success = false;
 		}
 		detail::exit_child(success);
 	}
