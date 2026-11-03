@@ -1,9 +1,10 @@
 // Hash commands: HSET, HGET, HDEL, HGETALL, HLEN, HEXISTS, HMGET.
 #include "command.hpp"
-#include "server/storage/database.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep
 
 #include <array>
 #include <string>
+#include <version>
 
 namespace redis {
 
@@ -55,7 +56,16 @@ void hdel(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 	int64_t removed = 0;
 	for (const std::string_view field : args.subspan(2))
+#if defined(__cpp_lib_associative_heterogeneous_erasure) &&                    \
+	__cpp_lib_associative_heterogeneous_erasure >= 202110L
 		removed += static_cast<int64_t>((*hash)->erase(field));
+#else
+		// Fallback find() + erase(it) idiom (works on LLVM libc++)
+		if (auto it = (*hash)->find(field); it != (*hash)->end()) {
+			(*hash)->erase(it);
+			removed += 1;
+		}
+#endif
 	ctx.db.erase_if_empty(key);
 	out.integer(removed);
 }

@@ -1,13 +1,13 @@
 // Set commands: SADD, SREM, SCARD, SMEMBERS, SISMEMBER, SINTER, SPOP.
 #include "command.hpp"
-#include "server/storage/database.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep
 
 #include <algorithm>
 #include <array>
 #include <optional>
 #include <random>
-#include <string>
 #include <vector>
+#include <version>
 
 namespace redis {
 
@@ -29,7 +29,16 @@ void srem(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 	int64_t removed = 0;
 	for (const std::string_view member : args.subspan(2))
+#if defined(__cpp_lib_associative_heterogeneous_erasure) &&                    \
+	__cpp_lib_associative_heterogeneous_erasure >= 202110L
 		removed += static_cast<int64_t>((*set)->erase(member));
+#else
+		// Fallback find() + erase(it) idiom
+		if (auto it = (*set)->find(member); it != (*set)->end()) {
+			(*set)->erase(it);
+			removed += 1;
+		}
+#endif
 	ctx.db.erase_if_empty(key);
 	out.integer(removed);
 }
@@ -71,11 +80,10 @@ void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
 	std::ranges::sort(sets, {}, &Set::size);
 	std::vector<std::string_view> result;
 	for (const auto &member : *sets.front()) {
-		const bool in_all = std::all_of(sets.begin() + 1,
-										sets.end(),
-										[&](const Set *s) {
-											return s->contains(member);
-										});
+		const bool in_all =
+			std::all_of(sets.begin() + 1, sets.end(), [&](const Set *s) {
+				return s->contains(member);
+			});
 		if (in_all) result.emplace_back(member);
 	}
 	out.array(result.size());
@@ -86,13 +94,15 @@ void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
 // choose a random non-empty bucket, then a random entry within it.
 Set::const_iterator random_member(const Set &set) {
 	thread_local std::mt19937_64 rng{std::random_device{}()};
-	std::uniform_int_distribution<size_t> pick_bucket(0, set.bucket_count() - 1);
+	std::uniform_int_distribution<size_t> pick_bucket(0,
+													  set.bucket_count() - 1);
 	size_t bucket = pick_bucket(rng);
 	while (set.bucket_size(bucket) == 0)
 		bucket = (bucket + 1) % set.bucket_count();
 
 	std::uniform_int_distribution<size_t> pick_entry(0,
-													 set.bucket_size(bucket) - 1);
+													 set.bucket_size(bucket) -
+														 1);
 	auto local = set.begin(bucket);
 	std::advance(local, pick_entry(rng));
 	return set.find(*local);

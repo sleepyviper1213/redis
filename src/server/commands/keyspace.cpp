@@ -2,7 +2,7 @@
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
 #include "core/utils/glob.hpp"
-#include "server/storage/database.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep
 
 #include <array>
 #include <chrono>

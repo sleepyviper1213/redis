@@ -4,7 +4,7 @@
 #include "core/utils/glob.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/persistence/persistence.hpp"
-#include "server/storage/database.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep
 
 #include <array>
 #include <chrono>

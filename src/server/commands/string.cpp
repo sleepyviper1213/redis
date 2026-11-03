@@ -2,7 +2,7 @@
 #include "command.hpp"
 #include "core/utils/saturating.hpp"
 #include "core/utils/toupper.hpp"
-#include "server/storage/database.hpp"
+#include "server/storage/database.hpp" // IWYU pragma: keep
 
 #include <array>
 #include <chrono>
