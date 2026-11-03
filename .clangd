@@ -1,0 +1,11 @@
+CompileFlags:
+  # GCC-only flag that a dependency adds for the MinGW build; clangd rejects it.
+  Remove: -fconcepts-diagnostics-depth=*
+---
+# POSIX-only: CMake builds it only off Windows, so it is not in the Windows
+# compile databases and clangd would parse it as Windows code.
+If:
+  PathMatch: .*/persistence/posix\.cpp
+Diagnostics:
+  Suppress: "*"
+

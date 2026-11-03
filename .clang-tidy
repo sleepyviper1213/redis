@@ -1,19 +1,24 @@
 Checks: >
   -*,
+  abseil-*,
   clang-diagnostic-*,
   clang-analyzer-*,
   bugprone-*,
-  -cert-*,
+  cert-*,
   concurrency-*,
   cppcoreguidelines-*,
   -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-avoid-do-while,
   llvm-*,
   -llvm-header-guard,
   modernize-*,
   -modernize-use-trailing-return-type,
   misc-*,
-  -performance-*
-  readability-identifier-naming,
+  performance-*,
+  readability-*,
+  -readability-braces-around-statements,
+  -readability-identifier-naming,
+  -readability-uppercase-literal-suffix,
 
 CheckOptions:
   readability-identifier-naming.ClassCase: 'CamelCase'
