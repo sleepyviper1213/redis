@@ -12,6 +12,7 @@ add_library(
     commands/set.cpp
     commands/string.cpp
 
+    diagnostics/current_command.cpp
     net/executor.cpp
     net/pipeline.cpp
     net/redis_server.cpp
@@ -33,7 +34,8 @@ if(WIN32)
     target_compile_definitions(redis_server_lib PUBLIC _WIN32_WINNT=0x0A00)
     target_link_libraries(redis_server_lib PUBLIC ws2_32 mswsock)
 else()
-    target_sources(redis_server_lib PRIVATE persistence/posix.cpp)
+    target_sources(redis_server_lib PRIVATE persistence/posix.cpp
+        diagnostics/crash_posix.cpp)
 endif()
 
 target_compile_definitions(redis_server_lib PUBLIC BOOST_ASIO_NO_DEPRECATED)

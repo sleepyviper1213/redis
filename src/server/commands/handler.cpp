@@ -5,6 +5,7 @@
 #include "core/utils/toupper.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/reply.hpp"
+#include "server/diagnostics/current_command.hpp"
 #include "server/storage/database.hpp"
 
 #include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
@@ -119,6 +120,8 @@ void CommandHandler::dispatch(CommandContext &ctx, Args args,
 	}
 	// Debug builds: the thread that runs commands owns the keyspace.
 	ctx.db.claim_owner();
+	// For a crash report: which command was running when the process died.
+	const diagnostics::CommandScope running{info.name, args.size()};
 	info.fn(ctx, args, out);
 }
 

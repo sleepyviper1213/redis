@@ -1,5 +1,6 @@
 #include "CLI/CLI.hpp"
 #include "core/logging.hpp"
+#include "server/diagnostics/crash.hpp"
 #include "server/net/redis_server.hpp"
 #include "server/setup_cli_options.hpp"
 
@@ -11,7 +12,21 @@
 #include <exception>
 #include <string>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace {
+int current_pid() {
+#ifdef _WIN32
+	return _getpid();
+#else
+	return static_cast<int>(getpid());
+#endif
+}
+
 int run(int argc, char **argv) {
 	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
@@ -22,6 +37,16 @@ int run(int argc, char **argv) {
 		.log_file = app->get_option("--log-file")->as<std::string>(),
 	}};
 	auto &log = redis::logging::logger_for(redis::logging::channel::server);
+	redis::diagnostics::install_crash_handler(
+		app->get_option("--log-file")->as<std::string>());
+
+	// Who was running, and how: what an operator compares against a crash
+	// report or a core dump.
+	log.info("Server started, pid {}, port {}, {} I/O thread(s), dump file {}",
+			 current_pid(),
+			 app->get_option("--port")->as<uint16_t>(),
+			 app->get_option("--io-threads")->as<unsigned>(),
+			 app->get_option("--dump")->as<std::string>());
 
 	if (app->count("--config") != 0u)
 		log.info("Using config file: {}",
