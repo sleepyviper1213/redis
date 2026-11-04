@@ -21,6 +21,8 @@
 
 #include <spdlog/logger.h>
 
+#include <array>
+
 namespace redis::logging {
 
 /**
@@ -34,6 +36,14 @@ enum class channel : uint8_t {
 	net,         ///< connections: accept, disconnect, protocol errors
 	commands,    ///< requests and replies (trace level)
 	persistence, ///< snapshot loads, SAVE and BGSAVE
+};
+
+/// Every channel, for code that must reach all of them (a level change).
+inline constexpr std::array ALL_CHANNELS{
+	channel::server,
+	channel::net,
+	channel::commands,
+	channel::persistence,
 };
 
 /**

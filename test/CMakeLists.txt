@@ -19,6 +19,7 @@ add_executable(redis_unit_test
     unit/core/utils/ring_buffer.test.cpp
     unit/core/utils/saturating.test.cpp
 
+    unit/server/commands/config.test.cpp
     unit/server/commands/hash.test.cpp
     unit/server/commands/keyspace.test.cpp
     unit/server/commands/list.test.cpp

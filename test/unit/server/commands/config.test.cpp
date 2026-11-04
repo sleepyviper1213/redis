@@ -1,0 +1,52 @@
+#include "commands.fixture.hpp"
+#include "core/logging.hpp"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <string>
+
+using namespace redis;
+
+SCENARIO("Changing the log level at runtime", "[commands][config]") {
+	GIVEN("a server logging at info") {
+		test::Server server;
+		REQUIRE(logging::set_level("info"));
+
+		WHEN("CONFIG SET loglevel names a level") {
+			const auto reply = server.run({"CONFIG", "SET", "loglevel", "debug"});
+
+			THEN("it applies to the default logger and every channel") {
+				CHECK(reply == "+OK\r\n");
+				CHECK(logging::level() == "debug");
+				for (const auto which : logging::ALL_CHANNELS)
+					CHECK(logging::logger_for(which).level() ==
+						  spdlog::level::debug);
+			}
+
+			AND_THEN("CONFIG GET reports it") {
+				CHECK(server.run({"CONFIG", "GET", "loglevel"}) ==
+					  "*2\r\n$8\r\nloglevel\r\n$5\r\ndebug\r\n");
+			}
+		}
+
+		WHEN("the level is not one") {
+			const auto reply = server.run({"CONFIG", "SET", "loglevel", "loud"});
+
+			THEN("it is refused and nothing changes") {
+				CHECK(reply.starts_with("-ERR Invalid argument 'loud'"));
+				CHECK(logging::level() == "info");
+			}
+		}
+
+		WHEN("another parameter is set") {
+			const auto reply = server.run({"CONFIG", "SET", "port", "1"});
+
+			THEN("it is refused") {
+				CHECK(reply.starts_with("-ERR Unsupported CONFIG parameter"));
+			}
+		}
+
+		// Leave the process as the other tests expect it.
+		REQUIRE(logging::set_level("info"));
+	}
+}

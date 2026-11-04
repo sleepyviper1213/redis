@@ -1,11 +1,15 @@
 // Connection and server commands: PING, ECHO, SAVE, BGSAVE, LASTSAVE,
-// CONFIG GET.
+// CONFIG GET, CONFIG SET loglevel.
 #include "command.hpp"
+#include "core/logging.hpp"
 #include "core/utils/glob.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/commands/reply.hpp"
 #include "server/persistence/persistence.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
+
+#include <fmt/format.h>
+#include <spdlog/logger.h>
 
 #include <array>
 #include <chrono>
@@ -53,11 +57,35 @@ void lastsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 	out.integer(unix_seconds);
 }
 
+// CONFIG SET loglevel <level>: the one setting worth changing without a
+// restart, to look closer at a running server without losing its state.
+void config_set(Args args, ReplyWriter &out) {
+	if (tolower(std::string(args[2])) != "loglevel") {
+		out.error(fmt::format("ERR Unsupported CONFIG parameter: {}", args[2]));
+		return;
+	}
+	if (!logging::set_level(args[3])) {
+		out.error(fmt::format(
+			"ERR Invalid argument '{}' for CONFIG SET 'loglevel'", args[3]));
+		return;
+	}
+	// Warn, so the change is on record at any level short of error.
+	logging::logger_for(logging::channel::server)
+		.warn("Log level changed to {} by CONFIG SET", logging::level());
+	out.ok();
+}
+
 // CONFIG GET <pattern>: read-only view of the settings clients commonly probe
 // (redis-benchmark asks for "save" and "appendonly" on startup).
 void config(CommandContext &ctx, Args args, ReplyWriter &out) {
-	if (toupper(std::string(args[1])) != "GET" || args.size() != 3) {
-		out.error("ERR CONFIG supports only 'CONFIG GET <pattern>'");
+	const auto sub = toupper(std::string(args[1]));
+	if (sub == "SET" && args.size() == 4) {
+		config_set(args, out);
+		return;
+	}
+	if (sub != "GET" || args.size() != 3) {
+		out.error("ERR CONFIG supports only 'CONFIG GET <pattern>' and "
+				  "'CONFIG SET loglevel <level>'");
 		return;
 	}
 
@@ -65,6 +93,7 @@ void config(CommandContext &ctx, Args args, ReplyWriter &out) {
 		{"appendonly", "no"},
 		{"dbfilename", ctx.persistence.file().filename().string()},
 		{"dir", ctx.persistence.file().parent_path().string()},
+		{"loglevel", std::string(logging::level())},
 		{"save", ""},
 	};
 

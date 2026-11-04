@@ -2,6 +2,8 @@
 
 #include "core/logging/settings.hpp"
 
+#include <string_view>
+
 // Installing, draining, and tearing down the process-wide logger.
 //
 // No <spdlog/spdlog.h> here either: none of these declarations names a spdlog
@@ -28,6 +30,22 @@ namespace redis::logging {
  *          threads that will log are started.
  */
 void init(const settings &config);
+
+/**
+ * @brief Change the level of the default logger and every channel, while
+ *        the server runs (CONFIG SET loglevel).
+ *
+ * @param name A level name as for @c settings::level: trace, debug, info,
+ *        warn, error, critical or off.
+ * @return false, changing nothing, when @p name is not a level.
+ *
+ * @note Safe while other threads log: a level is an atomic in spdlog. Must
+ *       not race @c init, like every other call here.
+ */
+[[nodiscard]] bool set_level(std::string_view name);
+
+/// @brief The default logger's level, by name ("info", "warning", ...).
+[[nodiscard]] std::string_view level() noexcept;
 
 /**
  * @brief Emit the held-back backtrace ring, then clear it. No-op when

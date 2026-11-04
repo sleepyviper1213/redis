@@ -19,6 +19,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -212,6 +213,22 @@ void init(const settings &config) {
 					  config.level,
 					  delivery,
 					  config.log_file);
+}
+
+bool set_level(std::string_view name) {
+	const auto [level, known] = read_level(std::string(name));
+	if (!known) return false;
+	// The channels are clones made at init time, each with its own level.
+	spdlog::default_logger()->set_level(level);
+	for (const auto which : ALL_CHANNELS) logger_for(which).set_level(level);
+	return true;
+}
+
+std::string_view level() noexcept {
+	const auto &logger = spdlog::default_logger();
+	if (!logger) return "off";
+	const auto name = spdlog::level::to_string_view(logger->level());
+	return {name.data(), name.size()};
 }
 
 void dump_backtrace() noexcept {
