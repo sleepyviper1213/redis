@@ -146,8 +146,10 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 		// what it was asked to (an MSET, say). Only the reply can be taken
 		// back: answer this request with an error, so the client and the rest of
 		// its pipeline stay in step, instead of ending the connection.
+		// Don't use ReplyWriter here: fmt::format_to allocates and would throw
+		// bad_alloc again.
 		out.resize(reply_start);
-		writer.error("OOM command not allowed: out of memory");
+		out += "-OOM command not allowed: out of memory\r\n";
 		logger.error("Out of memory running '{}'",
 					 args.empty() ? std::string_view{} : args[0]);
 	}

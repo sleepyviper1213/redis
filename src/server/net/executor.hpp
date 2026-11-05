@@ -48,6 +48,10 @@ public:
 	 * \brief Wait until everything already queued has run, so that nothing
 	 * else touches the keyspace and the caller may. Only meaningful once no
 	 * coroutine can call run() any more, i.e. after the I/O threads stopped.
+	 *
+	 * \pre Must not be called from a task running on the keyspace thread itself
+	 *      — that would deadlock waiting for a task only that thread can run.
+	 *      In debug builds an assertion catches this.
 	 */
 	void stop();
 

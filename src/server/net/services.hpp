@@ -25,7 +25,8 @@ struct Services {
 	///        set, the server persists with snapshots alone.
 	Services(std::filesystem::path dump_file, bool threaded,
 			 std::optional<AofConfig> aof_config = std::nullopt)
-		: persistence(dump_file), keyspace(threaded) {
+		: persistence(dump_file), // copies dump_file; move is below
+		  keyspace(threaded) {
 		if (aof_config) aof.emplace(std::move(*aof_config), std::move(dump_file));
 	}
 

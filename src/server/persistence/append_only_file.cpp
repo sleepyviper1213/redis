@@ -12,6 +12,7 @@
 #include <spdlog/logger.h>
 
 #include <array>
+#include <cassert>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
@@ -58,8 +59,7 @@ void encode_command(std::string &out, const Range &args) {
 
 std::expected<std::string, std::string> read_file(const fs::path &file) {
 	std::ifstream in(file, std::ios::binary);
-	if (!in)
-		return std::unexpected(fmt::format("cannot open {}", file));
+	if (!in) return std::unexpected(fmt::format("cannot open {}", file));
 	std::ostringstream content;
 	content << in.rdbuf();
 	return std::move(content).str();
@@ -81,8 +81,7 @@ AppendOnlyFile::~AppendOnlyFile() { // NOLINT(bugprone-exception-escape)
 std::expected<AppendOnlyFile::Manifest, std::string>
 AppendOnlyFile::read_manifest(const fs::path &file) {
 	std::ifstream in(file);
-	if (!in)
-		return std::unexpected(fmt::format("cannot open {}", file));
+	if (!in) return std::unexpected(fmt::format("cannot open {}", file));
 
 	Manifest manifest;
 	std::string key;
@@ -121,12 +120,11 @@ AppendOnlyFile::write_manifest(const Manifest &manifest) const {
 	const auto failed = [&](std::string_view step, const std::error_code &why) {
 		std::error_code ignored;
 		fs::remove(tmp, ignored);
-		return std::unexpected(fmt::format(
-			"cannot write {}: {} failed{}{}",
-			file,
-			step,
-			why ? ": " : "",
-			why ? why.message() : ""));
+		return std::unexpected(fmt::format("cannot write {}: {} failed{}{}",
+										   file,
+										   step,
+										   why ? ": " : "",
+										   why ? why.message() : ""));
 	};
 
 	bool written = false;
@@ -180,24 +178,22 @@ AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 				return std::unexpected(
 					fmt::format("{} is corrupt at byte {}: {}",
 								file,
-								whole,
+								pos,
 								found.error()));
 			// The server died while writing the last command. Redis' default
 			// too: drop the torn command and carry on, rather than refuse to
 			// start over a few bytes. Anywhere but the end it is corruption.
 			if (!last)
 				return std::unexpected(
-					fmt::format("{} ends in the middle of a command",
-								file));
+					fmt::format("{} ends in the middle of a command", file));
 			log().warn("{} ends in the middle of a command: cutting {} bytes",
 					   file,
 					   data.size() - whole);
 			std::error_code ec;
 			fs::resize_file(file, whole, ec);
 			if (ec)
-				return std::unexpected(fmt::format("cannot truncate {}: {}",
-												   file,
-												   ec.message()));
+				return std::unexpected(
+					fmt::format("cannot truncate {}: {}", file, ec.message()));
 			return {};
 		}
 		whole = pos;
@@ -214,9 +210,8 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	std::error_code ec;
 	fs::create_directories(config_.dir, ec);
 	if (ec)
-		return std::unexpected(fmt::format("cannot create {}: {}",
-										   config_.dir,
-										   ec.message()));
+		return std::unexpected(
+			fmt::format("cannot create {}: {}", config_.dir, ec.message()));
 
 	Database &db        = ctx.db;
 	const fs::path file = path_of(std::string(MANIFEST_NAME));
@@ -313,12 +308,12 @@ std::expected<void, std::string> AppendOnlyFile::open_for_append() {
 // ---- logging --------------------------------------------------------------
 
 void AppendOnlyFile::replace(std::initializer_list<std::string_view> args) {
-	replaced_.clear();
+	assert(replaced_.empty() && "replace() called twice for one command");
 	encode_command(replaced_, args);
 }
 
 void AppendOnlyFile::replace(const std::vector<std::string_view> &args) {
-	replaced_.clear();
+	assert(replaced_.empty() && "replace() called twice for one command");
 	encode_command(replaced_, args);
 }
 
@@ -355,6 +350,13 @@ void AppendOnlyFile::write_out() {
 		out_.clear();
 		std::error_code ec;
 		fs::resize_file(incr_path_, good_size_, ec);
+		// Cap the pending buffer so a sustained disk error cannot exhaust memory.
+		constexpr size_t MAX_PENDING = 64 * 1024 * 1024;
+		if (buf_.size() > MAX_PENDING) {
+			log().critical("AOF pending buffer exceeded {}MB; discarding {} bytes",
+						   MAX_PENDING / (1024 * 1024), buf_.size());
+			buf_.clear();
+		}
 		return;
 	}
 	good_size_ += buf_.size();
@@ -365,9 +367,7 @@ void AppendOnlyFile::write_out() {
 void AppendOnlyFile::sync_now() {
 	if (!dirty_.exchange(false, std::memory_order_acq_rel)) return;
 	if (auto ec = px::sync_file(incr_path_)) {
-		log().error("AOF fsync of {} failed: {}",
-					incr_path_,
-					ec.message());
+		log().error("AOF fsync of {} failed: {}", incr_path_, ec.message());
 		dirty_.store(true, std::memory_order_release);
 	}
 }
@@ -395,9 +395,7 @@ void AppendOnlyFile::sync_loop(std::stop_token stop) {
 		const fs::path path = sync_path_;
 		lock.unlock();
 		if (auto ec = px::sync_file(path)) {
-			log().error("AOF fsync of {} failed: {}",
-						path,
-						ec.message());
+			log().error("AOF fsync of {} failed: {}", path, ec.message());
 			dirty_.store(true, std::memory_order_release);
 		}
 		lock.lock();

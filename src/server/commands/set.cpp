@@ -191,7 +191,7 @@ void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
 	}
 	ctx.db.erase_if_empty(key);
 
-	if (!popped.empty()) {
+	if (!popped.empty() && ctx.aof != nullptr) {
 		std::vector<std::string_view> srem{"SREM", key};
 		srem.insert(srem.end(), popped.begin(), popped.end());
 		ctx.aof->replace(srem);
