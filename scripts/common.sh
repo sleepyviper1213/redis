@@ -7,7 +7,7 @@
 locate_binary() {
     local preset="$1" config="$2" target="$3" candidate
     for candidate in \
-        "build/$preset/src/server/$config/$target" \
+        "build/$preset/src/app/$config/$target" \
         "build/$preset/test/$config/$target"; do
         if [ -x "$candidate" ]; then
             echo "$candidate"

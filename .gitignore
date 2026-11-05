@@ -83,3 +83,5 @@ docs/doxygen
 .vs/
 # Snapshot files written by SAVE, BGSAVE and shutdown
 *.snap
+
+.claude
