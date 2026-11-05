@@ -247,6 +247,7 @@ public:
 	 * \return false if the key does not exist.
 	 */
 	bool set_expiry(std::string_view key, time_point deadline) {
+		owner_.check();
 		if (!contains(key)) return false;
 		if (expiry_enabled_ && deadline <= clock::now()) {
 			erase(key);

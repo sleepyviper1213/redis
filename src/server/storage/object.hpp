@@ -342,11 +342,14 @@ public:
 		switch (type()) {
 		case ObjectType::String: return std::forward<F>(f)(string());
 		case ObjectType::List:
+			assert(repr_.heap.ptr != nullptr && "visit() on moved-from Object");
 			return std::forward<F>(f)(
 				*static_cast<const List *>(repr_.heap.ptr));
 		case ObjectType::Set:
+			assert(repr_.heap.ptr != nullptr && "visit() on moved-from Object");
 			return std::forward<F>(f)(*static_cast<const Set *>(repr_.heap.ptr));
 		case ObjectType::Hash:
+			assert(repr_.heap.ptr != nullptr && "visit() on moved-from Object");
 			return std::forward<F>(f)(
 				*static_cast<const Hash *>(repr_.heap.ptr));
 		}
