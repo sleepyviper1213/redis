@@ -1,6 +1,8 @@
 #pragma once
-#include <charconv>
+#include <fmt/format.h>
+
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <string_view>
 
@@ -19,15 +21,20 @@ public:
 	explicit ReplyWriter(std::string &out) noexcept : out_(out) {}
 
 	void ok() { out_ += "+OK\r\n"; }
+
 	void simple(std::string_view text) { line('+', text); }
+
 	void error(std::string_view message) { line('-', message); }
+
 	void integer(int64_t n) { number(':', n); }
+
 	void nil() { out_ += "$-1\r\n"; }
 
 	void bulk(std::string_view text) {
-		number('$', text.size());
-		out_.append(text);
-		out_ += "\r\n";
+		fmt::format_to(std::back_inserter(out_),
+					   "${}\r\n{}\r\n",
+					   text.size(),
+					   text);
 	}
 
 	/// The header of an array of \p size elements; the elements follow.
@@ -38,32 +45,27 @@ public:
 	static constexpr std::string_view SYNTAX_ERROR = "ERR syntax error";
 
 	void wrong_type() {
-		error(
-			"WRONGTYPE Operation against a key holding the wrong kind of value");
+		error("WRONGTYPE Operation against a key holding the wrong kind of "
+			  "value");
 	}
+
 	void not_integer() { error(NOT_INTEGER); }
+
 	void syntax_error() { error(SYNTAX_ERROR); }
 
 private:
 	void line(char prefix, std::string_view text) {
-		out_ += prefix;
-		out_.append(text);
-		out_ += "\r\n";
+		fmt::format_to(std::back_inserter(out_), "{}{}\r\n", prefix, text);
 	}
 
-	// The prefix, the decimal number and the CRLF go out in one append.
 	template <typename T>
 	void number(char prefix, T n) {
-		char buf[32]; // a prefix, any 64-bit decimal, and CRLF
-		buf[0]         = prefix;
-		const auto end = std::to_chars(buf + 1, buf + sizeof buf - 2, n).ptr;
-		end[0]         = '\r';
-		end[1]         = '\n';
-		out_.append(buf, static_cast<size_t>(end + 2 - buf));
+		fmt::format_to(std::back_inserter(out_), "{}{}\r\n", prefix, n);
 	}
 
 	// A short-lived view over the caller's reply buffer, never rebound.
-	std::string &out_; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+	std::string
+		&out_; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 };
 
 } // namespace redis
