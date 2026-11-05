@@ -64,8 +64,9 @@ void close_inherited_descriptors(int keep) {
 		::closedir(dir);
 	} else {
 		// No /dev/fd to list: try everything that could be open.
+		const long open_max = ::sysconf(_SC_OPEN_MAX);
 		const long limit =
-			std::min<long>(::sysconf(_SC_OPEN_MAX), MAX_FALLBACK_FDS);
+			open_max > 0 ? std::min(open_max, MAX_FALLBACK_FDS) : MAX_FALLBACK_FDS;
 		for (int fd = FIRST_NON_STDIO_FD; fd < limit; ++fd)
 			if (fd != keep) fds.push_back(fd);
 	}
