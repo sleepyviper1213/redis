@@ -1,5 +1,5 @@
 #pragma once
-#include "server/persistence/posix.hpp"
+#include "server/persistence/child_process.hpp"
 #include "server/storage/database_fwd.hpp"
 
 #include <chrono>
@@ -18,18 +18,19 @@ namespace redis {
  * of the keyspace while the parent keeps serving clients; poll() collects the
  * result from the server's periodic tick.
  */
-class Persistence {
+class SnapshotManager {
 public:
 	using clock      = std::chrono::system_clock;
 	using time_point = clock::time_point;
 
-	explicit Persistence(std::filesystem::path file);
+	explicit SnapshotManager(std::filesystem::path file);
 
-	Persistence(const Persistence &)            = delete;
-	Persistence &operator=(const Persistence &) = delete;
+	SnapshotManager(const SnapshotManager &)            = delete;
+	SnapshotManager &operator=(const SnapshotManager &) = delete;
 
 	/// Waits for a running background save, so no child outlives the server.
-	~Persistence();
+	/// Shutdown that saves anyway calls cancel_background_save() first.
+	~SnapshotManager();
 
 	/// Synchronous save (SAVE). Blocks the caller until the file is durable.
 	[[nodiscard]] std::expected<void, std::string> save(const Database &db);
@@ -40,6 +41,13 @@ public:
 
 	/// Collect a finished background save, if any. Never blocks.
 	void poll();
+
+	/**
+	 * \brief Kill a running background save, wait for it to be gone and remove
+	 * its temporary file. Shutdown calls this before the final save(), which is
+	 * refused while a child exists, and whose snapshot is newer anyway.
+	 */
+	void cancel_background_save();
 
 	/// Load the snapshot file into \p db. A missing file is not an error.
 	[[nodiscard]] std::expected<void, std::string> load(Database &db);
@@ -56,11 +64,11 @@ public:
 	}
 
 private:
-	void finish_background_save(bool success);
+	void finish_background_save(const persistence::posix::ChildResult &result);
 
 	std::filesystem::path file_;
 	time_point last_save_ = clock::now();
-	std::optional<persistence::posix::pid_type> child_;
+	std::optional<persistence::posix::Child> child_;
 	time_point child_started_;
 };
 

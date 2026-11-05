@@ -1,6 +1,6 @@
 // Development builds on Windows (MinGW) only. Windows cannot fork, so BGSAVE
 // fails with an error there; SAVE and shutdown saves work.
-#include "posix.hpp"
+#include "child_process.hpp"
 
 #include <windows.h>
 
@@ -10,18 +10,30 @@
 namespace redis::persistence::posix {
 
 namespace detail {
-std::expected<pid_type, std::error_code> fork_process() {
+// There is never a report pipe.
+void close_fd(int /*fd*/) noexcept {}
+
+std::expected<Child, std::error_code> fork_process() {
 	return std::unexpected(
 		std::make_error_code(std::errc::function_not_supported));
 }
 
-void exit_child(bool success) noexcept { std::_Exit(success ? 0 : 1); }
+void exit_child(int /*report_fd*/, bool success,
+				std::string_view /*error*/) noexcept {
+	std::_Exit(success ? 0 : 1);
+}
 } // namespace detail
 
 pid_type current_pid() noexcept { return ::_getpid(); }
 
 // fork_process() never succeeds, so there is never a child to reap.
-std::optional<bool> reap(pid_type /*child*/, bool /*wait*/) { return false; }
+std::optional<ChildResult> reap(const Child & /*child*/, bool /*wait*/) {
+	return ChildResult{.success = false,
+					   .error   = "background saving is not supported here"};
+}
+
+// There is never a child to kill.
+void kill_child(pid_type /*child*/) noexcept {}
 
 std::error_code sync_file(const std::filesystem::path &path) {
 	HANDLE file = ::CreateFileW(path.c_str(), GENERIC_WRITE,

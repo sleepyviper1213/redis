@@ -1,7 +1,8 @@
-#include "tcp_server.hpp"
+#include "listener.hpp"
 
 #include "core/logging.hpp"
 #include "server/net/formatter.hpp"
+#include "server/net/listener.hpp"
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
@@ -9,26 +10,35 @@
 #include <exec/repeat_until.hpp>
 #include <spdlog/logger.h>
 
+#include <chrono>
 #include <exception>
 #include <utility>
 
 namespace redis::v2 {
 namespace {
 spdlog::logger &log() { return logging::logger_for(logging::channel::net); }
+
+/// How long to wait after a failed accept. The failure usually persists (out of
+/// descriptors lasts until one is freed), and retrying at once would spin.
+constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds(100);
 } // namespace
 
-TcpServer::TcpServer(boost::asio::any_io_executor ex, const std::string &host,
-					 boost::asio::ip::port_type port,
+Listener::Listener(boost::asio::any_io_executor ex,
 					 std::shared_ptr<Services> services)
 	: ex_(std::move(ex)),
-	  acceptor_(boost::asio::make_strand(ex_),
-				boost::asio::ip::tcp::endpoint(
-					boost::asio::ip::make_address_v4(host), port)),
+	  acceptor_(boost::asio::make_strand(ex_)),
 	  services_(std::move(services)),
+	  retry_timer_(ex_),
 	  drain_context_(ex_) {}
 
-void TcpServer::start() {
-	log().info("Listening at {}", acceptor_.local_endpoint());
+std::expected<void, std::string>
+Listener::listen(const std::string &host, boost::asio::ip::port_type port) {
+	return listen_on(acceptor_, host, port);
+}
+
+void Listener::start() {
+	boost::system::error_code bound;
+	log().info("Listening at {}", acceptor_.local_endpoint(bound));
 
 	using boost::asio::ip::tcp;
 	using stdexec::just;
@@ -59,7 +69,11 @@ void TcpServer::start() {
 				  } catch (const std::exception &ex) {
 					  log().error("Accept failed: {}", ex.what());
 				  }
-				  return just(!acceptor_.is_open());
+				  // The error usually persists: wait a little rather than spin
+				  // on it. Cancellation by stop() ends the wait.
+				  retry_timer_.expires_after(ACCEPT_RETRY_DELAY);
+				  return retry_timer_.async_wait(exec::asio::use_sender) |
+						 then([this] { return !acceptor_.is_open(); });
 			  }))
 			// spawn() takes only senders that cannot fail. Nothing above
 			// should, since errors are handled, but a callback may still throw.
@@ -73,19 +87,14 @@ void TcpServer::start() {
 		scope_.get_token());
 }
 
-// Only the logging in the catch can throw; ending the process on that is fine.
-void TcpServer::stop() noexcept { // NOLINT(bugprone-exception-escape)
+void Listener::stop() noexcept {
 	// The acceptor is not thread-safe: close it on its own strand, where the
-	// accept loop also runs.
-	try {
-		boost::asio::post(acceptor_.get_executor(), [this] {
-			boost::system::error_code ignored;
-			acceptor_.close(ignored);
-		});
-	} catch (const std::exception &e) {
-		// The stop request below still ends the accept loop.
-		log().error("Could not close the acceptor: {}", e.what());
-	}
+	// accept loop also runs. Posting can only fail by running out of memory,
+	// which ends the process (this is noexcept).
+	boost::asio::post(acceptor_.get_executor(), [this] {
+		boost::system::error_code ignored;
+		acceptor_.close(ignored);
+	});
 	scope_.request_stop();
 }
 

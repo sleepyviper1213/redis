@@ -41,7 +41,8 @@ private:
 		return stdexec::forward_progress_guarantee::parallel;
 	}
 
-	void enqueue(exec::_pool_::task_base *task, std::uint32_t tid = 0) noexcept {
+	void enqueue(exec::_pool_::task_base *task,
+				 std::uint32_t tid = 0) noexcept {
 		net::post(executor_, [task, tid] { task->execute_(task, tid); });
 	}
 

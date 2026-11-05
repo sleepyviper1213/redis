@@ -42,7 +42,7 @@ files.
 
 ## Request path
 
-1. `net/tcp_server` accepts a connection and spawns a `net/session` coroutine
+1. `net/listener` accepts a connection and spawns a `net/session` coroutine
    for it. The session lives in that coroutine's frame, so nothing else owns
    or shares it.
 2. The hot path is split in stages (`net/pipeline`). The session reads bytes
@@ -71,7 +71,7 @@ There are two interchangeable implementations of the session and the accept
 loop; `--sender-sessions` selects v2. Both run the same `net/pipeline` stages
 and the same `net/executor`.
 
-| | v1 (`net/session`, `net/tcp_server`) | v2 (`net/v2/`) |
+| | v1 (`net/session`, `net/listener`) | v2 (`net/v2/`) |
 |---|---|---|
 | Style | Asio C++20 coroutines | stdexec sender chains over Asio's `use_sender` |
 | Session state lives in | the `serve()` coroutine frame | the chain's operation state |

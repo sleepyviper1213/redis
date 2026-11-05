@@ -7,8 +7,10 @@
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <stdexec/execution.hpp>
 
+#include <expected>
 #include <memory>
 #include <string>
 
@@ -28,13 +30,16 @@ namespace v2 {
  * Safe to run on several I/O threads: the acceptor lives on its own strand
  * and every session gets one of its own.
  */
-class [[nodiscard]] TcpServer {
+class [[nodiscard]] Listener {
 public:
-	/// Bind and listen on \p host:\p port (IPv4). Throws on failure, e.g.
-	/// when the port is in use. \p services is shared with every session.
-	TcpServer(boost::asio::any_io_executor ex, const std::string &host,
-			  boost::asio::ip::port_type port,
+	/// \p services is shared with every session. Call listen() before start().
+	Listener(boost::asio::any_io_executor ex,
 			  std::shared_ptr<Services> services);
+
+	/// Bind and listen on \p host:\p port (IPv4). Fails, with a message, when
+	/// the port is in use or \p host is not an address.
+	[[nodiscard]] std::expected<void, std::string>
+	listen(const std::string &host, boost::asio::ip::port_type port);
 
 	/// Start accepting. Returns at once; the loop runs on the I/O threads.
 	void start();
@@ -54,6 +59,8 @@ private:
 	boost::asio::any_io_executor ex_;
 	boost::asio::ip::tcp::acceptor acceptor_;
 	std::shared_ptr<Services> services_;
+	/// Paces the accept loop after a failed accept, so it cannot spin.
+	boost::asio::steady_timer retry_timer_;
 	/// Where drained() completes: join needs a scheduler to complete on.
 	AsioContext drain_context_;
 	stdexec::counting_scope scope_;

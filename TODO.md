@@ -122,7 +122,7 @@ One command thread means one slow command stalls every client.
 - [ ] **Benchmark with `redis-benchmark`:** v1 vs v2, and `--io-threads 1` vs N.
   The extra hop adds latency per batch; the gain should only show with many
   connections.
-- [ ] **Unit test for `v2::TcpServer` shutdown** (stop, then `drained()`, with
+- [ ] **Unit test for `v2::Listener` shutdown** (stop, then `drained()`, with
   live clients). Needs a way to learn the bound port or an ephemeral-port
   option so the test does not depend on a fixed port.
 - [ ] **Move cron and signal handling to senders** (`steady_timer` and
