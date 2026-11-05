@@ -1,7 +1,7 @@
 #pragma once
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
-#include "server/persistence/persistence.hpp"
+#include "server/persistence/snapshot_manager.hpp"
 #include "server/storage/database.hpp"
 
 #include <atomic>
@@ -40,7 +40,7 @@ private:
 struct Server {
 	TempFile dump;
 	Database db;
-	Persistence persistence{dump.path()};
+	SnapshotManager persistence{dump.path()};
 	CommandContext ctx{db, persistence};
 
 	/// Run one command and return the RESP-encoded reply, exactly the bytes

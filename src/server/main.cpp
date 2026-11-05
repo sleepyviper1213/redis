@@ -2,14 +2,17 @@
 #include "core/logging.hpp"
 #include "server/diagnostics/crash.hpp"
 #include "server/net/redis_server.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/setup_cli_options.hpp"
 
 #include <fmt/base.h>
+#include <magic_enum/magic_enum.hpp>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <optional>
 #include <string>
 
 #ifdef _WIN32
@@ -25,6 +28,18 @@ int current_pid() {
 #else
 	return static_cast<int>(getpid());
 #endif
+}
+
+// The append-only file the options ask for, if any.
+std::optional<redis::AofConfig> aof_config(const CLI::App &app) {
+	if (!app.get_option("--appendonly")->as<bool>()) return std::nullopt;
+	return redis::AofConfig{
+		.dir   = app.get_option("--appenddir")->as<std::string>(),
+		// The option only accepts the enumerators' names.
+		.fsync = magic_enum::enum_cast<redis::FsyncPolicy>(
+					 app.get_option("--appendfsync")->as<std::string>())
+					 .value_or(redis::FsyncPolicy::everysec),
+	};
 }
 
 int run(int argc, char **argv) {
@@ -59,10 +74,15 @@ int run(int argc, char **argv) {
 			.dump_file       = app->get_option("--dump")->as<std::string>(),
 			.io_threads      = app->get_option("--io-threads")->as<unsigned>(),
 			.sender_sessions = app->get_option("--sender-sessions")->as<bool>(),
+			.aof             = aof_config(*app),
 		});
-		server.run();
+		if (const auto ran = server.run(); !ran) {
+			log.critical("{}", ran.error());
+			return EXIT_FAILURE;
+		}
 	} catch (const std::exception &e) {
-		// e.g. boost::system::system_error when the port is already in use.
+		// Only what Asio reports by throwing, e.g. boost::system::system_error
+		// when the port is already in use.
 		log.critical("{}", e.what());
 		return EXIT_FAILURE;
 	}

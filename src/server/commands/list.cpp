@@ -156,10 +156,10 @@ void lindex(CommandContext &ctx, Args args, ReplyWriter &out) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "LPUSH", .fn = push<End::Head>, .arity = -3},
-	CommandInfo{.name = "RPUSH", .fn = push<End::Tail>, .arity = -3},
-	CommandInfo{.name = "LPOP", .fn = pop<End::Head>, .arity = -2},
-	CommandInfo{.name = "RPOP", .fn = pop<End::Tail>, .arity = -2},
+	CommandInfo{.name = "LPUSH", .fn = push<End::Head>, .arity = -3, .write = true},
+	CommandInfo{.name = "RPUSH", .fn = push<End::Tail>, .arity = -3, .write = true},
+	CommandInfo{.name = "LPOP", .fn = pop<End::Head>, .arity = -2, .write = true},
+	CommandInfo{.name = "RPOP", .fn = pop<End::Tail>, .arity = -2, .write = true},
 	CommandInfo{.name = "LLEN", .fn = llen, .arity = 2},
 	CommandInfo{.name = "LRANGE", .fn = lrange, .arity = 4},
 	CommandInfo{.name = "LINDEX", .fn = lindex, .arity = 3},

@@ -5,10 +5,12 @@
 #include "core/utils/glob.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/commands/reply.hpp"
-#include "server/persistence/persistence.hpp"
+#include "server/persistence/append_only_file.hpp"
+#include "server/persistence/snapshot_manager.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
 
 #include <fmt/format.h>
+#include <magic_enum/magic_enum.hpp>
 #include <spdlog/logger.h>
 
 #include <array>
@@ -57,6 +59,16 @@ void lastsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 	out.integer(unix_seconds);
 }
 
+void bgrewriteaof(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
+	if (ctx.aof == nullptr) {
+		out.error("ERR Append only file is not enabled");
+		return;
+	}
+	const auto result = ctx.aof->start_rewrite(ctx.db);
+	if (result) out.simple("Background append only file rewriting started");
+	else out.error(result.error());
+}
+
 // CONFIG SET loglevel <level>: the one setting worth changing without a
 // restart, to look closer at a running server without losing its state.
 void config_set(Args args, ReplyWriter &out) {
@@ -90,7 +102,11 @@ void config(CommandContext &ctx, Args args, ReplyWriter &out) {
 	}
 
 	const std::pair<std::string, std::string> parameters[] = {
-		{"appendonly", "no"},
+		{"appendonly", ctx.aof != nullptr ? "yes" : "no"},
+		{"appendfsync",
+		 std::string(magic_enum::enum_name(
+			 ctx.aof != nullptr ? ctx.aof->fsync_policy()
+								: AofConfig{}.fsync))},
 		{"dbfilename", ctx.persistence.file().filename().string()},
 		{"dir", ctx.persistence.file().parent_path().string()},
 		{"loglevel", std::string(logging::level())},
@@ -116,6 +132,7 @@ constexpr std::array COMMANDS{
 	CommandInfo{.name = "SAVE", .fn = save, .arity = 1},
 	CommandInfo{.name = "BGSAVE", .fn = bgsave, .arity = 1},
 	CommandInfo{.name = "LASTSAVE", .fn = lastsave, .arity = 1},
+	CommandInfo{.name = "BGREWRITEAOF", .fn = bgrewriteaof, .arity = 1},
 	CommandInfo{.name = "CONFIG", .fn = config, .arity = -2},
 };
 } // namespace

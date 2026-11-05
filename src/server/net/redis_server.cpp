@@ -2,8 +2,8 @@
 
 #include "core/logging.hpp"
 #include "formatter.hpp"
-#include "tcp_server.hpp"
-#include "v2/tcp_server.hpp"
+#include "listener.hpp"
+#include "v2/listener.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
@@ -13,8 +13,10 @@
 #include <algorithm>
 #include <csignal>
 #include <exception>
+#include <expected>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -23,6 +25,16 @@
 namespace redis {
 namespace {
 spdlog::logger &log() { return logging::logger_for(logging::channel::server); }
+
+// What an exception caught on an Asio thread says. Asio hands failures over as
+// exception_ptrs, so the only way to read one is to throw it again.
+std::string describe(const std::exception_ptr &error) {
+	try {
+		std::rethrow_exception(error);
+	} catch (const std::exception &e) {
+		return e.what();
+	} catch (...) { return "unknown exception"; }
+}
 
 std::string_view signal_name(int sig) {
 	switch (sig) {
@@ -38,30 +50,36 @@ RedisServer::RedisServer(ServerConfig config)
 	  io_(static_cast<int>(std::max(1U, config_.io_threads))),
 	  signals_(io_, SIGINT, SIGTERM),
 	  services_(std::make_shared<Services>(config_.dump_file,
-										   config_.io_threads > 1)) {}
+										   config_.io_threads > 1,
+										   config_.aof)) {}
 
-void RedisServer::run() {
-	if (auto loaded = services_->persistence.load(services_->db); !loaded) {
+std::expected<void, std::string> RedisServer::run() {
+	// With an append-only file it is the source of truth: it holds everything
+	// since the last rewrite, which the snapshot does not.
+	const auto loaded = services_->aof
+							? services_->aof->load(services_->ctx,
+												   services_->handler)
+							: services_->persistence.load(services_->db);
+	if (!loaded) {
 		// Refuse to start rather than serve an empty keyspace and later
-		// overwrite the unreadable snapshot with it.
-		log().critical("{}", loaded.error());
-		throw std::runtime_error(loaded.error());
+		// overwrite the unreadable files with it.
+		return std::unexpected(loaded.error());
 	}
 
 	// Exactly one front end: binding the port twice would fail.
-	std::optional<TcpServer> server;
-	std::optional<v2::TcpServer> sender_server;
-	if (config_.sender_sessions)
-		sender_server.emplace(io_.get_executor(),
-							  config_.host,
-							  config_.port,
-							  services_);
-	else
-		server.emplace(io_.get_executor(),
-					   config_.host,
-					   config_.port,
-					   services_,
-					   config_.io_threads > 1);
+	std::optional<Listener> server;
+	std::optional<v2::Listener> sender_server;
+	if (config_.sender_sessions) {
+		sender_server.emplace(io_.get_executor(), services_);
+		if (auto listening = sender_server->listen(config_.host, config_.port);
+			!listening)
+			return std::unexpected(listening.error());
+	} else {
+		server.emplace(io_.get_executor(), services_, config_.io_threads > 1);
+		if (auto listening = server->listen(config_.host, config_.port);
+			!listening)
+			return std::unexpected(listening.error());
+	}
 
 	// Leave the event loop, once. Coroutine sessions are simply dropped with
 	// it. Sender sessions live in a scope that must not be destroyed while
@@ -86,41 +104,60 @@ void RedisServer::run() {
 		shut_down();
 	});
 
-	// A failure on any I/O thread stops them all and is rethrown from here,
-	// as it would be from a single-threaded io_.run().
-	std::exception_ptr failure;
+	// A failure on any I/O thread stops them all and is returned from here,
+	// as it would be from a single-threaded io_.run(). Only the first is kept.
+	std::optional<std::string> failure;
 	std::once_flag failed;
-	auto record = [&](std::exception_ptr e) {
-		std::call_once(failed, [&] { failure = e; });
+	auto record = [&](std::string message) {
+		std::call_once(failed, [&] { failure = std::move(message); });
 		shut_down();
 	};
-	auto rethrow = [&](const std::exception_ptr &e) {
-		if (e) record(e);
+	auto on_done = [&](const std::exception_ptr &error) {
+		if (error) record(describe(error));
 	};
 	if (sender_server) sender_server->start();
-	else net::co_spawn(io_, server->start(), rethrow);
-	net::co_spawn(io_, cron(), rethrow);
+	else net::co_spawn(io_, server->start(), on_done);
+	net::co_spawn(io_, cron(), on_done);
 
 	log().info("Ready to accept connections");
 	{
 		const auto run_io = [&] {
+			// Asio handlers can throw; this is where that ends.
 			try {
 				io_.run();
-			} catch (...) { record(std::current_exception()); }
+			} catch (const std::exception &e) {
+				record(e.what());
+			} catch (...) { record("unknown exception"); }
 		};
 		std::vector<std::jthread> workers;
 		for (unsigned i = 1; i < config_.io_threads; ++i)
 			workers.emplace_back(run_io);
 		run_io();
 	} // joins the workers
-	if (failure) std::rethrow_exception(failure);
+	if (failure) return std::unexpected(*failure);
 
 	// A batch may still be executing: wait for it before reading the keyspace.
 	services_->keyspace.stop();
 
+	// A running BGSAVE would make the final save below fail ("already in
+	// progress"), and its snapshot predates the latest writes anyway.
+	services_->persistence.cancel_background_save();
+
+	// Nothing runs commands any more: what is logged is final. An unfinished
+	// rewrite is dropped; the files it would have replaced are still whole.
+	if (services_->aof) {
+		services_->aof->cancel_rewrite();
+		services_->aof->close();
+	}
+
+	// Redis refuses to exit when this fails, and keeps serving. This server
+	// cannot resume once its loop has stopped, so it fails loudly instead: the
+	// error is returned and main() exits non-zero, which a supervisor sees,
+	// rather than a clean shutdown that lost the data.
 	if (auto saved = services_->persistence.save(services_->db); !saved)
-		log().error("Final snapshot failed: {}", saved.error());
+		return std::unexpected("final snapshot failed: " + saved.error());
 	log().info("Redis is now ready to exit, bye bye...");
+	return {};
 }
 
 net::awaitable<void> RedisServer::cron() {
@@ -136,6 +173,13 @@ net::awaitable<void> RedisServer::cron() {
 					services->db.active_expire_cycle(EXPIRE_KEYS_PER_RUN))
 				log().trace("Expired {} keys", expired);
 			services->persistence.poll();
+			if (services->aof) {
+				// The expiry above, and the writes since the last batch, if
+				// any, need to reach the file too.
+				services->aof->log_expired(services->db);
+				services->aof->after_batch();
+				services->aof->poll();
+			}
 		});
 	}
 }

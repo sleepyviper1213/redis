@@ -8,15 +8,19 @@
 #include <string_view>
 
 namespace redis {
-class Persistence;
+class SnapshotManager;
+class AppendOnlyFile;
 
-/// Everything a command may act on. A borrow: the owner (Services) keeps both
-/// alive and never rebinds or assigns the context.
+/// Everything a command may act on. A borrow: the owner (Services) keeps what
+/// it points to alive and never rebinds or assigns the context.
 struct CommandContext {
 	// NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
 	Database &db;
-	Persistence &persistence;
+	SnapshotManager &persistence;
 	// NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+	/// The append-only file the write commands are logged to; null when the
+	/// server runs without one, and while a log is being replayed.
+	AppendOnlyFile *aof = nullptr;
 };
 
 /// A command's arguments; args[0] is the command name itself. They view the
@@ -32,6 +36,10 @@ struct CommandInfo {
 	/// Counts the command name, Redis-style: N means exactly N arguments,
 	/// -N means at least N.
 	int arity;
+	/// Changes the keyspace: logged to the append-only file when it succeeds.
+	/// A command that is not deterministic (it reads the clock, picks at
+	/// random) must say what to log instead, with AppendOnlyFile::replace().
+	bool write = false;
 };
 
 /// Command tables, one per family. Each lives with its implementations.

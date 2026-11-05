@@ -1,6 +1,6 @@
 #include "snapshot.hpp"
 
-#include "posix.hpp"
+#include "child_process.hpp"
 #include "server/storage/database.hpp"
 #include "server/storage/database_fwd.hpp"
 #include "server/storage/object.hpp"
@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -40,6 +41,10 @@
 //
 // Bump FORMAT_VERSION on any change; loading rejects other versions rather
 // than misreading them.
+//
+// cereal reports a failed write or a short read by throwing. That is the only
+// exception here, and it ends at write_snapshot_file() and load_snapshot(),
+// which turn it into an error.
 namespace redis::persistence {
 namespace {
 namespace fs = std::filesystem;
@@ -94,14 +99,16 @@ uint64_t read_size(InArchive &in) {
 	return n;
 }
 
-Object read_object(InArchive &in) {
+/// The value at the archive's position, or why it is not one. (A short read
+/// still throws, from cereal.)
+std::expected<Object, std::string> read_object(InArchive &in) {
 	uint8_t type = 0;
 	in(type);
 	switch (type) {
 	case 0: {
 		String s;
 		in(s);
-		return s;
+		return Object(std::move(s));
 	}
 	case 1: {
 		List list;
@@ -127,58 +134,76 @@ Object read_object(InArchive &in) {
 		}
 		return make_object(std::move(hash));
 	}
-	default:
-		throw cereal::Exception(fmt::format("unknown value type {}", type));
+	default: return std::unexpected(fmt::format("unknown value type {}", type));
 	}
+}
+
+/// Write every live key of \p db to \p tmp. The file is closed when this
+/// returns, so the caller may sync, rename or remove it.
+std::expected<void, std::string> write_snapshot_file(const Database &db,
+													 const fs::path &tmp) {
+	std::ofstream stream(tmp, std::ios::binary | std::ios::trunc);
+	if (!stream)
+		return std::unexpected(fmt::format("cannot open {}", tmp.string()));
+
+	try {
+		OutArchive out(stream);
+		for (const char c : MAGIC) out(c);
+		out(FORMAT_VERSION);
+
+		uint64_t count = 0;
+		db.for_each([&](auto &&...) { ++count; });
+		out(count);
+
+		db.for_each([&](std::string_view key,
+						const Object &value,
+						std::optional<Database::time_point> deadline) {
+			write_string(out, key);
+			out(deadline ? to_unix_ms(*deadline) : NO_DEADLINE);
+			write_object(out, value);
+		});
+	} catch (const std::exception &e) {
+		return std::unexpected(e.what());
+	}
+
+	stream.flush();
+	if (!stream) return std::unexpected("write failed");
+	return {};
 }
 } // namespace
 
+fs::path snapshot_temp_path(const fs::path &file, posix::pid_type pid) {
+	return fs::path(file).concat(fmt::format(".tmp-{}", pid));
+}
+
 std::expected<void, std::string> save_snapshot(const Database &db,
 											   const fs::path &file) {
-	// Unique per process, so a SAVE and a BGSAVE child never share a file.
-	const fs::path tmp =
-		fs::path(file).concat(fmt::format(".tmp-{}", posix::current_pid()));
-	try {
-		{
-			std::ofstream stream(tmp, std::ios::binary | std::ios::trunc);
-			if (!stream)
-				return std::unexpected(
-					fmt::format("cannot open {}", tmp.string()));
-			stream.exceptions(std::ios::badbit | std::ios::failbit);
+	const fs::path tmp = snapshot_temp_path(file, posix::current_pid());
 
-			OutArchive out(stream);
-			for (const char c : MAGIC) out(c);
-			out(FORMAT_VERSION);
-
-			uint64_t count = 0;
-			db.for_each([&](auto &&...) { ++count; });
-			out(count);
-
-			db.for_each([&](std::string_view key,
-							const Object &value,
-							std::optional<Database::time_point>
-								deadline) {
-				write_string(out, key);
-				out(deadline ? to_unix_ms(*deadline) : NO_DEADLINE);
-				write_object(out, value);
-			});
-		}
-		if (auto ec = posix::sync_file(tmp))
-			throw fs::filesystem_error("fsync", tmp, ec);
-		fs::rename(tmp, file);
-		if (auto ec = posix::sync_directory(file.parent_path()))
-			throw fs::filesystem_error("fsync", file.parent_path(), ec);
-	} catch (const std::exception &e) {
+	// Reports the step that failed and leaves no temporary file behind.
+	const auto failed = [&](std::string_view why) {
 		std::error_code ignored;
 		fs::remove(tmp, ignored);
 		return std::unexpected(
-			fmt::format("saving {} failed: {}", file.string(), e.what()));
-	}
+			fmt::format("saving {} failed: {}", file.string(), why));
+	};
+
+	if (auto written = write_snapshot_file(db, tmp); !written)
+		return failed(written.error());
+	if (const auto ec = posix::sync_file(tmp))
+		return failed(fmt::format("fsync: {}", ec.message()));
+
+	std::error_code ec;
+	fs::rename(tmp, file, ec);
+	if (ec) return failed(fmt::format("rename: {}", ec.message()));
+	if (ec = posix::sync_directory(file.parent_path()); ec)
+		return failed(fmt::format("fsync of the directory: {}", ec.message()));
 	return {};
 }
 
 std::expected<void, std::string> load_snapshot(Database &db,
-											   const fs::path &file) {
+											   const fs::path &file,
+											   bool keep_expired) {
 	std::ifstream stream(file, std::ios::binary);
 	if (!stream) {
 		if (!fs::exists(file)) return {};
@@ -203,21 +228,27 @@ std::expected<void, std::string> load_snapshot(Database &db,
 
 		// Load into a scratch keyspace so a corrupt file leaves db untouched.
 		Database loaded;
+		// Stores a deadline in the past instead of deleting its key.
+		loaded.set_expiry_enabled(!keep_expired);
 		const auto now = Database::clock::now();
 		for (auto n = read_size(in); n > 0; --n) {
 			String key;
 			int64_t deadline_ms = 0;
 			in(key, deadline_ms);
-			Object value = read_object(in);
+			auto value = read_object(in);
+			if (!value)
+				return std::unexpected(fmt::format(
+					"{} is corrupt: {}", file.string(), value.error()));
 
 			if (deadline_ms == NO_DEADLINE) {
-				loaded.set(key, std::move(value));
+				loaded.set(key, std::move(*value));
 			} else if (const auto deadline = from_unix_ms(deadline_ms);
-					   deadline > now) {
-				loaded.set(key, std::move(value));
+					   keep_expired || deadline > now) {
+				loaded.set(key, std::move(*value));
 				loaded.set_expiry(key, deadline);
 			}
 		}
+		loaded.set_expiry_enabled(true);
 		db = std::move(loaded);
 	} catch (const std::exception &e) {
 		return std::unexpected(fmt::format("{} is corrupt or truncated: {}",

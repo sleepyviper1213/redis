@@ -4,6 +4,7 @@
 #include "core/resp/request.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep (db.size(), db.prefetch())
 #include "server/storage/database_fwd.hpp"
 
@@ -60,6 +61,9 @@ AfterReplies execute_batch(const ParsedBatch &batch, std::string &replies,
 	prefetch_keys(batch, ctx.db);
 	for (size_t i = 0; i < batch.size(); ++i)
 		handler.execute(ctx, batch.request(i), replies);
+	// The replies go out once this returns: what they acknowledge must be in
+	// the file by then (and on disk, with appendfsync always).
+	if (ctx.aof != nullptr) ctx.aof->after_batch();
 
 	if (batch.protocol_error.empty()) return AfterReplies::KeepOpen;
 	replies += batch.protocol_error;

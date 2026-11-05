@@ -14,6 +14,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace redis {
 
@@ -63,7 +64,8 @@ public:
 		: alloc_(alloc),
 		  dict_(typename KeyMap<Object>::allocator_type(alloc)),
 		  expires_(typename KeyMap<time_point>::allocator_type(alloc)),
-		  by_deadline_(typename DeadlineIndex::allocator_type(alloc)) {}
+		  by_deadline_(typename DeadlineIndex::allocator_type(alloc)),
+		  expired_(rebound<Key>(alloc)) {}
 
 	[[nodiscard]] allocator_type get_allocator() const noexcept {
 		return alloc_;
@@ -76,6 +78,36 @@ public:
 	 * thread that executes them. Does nothing in release builds.
 	 */
 	void claim_owner() noexcept { owner_.claim(); }
+
+	/// Debug builds: let another thread become the owner. For a keyspace
+	/// filled on one thread (replaying the AOF at startup) and then served
+	/// from another.
+	void release_owner() noexcept { owner_.release(); }
+
+	/**
+	 * \brief Turn deadlines on or off. While off - replaying a log, whose
+	 * commands ran at an earlier time - nothing expires and a deadline in the
+	 * past is stored rather than deleting its key, so the replay sees the
+	 * keyspace as it was. On again, due keys go the usual ways.
+	 */
+	void set_expiry_enabled(bool enabled) noexcept { expiry_enabled_ = enabled; }
+
+	/**
+	 * \brief Remember the keys removed because their deadline passed, for the
+	 * AOF to log a DEL for each: a replay must not depend on when it runs.
+	 * Whoever turns this on must drain_expired() regularly.
+	 */
+	void track_expired(bool on) noexcept { track_expired_ = on; }
+
+	[[nodiscard]] bool has_expired() const noexcept { return !expired_.empty(); }
+
+	/// Call \p fn(key) for each key remembered by track_expired(), then forget
+	/// them.
+	template <typename Fn>
+	void drain_expired(Fn &&fn) {
+		for (const Key &key : expired_) fn(std::string_view(key));
+		expired_.clear();
+	}
 
 	/**
 	 * \brief Look up \p key, removing it first if it has expired.
@@ -216,7 +248,7 @@ public:
 	 */
 	bool set_expiry(std::string_view key, time_point deadline) {
 		if (!contains(key)) return false;
-		if (deadline <= clock::now()) {
+		if (expiry_enabled_ && deadline <= clock::now()) {
 			erase(key);
 			return true;
 		}
@@ -260,12 +292,14 @@ public:
 	 */
 	size_t active_expire_cycle(size_t max_keys) {
 		owner_.check();
+		if (!expiry_enabled_) return 0;
 		const auto now = clock::now();
 		size_t removed = 0;
 		while (removed < max_keys && !by_deadline_.empty() &&
 			   by_deadline_.begin()->first <= now) {
 			// Copy: erase() destroys the set node that owns the key.
 			const Key key = by_deadline_.begin()->second;
+			note_expired(key);
 			erase(key);
 			++removed;
 		}
@@ -301,11 +335,16 @@ private:
 
 	/// Remove \p key if its deadline has passed. \return true if removed.
 	bool expire_if_due(std::string_view key) {
-		if (expires_.empty()) return false;
+		if (!expiry_enabled_ || expires_.empty()) return false;
 		const auto it = expires_.find(key);
 		if (it == expires_.end() || it->second > clock::now()) return false;
+		note_expired(key);
 		erase(key);
 		return true;
+	}
+
+	void note_expired(std::string_view key) {
+		if (track_expired_) expired_.push_back(make_key(key));
 	}
 
 	void erase_deadline(typename KeyMap<time_point>::iterator it) {
@@ -317,6 +356,9 @@ private:
 	KeyMap<Object> dict_;
 	KeyMap<time_point> expires_;
 	DeadlineIndex by_deadline_;
+	std::vector<Key, rebound<Key>> expired_;
+	bool expiry_enabled_ = true;
+	bool track_expired_  = false;
 	REDIS_NO_UNIQUE_ADDRESS ThreadOwner owner_;
 };
 

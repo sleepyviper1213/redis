@@ -9,16 +9,18 @@
 #include <boost/asio/signal_set.hpp>
 
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace redis {
 namespace net = boost::asio;
 
 struct ServerConfig {
-	std::string host = "127.0.0.1";
-	uint16_t port    = 6379;
+	std::string host                = "127.0.0.1";
+	uint16_t port                   = 6379;
 	std::filesystem::path dump_file = "dump.snap";
 	/// Threads running network I/O. 1 runs everything on one thread; more
 	/// adds a thread dedicated to executing commands (see Executor).
@@ -26,6 +28,9 @@ struct ServerConfig {
 	/// Serve clients with the sender-based v2::Session instead of the
 	/// coroutine-based Session.
 	bool sender_sessions = false;
+	/// Log write commands to an append-only file; unset, snapshots alone
+	/// persist the keyspace.
+	std::optional<AofConfig> aof;
 };
 
 /**
@@ -47,9 +52,13 @@ public:
 	/**
 	 * \brief Load the snapshot, serve clients until SIGINT or SIGTERM, then
 	 * save a final snapshot. Blocks.
-	 * \throws boost::system::system_error if the port cannot be bound.
+	 * \return Why the server could not start or ended abnormally: the files it
+	 *         persists to cannot be read, an I/O thread failed, or the final
+	 *         snapshot could not be written.
+	 * \throws boost::system::system_error if the port cannot be bound (Asio
+	 *         reports that by throwing, from the front end's constructor).
 	 */
-	void run();
+	[[nodiscard]] std::expected<void, std::string> run();
 
 private:
 	/// Periodic housekeeping, like Redis' serverCron: active expiry and
@@ -57,7 +66,7 @@ private:
 	net::awaitable<void> cron();
 
 	/// How often cron() runs, and how many keys one expiry cycle may remove.
-	static constexpr auto CRON_PERIOD          = std::chrono::milliseconds(100);
+	static constexpr auto CRON_PERIOD = std::chrono::milliseconds(100);
 	static constexpr size_t EXPIRE_KEYS_PER_RUN = 1000;
 
 	ServerConfig config_;

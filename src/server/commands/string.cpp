@@ -3,6 +3,7 @@
 #include "core/utils/saturating.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/commands/reply.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
 #include "server/storage/database_fwd.hpp"
 #include "server/storage/object.hpp"
@@ -104,6 +105,20 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.
 	if (opts->deadline) ctx.db.set_expiry(key, *opts->deadline);
 	else if (!opts->keep_ttl) ctx.db.persist(key);
+
+	// EX and PX are relative to now, which a replay does not share: log the
+	// deadline itself. NX, XX and GET are dropped; they only decided to get
+	// here. A deadline already past deleted the key again.
+	if (ctx.aof != nullptr && opts->deadline) {
+		if (*opts->deadline <= Database::clock::now()) {
+			ctx.aof->replace({"DEL", key});
+		} else {
+			const auto at = std::chrono::duration_cast<milliseconds>(
+								opts->deadline->time_since_epoch())
+								.count();
+			ctx.aof->replace({"SET", key, args[2], "PXAT", std::to_string(at)});
+		}
+	}
 
 	if (!opts->get) out.ok();
 }
@@ -224,15 +239,15 @@ void strlen(CommandContext &ctx, Args args, ReplyWriter &out) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "SET", .fn = set, .arity = -3},
+	CommandInfo{.name = "SET", .fn = set, .arity = -3, .write = true},
 	CommandInfo{.name = "GET", .fn = get, .arity = 2},
-	CommandInfo{.name = "INCR", .fn = incr, .arity = 2},
-	CommandInfo{.name = "DECR", .fn = decr, .arity = 2},
-	CommandInfo{.name = "INCRBY", .fn = incrby, .arity = 3},
-	CommandInfo{.name = "DECRBY", .fn = decrby, .arity = 3},
-	CommandInfo{.name = "MSET", .fn = mset, .arity = -3},
+	CommandInfo{.name = "INCR", .fn = incr, .arity = 2, .write = true},
+	CommandInfo{.name = "DECR", .fn = decr, .arity = 2, .write = true},
+	CommandInfo{.name = "INCRBY", .fn = incrby, .arity = 3, .write = true},
+	CommandInfo{.name = "DECRBY", .fn = decrby, .arity = 3, .write = true},
+	CommandInfo{.name = "MSET", .fn = mset, .arity = -3, .write = true},
 	CommandInfo{.name = "MGET", .fn = mget, .arity = -2},
-	CommandInfo{.name = "APPEND", .fn = append, .arity = 3},
+	CommandInfo{.name = "APPEND", .fn = append, .arity = 3, .write = true},
 	CommandInfo{.name = "STRLEN", .fn = strlen, .arity = 2},
 };
 } // namespace

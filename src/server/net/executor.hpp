@@ -12,6 +12,7 @@
 
 #include <concepts>
 #include <optional>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -108,6 +109,10 @@ private:
 
 	/// One thread: tasks run one at a time, in the order they were queued.
 	std::optional<exec::asio::asio_thread_pool> pool_;
+#ifndef NDEBUG
+	/// The worker's id, for the assert in stop(). Unset when not threaded.
+	std::thread::id pool_thread_;
+#endif
 };
 
 } // namespace redis

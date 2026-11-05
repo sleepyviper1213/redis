@@ -17,11 +17,12 @@ add_library(
     net/pipeline.cpp
     net/redis_server.cpp
     net/session.cpp
-    net/tcp_server.cpp
+    net/listener.cpp
     net/v2/session.cpp
-    net/v2/tcp_server.cpp
+    net/v2/listener.cpp
 
-    persistence/persistence.cpp
+    persistence/append_only_file.cpp
+    persistence/snapshot_manager.cpp
     persistence/snapshot.cpp
 
     setup_cli_options.cpp)

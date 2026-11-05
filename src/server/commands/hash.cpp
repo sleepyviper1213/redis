@@ -131,10 +131,10 @@ void hexists(CommandContext &ctx, Args args, ReplyWriter &out) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "HSET", .fn = hset, .arity = -4},
+	CommandInfo{.name = "HSET", .fn = hset, .arity = -4, .write = true},
 	CommandInfo{.name = "HGET", .fn = hget, .arity = 3},
 	CommandInfo{.name = "HMGET", .fn = hmget, .arity = -3},
-	CommandInfo{.name = "HDEL", .fn = hdel, .arity = -3},
+	CommandInfo{.name = "HDEL", .fn = hdel, .arity = -3, .write = true},
 	CommandInfo{.name = "HGETALL", .fn = hgetall, .arity = 2},
 	CommandInfo{.name = "HLEN", .fn = hlen, .arity = 2},
 	CommandInfo{.name = "HEXISTS", .fn = hexists, .arity = 3},

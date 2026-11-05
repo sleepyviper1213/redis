@@ -1,6 +1,7 @@
 // Set commands: SADD, SREM, SCARD, SMEMBERS, SISMEMBER, SINTER, SPOP.
 #include "command.hpp"
 #include "server/commands/reply.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
 #include "server/storage/object.hpp"
 
@@ -12,6 +13,8 @@
 #include <optional>
 #include <random>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 #include <version> // IWYU pragma: keep
 
@@ -168,9 +171,14 @@ void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
 		return;
 	}
 
+	// The choice is random, so a replay of SPOP would pop other members: the
+	// append-only file gets the members that were popped, as SREM.
+	std::vector<std::string> popped;
 	auto pop_one = [&] {
 		const auto node = (*set)->extract(random_member(**set));
 		out.bulk(node.value());
+		if (ctx.aof != nullptr)
+			popped.emplace_back(std::string_view(node.value()));
 	};
 
 	if (!count) {
@@ -182,16 +190,22 @@ void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
 		for (size_t i = 0; i < n; ++i) pop_one();
 	}
 	ctx.db.erase_if_empty(key);
+
+	if (!popped.empty()) {
+		std::vector<std::string_view> srem{"SREM", key};
+		srem.insert(srem.end(), popped.begin(), popped.end());
+		ctx.aof->replace(srem);
+	}
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "SADD", .fn = sadd, .arity = -3},
-	CommandInfo{.name = "SREM", .fn = srem, .arity = -3},
+	CommandInfo{.name = "SADD", .fn = sadd, .arity = -3, .write = true},
+	CommandInfo{.name = "SREM", .fn = srem, .arity = -3, .write = true},
 	CommandInfo{.name = "SCARD", .fn = scard, .arity = 2},
 	CommandInfo{.name = "SMEMBERS", .fn = smembers, .arity = 2},
 	CommandInfo{.name = "SISMEMBER", .fn = sismember, .arity = 3},
 	CommandInfo{.name = "SINTER", .fn = sinter, .arity = -2},
-	CommandInfo{.name = "SPOP", .fn = spop, .arity = -2},
+	CommandInfo{.name = "SPOP", .fn = spop, .arity = -2, .write = true},
 };
 } // namespace
 

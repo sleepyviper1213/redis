@@ -1,10 +1,15 @@
 #include "setup_cli_options.hpp"
 
+#include "server/persistence/append_only_file.hpp"
+
 #include <CLI/CLI.hpp>
 #include <fmt/format.h>
+#include <magic_enum/magic_enum.hpp>
 
 #include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace redis {
 namespace {
@@ -39,10 +44,18 @@ struct MyFormatter : public CLI::Formatter {
 		return out;
 	}
 };
+
+/// The values --appendfsync accepts: the enumerators' names.
+std::vector<std::string> fsync_policy_names() {
+	std::vector<std::string> names;
+	for (const std::string_view name : magic_enum::enum_names<FsyncPolicy>())
+		names.emplace_back(name);
+	return names;
+}
 } // namespace
 
 CLI::App_p setup_cli_options() {
-	auto app = std::make_shared<CLI::App>("Redis-like TcpServer");
+	auto app = std::make_shared<CLI::App>("Redis-like server");
 	app->formatter(std::make_shared<MyFormatter>());
 	// Version + config
 	app->set_version_flag("--version",
@@ -54,7 +67,7 @@ CLI::App_p setup_cli_options() {
 		->check(CLI::ExistingFile)
 		->envname("REDIS_CONFIG_FILE");
 
-	app->add_option("--host", "TcpServer host")
+	app->add_option("--host", "Address to listen on")
 		->envname("REDIS_HOST")
 		->option_text("<hostname>")
 		->group("Network")
@@ -81,7 +94,27 @@ CLI::App_p setup_cli_options() {
 		->option_text("<file>")
 		->group("Persistence")
 		->default_val("dump.snap");
-	app->add_option("-p,--port", "TcpServer port")
+	app->add_flag("--appendonly",
+				  "Log every write command to an append-only file and replay "
+				  "it at startup, so writes since the last snapshot survive a "
+				  "crash")
+		->envname("REDIS_APPENDONLY")
+		->group("Persistence")
+		->default_val(false);
+	app->add_option("--appendfsync",
+					"When the append-only file is forced to disk: 'always' "
+					"before replying, 'everysec' once a second, 'no' never")
+		->envname("REDIS_APPENDFSYNC")
+		->option_text("<policy>")
+		->group("Persistence")
+		->check(CLI::IsMember(fsync_policy_names()))
+		->default_val(magic_enum::enum_name(AofConfig{}.fsync));
+	app->add_option("--appenddir", "Directory of the append-only files")
+		->envname("REDIS_APPENDDIR")
+		->option_text("<dir>")
+		->group("Persistence")
+		->default_val("appendonlydir");
+	app->add_option("-p,--port", "Port to listen on")
 		->envname("REDIS_PORT")
 		->option_text("<port>")
 		->group("Network")

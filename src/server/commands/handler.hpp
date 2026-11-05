@@ -3,6 +3,7 @@
 #include "command.hpp"
 #include "server/storage/object.hpp"
 
+#include <span>
 #include <string>
 
 namespace redis {
@@ -16,6 +17,10 @@ namespace redis {
 class CommandHandler {
 public:
 	CommandHandler();
+
+	/// The standard commands plus \p extra, which wins on a name clash. For
+	/// tests that need a command the server does not have.
+	explicit CommandHandler(std::span<const CommandInfo> extra);
 
 	/**
 	 * \brief Execute one request (an array of bulk strings) and return the
@@ -40,7 +45,10 @@ public:
 	void execute(CommandContext &ctx, Args args, std::string &out) const;
 
 private:
-	void dispatch(CommandContext &ctx, Args args, ReplyWriter &out) const;
+	/// \return The command that ran, or null if the request was refused
+	///         (empty, unknown, wrong arity) before any command did.
+	const CommandInfo *dispatch(CommandContext &ctx, Args args,
+								ReplyWriter &out) const;
 
 	StringMap<CommandInfo> commands_;
 };

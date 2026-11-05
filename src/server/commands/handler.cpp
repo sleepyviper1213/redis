@@ -6,6 +6,7 @@
 #include "server/commands/command.hpp"
 #include "server/commands/reply.hpp"
 #include "server/diagnostics/current_command.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/storage/database.hpp"
 
 #include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
@@ -17,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,15 +43,18 @@ std::optional<int64_t> parse_int(std::string_view s) noexcept {
 	return value;
 }
 
-CommandHandler::CommandHandler() {
+CommandHandler::CommandHandler() : CommandHandler(std::span<const CommandInfo>{}) {}
+
+CommandHandler::CommandHandler(std::span<const CommandInfo> extra) {
 	for (const auto family : {string_commands(),
 							  keyspace_commands(),
 							  list_commands(),
 							  set_commands(),
 							  hash_commands(),
-							  server_commands()})
+							  server_commands(),
+							  extra})
 		for (const CommandInfo &info : family)
-			commands_.emplace(std::string(info.name), info);
+			commands_.insert_or_assign(std::string(info.name), info);
 }
 
 namespace {
@@ -93,12 +98,12 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 	execute(ctx, args, out);
 }
 
-void CommandHandler::dispatch(CommandContext &ctx, Args args,
-							  ReplyWriter &out) const {
+const CommandInfo *CommandHandler::dispatch(CommandContext &ctx, Args args,
+											ReplyWriter &out) const {
 	if (args.empty()) {
 		out.error("ERR Protocol error: expected a non-empty array of bulk "
 				  "strings");
-		return;
+		return nullptr;
 	}
 
 	std::array<char, MAX_COMMAND_NAME> name_buf{};
@@ -106,7 +111,7 @@ void CommandHandler::dispatch(CommandContext &ctx, Args args,
 	const auto it = commands_.find(upper_name(args[0], name_buf));
 	if (it == commands_.end()) {
 		out.error(fmt::format("ERR unknown command '{}'", args[0]));
-		return;
+		return nullptr;
 	}
 
 	const CommandInfo &info = it->second;
@@ -116,13 +121,14 @@ void CommandHandler::dispatch(CommandContext &ctx, Args args,
 	if (!arity_ok) {
 		out.error(fmt::format("ERR wrong number of arguments for '{}' command",
 							  tolower(std::string{info.name})));
-		return;
+		return nullptr;
 	}
 	// Debug builds: the thread that runs commands owns the keyspace.
 	ctx.db.claim_owner();
 	// For a crash report: which command was running when the process died.
 	const diagnostics::CommandScope running{info.name, args.size()};
 	info.fn(ctx, args, out);
+	return &info;
 }
 
 void CommandHandler::execute(CommandContext &ctx, Args args,
@@ -132,7 +138,29 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 
 	const size_t reply_start = out.size();
 	ReplyWriter writer(out);
-	dispatch(ctx, args, writer);
+	const CommandInfo *ran = nullptr;
+	try {
+		ran = dispatch(ctx, args, writer);
+	} catch (const std::bad_alloc &) {
+		// The command may have written part of its reply, and changed part of
+		// what it was asked to (an MSET, say). Only the reply can be taken
+		// back: answer this request with an error, so the client and the rest of
+		// its pipeline stay in step, instead of ending the connection.
+		out.resize(reply_start);
+		writer.error("OOM command not allowed: out of memory");
+		logger.error("Out of memory running '{}'",
+					 args.empty() ? std::string_view{} : args[0]);
+	}
+
+	// A write that failed changed nothing, so there is nothing to replay. One
+	// that "succeeded" without changing anything (DEL of a missing key) is
+	// logged anyway: replaying it is harmless, and telling the two apart
+	// would need every command to report it.
+	if (ctx.aof != nullptr) {
+		const bool failed = out.size() > reply_start && out[reply_start] == '-';
+		ctx.aof->command_ran(
+			ctx.db, ran != nullptr && ran->write && !failed, args);
+	}
 
 	logger.trace("Response: {:?}", std::string_view(out).substr(reply_start));
 }

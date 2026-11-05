@@ -13,6 +13,8 @@ class ThreadOwner {
 public:
 	void claim() noexcept {}
 
+	void release() noexcept {}
+
 	void check() const noexcept {}
 };
 
@@ -47,6 +49,11 @@ public:
 			assert(expected == std::this_thread::get_id() &&
 				   "state claimed by one thread is used from another");
 	}
+
+	/// Forget the owner, so the next claim() may come from another thread.
+	/// For state set up on one thread (loading at startup) and then handed to
+	/// the thread that will run on it.
+	void release() noexcept { owner_.store(std::thread::id{}); }
 
 	void check() const noexcept {
 		const auto owner = owner_.load();

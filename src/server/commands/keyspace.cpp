@@ -3,6 +3,7 @@
 #include "command.hpp"
 #include "core/utils/glob.hpp"
 #include "server/commands/reply.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/storage/database.hpp" // IWYU pragma: keep
 #include "server/storage/object.hpp"
 
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -60,7 +62,22 @@ void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 		out.not_integer();
 		return;
 	}
-	out.integer(ctx.db.set_expiry(args[1], ToDeadline(*amount)) ? 1 : 0);
+	const auto deadline = ToDeadline(*amount);
+	const bool applied  = ctx.db.set_expiry(args[1], deadline);
+	out.integer(applied ? 1 : 0);
+
+	// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay
+	// does not share: log the deadline. One already past deleted the key.
+	if (applied && ctx.aof != nullptr) {
+		if (deadline <= Database::clock::now()) {
+			ctx.aof->replace({"DEL", args[1]});
+		} else {
+			const auto at = std::chrono::duration_cast<milliseconds>(
+								deadline.time_since_epoch())
+								.count();
+			ctx.aof->replace({"PEXPIREAT", args[1], std::to_string(at)});
+		}
+	}
 }
 
 constexpr auto after_seconds = [](int64_t n) {
@@ -114,22 +131,22 @@ void dbsize(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "DEL", .fn = del, .arity = -2},
+	CommandInfo{.name = "DEL", .fn = del, .arity = -2, .write = true},
 	CommandInfo{.name = "EXISTS", .fn = exists, .arity = -2},
 	CommandInfo{.name = "KEYS", .fn = keys, .arity = 2},
 	CommandInfo{.name = "TYPE", .fn = type, .arity = 2},
 	CommandInfo{
-		.name = "EXPIRE", .fn = expire_generic<after_seconds>, .arity = 3},
+		.name = "EXPIRE", .fn = expire_generic<after_seconds>, .arity = 3, .write = true},
 	CommandInfo{
-		.name = "PEXPIRE", .fn = expire_generic<after_millis>, .arity = 3},
+		.name = "PEXPIRE", .fn = expire_generic<after_millis>, .arity = 3, .write = true},
 	CommandInfo{
-		.name = "EXPIREAT", .fn = expire_generic<at_seconds>, .arity = 3},
+		.name = "EXPIREAT", .fn = expire_generic<at_seconds>, .arity = 3, .write = true},
 	CommandInfo{
-		.name = "PEXPIREAT", .fn = expire_generic<at_millis>, .arity = 3},
-	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2},
+		.name = "PEXPIREAT", .fn = expire_generic<at_millis>, .arity = 3, .write = true},
+	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .write = true},
 	CommandInfo{.name = "TTL", .fn = ttl_generic<false>, .arity = 2},
 	CommandInfo{.name = "PTTL", .fn = ttl_generic<true>, .arity = 2},
-	CommandInfo{.name = "FLUSHDB", .fn = flushdb, .arity = -1},
+	CommandInfo{.name = "FLUSHDB", .fn = flushdb, .arity = -1, .write = true},
 	CommandInfo{.name = "DBSIZE", .fn = dbsize, .arity = 1},
 };
 } // namespace
