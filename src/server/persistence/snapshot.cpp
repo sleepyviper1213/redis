@@ -25,6 +25,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 // File layout (cereal portable binary, little-endian):
 //
@@ -138,10 +139,27 @@ std::expected<Object, std::string> read_object(InArchive &in) {
 	}
 }
 
+struct Entry {
+	std::string key;
+	int64_t deadline_ms;
+	const Object *value;
+};
+
 /// Write every live key of \p db to \p tmp. The file is closed when this
 /// returns, so the caller may sync, rename or remove it.
 std::expected<void, std::string> write_snapshot_file(const Database &db,
 													 const fs::path &tmp) {
+	// Collect in one pass so the header count and the entry count always agree,
+	// even if keys expire between a count pass and a write pass.
+	std::vector<Entry> entries;
+	db.for_each([&](std::string_view key,
+					const Object &value,
+					std::optional<Database::time_point> deadline) {
+		entries.push_back({std::string(key),
+						   deadline ? to_unix_ms(*deadline) : NO_DEADLINE,
+						   &value});
+	});
+
 	std::ofstream stream(tmp, std::ios::binary | std::ios::trunc);
 	if (!stream)
 		return std::unexpected(fmt::format("cannot open {}", tmp.string()));
@@ -150,18 +168,12 @@ std::expected<void, std::string> write_snapshot_file(const Database &db,
 		OutArchive out(stream);
 		for (const char c : MAGIC) out(c);
 		out(FORMAT_VERSION);
-
-		uint64_t count = 0;
-		db.for_each([&](auto &&...) { ++count; });
-		out(count);
-
-		db.for_each([&](std::string_view key,
-						const Object &value,
-						std::optional<Database::time_point> deadline) {
-			write_string(out, key);
-			out(deadline ? to_unix_ms(*deadline) : NO_DEADLINE);
-			write_object(out, value);
-		});
+		out(static_cast<uint64_t>(entries.size()));
+		for (const Entry &e : entries) {
+			write_string(out, e.key);
+			out(e.deadline_ms);
+			write_object(out, *e.value);
+		}
 	} catch (const std::exception &e) {
 		return std::unexpected(e.what());
 	}
