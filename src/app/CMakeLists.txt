@@ -1,0 +1,5 @@
+add_executable(redis_server main.cpp setup_cli_options.cpp)
+add_executable(redis::server ALIAS redis_server)
+target_link_libraries(redis_server PRIVATE redis::server_lib)
+set_warnings(redis_server)
+copy_sanitizer_runtime(redis_server)

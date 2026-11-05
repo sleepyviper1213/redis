@@ -1,9 +1,9 @@
 #include "redis_server.hpp"
 
 #include "core/logging.hpp"
-#include "formatter.hpp"
-#include "listener.hpp"
-#include "v2/listener.hpp"
+#include "net/formatter.hpp"
+#include "net/listener.hpp"
+#include "net/v2/listener.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>

@@ -1,8 +1,8 @@
 #pragma once
 // Must precede every Asio include: makes co_await on Asio operations return
 // (error_code, result) tuples.
-#include "nothrow_awaitable_t.hpp" // IWYU pragma: keep
-#include "services.hpp"
+#include "net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
+#include "net/services.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
@@ -55,8 +55,6 @@ public:
 	 * \return Why the server could not start or ended abnormally: the files it
 	 *         persists to cannot be read, an I/O thread failed, or the final
 	 *         snapshot could not be written.
-	 * \throws boost::system::system_error if the port cannot be bound (Asio
-	 *         reports that by throwing, from the front end's constructor).
 	 */
 	[[nodiscard]] std::expected<void, std::string> run();
 

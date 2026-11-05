@@ -15,7 +15,7 @@ add_library(
     diagnostics/current_command.cpp
     net/executor.cpp
     net/pipeline.cpp
-    net/redis_server.cpp
+    redis_server.cpp
     net/session.cpp
     net/listener.cpp
     net/v2/session.cpp
@@ -66,9 +66,3 @@ endif()
 
 set_warnings(redis_server_lib)
 enable_coverage(redis_server_lib)
-
-add_executable(redis_server main.cpp)
-add_executable(redis::server ALIAS redis_server)
-target_link_libraries(redis_server PRIVATE redis::server_lib)
-set_warnings(redis_server)
-copy_sanitizer_runtime(redis_server)

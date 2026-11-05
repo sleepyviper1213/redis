@@ -1,9 +1,9 @@
-#include "CLI/CLI.hpp"
+#include <CLI/CLI.hpp>
 #include "core/logging.hpp"
 #include "server/diagnostics/crash.hpp"
-#include "server/net/redis_server.hpp"
+#include "server/redis_server.hpp"
 #include "server/persistence/append_only_file.hpp"
-#include "server/setup_cli_options.hpp"
+#include "app/setup_cli_options.hpp"
 
 #include <fmt/base.h>
 #include <magic_enum/magic_enum.hpp>
