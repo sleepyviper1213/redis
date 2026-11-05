@@ -24,8 +24,7 @@ add_library(
     persistence/append_only_file.cpp
     persistence/snapshot_manager.cpp
     persistence/snapshot.cpp
-
-    setup_cli_options.cpp)
+)
 
 add_library(redis::server_lib ALIAS redis_server_lib)
 

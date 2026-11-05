@@ -6,3 +6,4 @@
 # module-qualified path ("core/resp/parser.hpp", "server/net/session.hpp").
 add_subdirectory(core)
 add_subdirectory(server)
+add_subdirectory(app)
