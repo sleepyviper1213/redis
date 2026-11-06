@@ -1,4 +1,4 @@
-#include "server/storage/database.hpp"
+#include "server/database.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -80,8 +80,8 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		db.set("short", String("v"));
 		db.set("long", String("v"));
 		db.set("forever", String("v"));
-		REQUIRE(db.set_expiry("short", Database::clock::now() + 20ms));
-		REQUIRE(db.set_expiry("long", Database::clock::now() + 1h));
+		REQUIRE(db.set_expiry("short", DeadlineTimer::after(20ms)));
+		REQUIRE(db.set_expiry("long", DeadlineTimer::after(1h)));
 
 		THEN("only keys with a deadline report one") {
 			CHECK(db.expiry("short").has_value());
@@ -118,7 +118,7 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		// Generous margins: a deadline that passes while the keys are still
 		// being added deletes them at once and the test miscounts (seen under
 		// a sanitizer with the whole suite running in parallel).
-		const auto deadline = Database::clock::now() + 200ms;
+		const DeadlineTimer deadline = DeadlineTimer::after(200ms);
 		for (int i = 0; i < 10; ++i) {
 			const auto key = "k" + std::to_string(i);
 			db.set(key, String("v"));
@@ -143,7 +143,7 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		db.set("k", String("v"));
 
 		WHEN("its deadline is set in the past") {
-			const bool existed = db.set_expiry("k", Database::clock::now() - 1s);
+			const bool existed = db.set_expiry("k", DeadlineTimer::after(-1s));
 
 			THEN("the key is deleted at once") {
 				CHECK(existed);
@@ -154,7 +154,7 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		WHEN("a deadline is set on a missing key") {
 			THEN("nothing happens") {
 				CHECK_FALSE(
-					db.set_expiry("missing", Database::clock::now() + 1s));
+					db.set_expiry("missing", DeadlineTimer::after(1s)));
 			}
 		}
 	}
@@ -164,11 +164,11 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 	GIVEN("a key whose deadline is replaced, persisted, then erased") {
 		Database db;
 		db.set("k", String("v"));
-		db.set_expiry("k", Database::clock::now() + 10ms);
-		db.set_expiry("k", Database::clock::now() + 1h);
+		db.set_expiry("k", DeadlineTimer::after(10ms));
+		db.set_expiry("k", DeadlineTimer::after(1h));
 		REQUIRE(db.persist("k"));
 		REQUIRE_FALSE(db.persist("k"));
-		db.set_expiry("k", Database::clock::now() + 10ms);
+		db.set_expiry("k", DeadlineTimer::after(10ms));
 		REQUIRE(db.erase("k"));
 
 		WHEN("the key is recreated without a deadline and old ones pass") {

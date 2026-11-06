@@ -1,12 +1,13 @@
 // String commands: SET, GET, INCR and friends, MSET/MGET, APPEND, STRLEN.
 #include "command.hpp"
+#include "core/deadline_timer.hpp"
 #include "core/utils/saturating.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/commands/reply.hpp"
 #include "server/persistence/append_only_file.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep
-#include "server/storage/database_fwd.hpp"
-#include "server/storage/object.hpp"
+#include "server/database.hpp" // IWYU pragma: keep
+#include "server/database_fwd.hpp"
+#include "core/object.hpp"
 
 #include <array>
 #include <chrono>
@@ -27,7 +28,7 @@ using std::chrono::seconds;
 
 struct SetOptions {
 	bool nx = false, xx = false, get = false, keep_ttl = false;
-	std::optional<Database::time_point> deadline;
+	std::optional<DeadlineTimer::time_point> deadline;
 };
 
 // Parses SET's options. On failure returns the error message to reply with.
@@ -55,12 +56,12 @@ std::expected<SetOptions, std::string_view> parse_set_options(Args args) {
 				return std::unexpected(
 					"ERR invalid expire time in 'set' command");
 
-			const auto now = Database::clock::now();
+			const auto now = DeadlineTimer::now();
 			if (opt == "EX") opts.deadline = now + seconds(*time);
 			else if (opt == "PX") opts.deadline = now + milliseconds(*time);
 			else if (opt == "EXAT")
-				opts.deadline = Database::time_point(seconds(*time));
-			else opts.deadline = Database::time_point(milliseconds(*time));
+				opts.deadline = DeadlineTimer::time_point(seconds(*time));
+			else opts.deadline = DeadlineTimer::time_point(milliseconds(*time));
 		} else {
 			return std::unexpected(ReplyWriter::SYNTAX_ERROR);
 		}
@@ -103,19 +104,17 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 	ctx.db.set(key, String(args[2]));
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.
-	if (opts->deadline) ctx.db.set_expiry(key, *opts->deadline);
+	if (opts->deadline) ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline));
 	else if (!opts->keep_ttl) ctx.db.persist(key);
 
 	// EX and PX are relative to now, which a replay does not share: log the
 	// deadline itself. NX, XX and GET are dropped; they only decided to get
 	// here. A deadline already past deleted the key again.
 	if (ctx.aof != nullptr && opts->deadline) {
-		if (*opts->deadline <= Database::clock::now()) {
+		if (DeadlineTimer::at(*opts->deadline).has_expired()) {
 			ctx.aof->replace({"DEL", key});
 		} else {
-			const auto at = std::chrono::duration_cast<milliseconds>(
-								opts->deadline->time_since_epoch())
-								.count();
+			const auto at = DeadlineTimer::at(*opts->deadline).millis_since_epoch();
 			ctx.aof->replace({"SET", key, args[2], "PXAT", std::to_string(at)});
 		}
 	}

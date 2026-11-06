@@ -1,11 +1,12 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
+#include "core/deadline_timer.hpp"
+#include "core/object.hpp"
 #include "core/utils/glob.hpp"
 #include "server/commands/reply.hpp"
+#include "server/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
 #include "server/persistence/append_only_file.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep
-#include "server/storage/object.hpp"
 
 #include <array>
 #include <chrono>
@@ -62,36 +63,22 @@ void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 		out.not_integer();
 		return;
 	}
-	const auto deadline = ToDeadline(*amount);
-	const bool applied  = ctx.db.set_expiry(args[1], deadline);
+	const DeadlineTimer timer = ToDeadline(*amount);
+	const bool applied        = ctx.db.set_expiry(args[1], timer);
 	out.integer(applied ? 1 : 0);
 
 	// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay
-	// does not share: log the deadline. One already past deleted the key.
+	// does not share: log the absolute deadline. One already past deleted the
+	// key.
 	if (applied && ctx.aof != nullptr) {
-		if (deadline <= Database::clock::now()) {
+		if (timer.has_expired()) {
 			ctx.aof->replace({"DEL", args[1]});
 		} else {
-			const auto at = std::chrono::duration_cast<milliseconds>(
-								deadline.time_since_epoch())
-								.count();
+			const auto at = timer.millis_since_epoch();
 			ctx.aof->replace({"PEXPIREAT", args[1], std::to_string(at)});
 		}
 	}
 }
-
-constexpr auto after_seconds = [](int64_t n) {
-	return Database::clock::now() + seconds(n);
-};
-constexpr auto after_millis = [](int64_t n) {
-	return Database::clock::now() + milliseconds(n);
-};
-constexpr auto at_seconds = [](int64_t n) {
-	return Database::time_point(seconds(n));
-};
-constexpr auto at_millis = [](int64_t n) {
-	return Database::time_point(milliseconds(n));
-};
 
 void persist(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const std::string_view key = args[1];
@@ -113,9 +100,7 @@ void ttl_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 		return;
 	}
 
-	const auto left = std::chrono::duration_cast<milliseconds>(
-						  *deadline - Database::clock::now())
-						  .count();
+	const auto left = DeadlineTimer::at(*deadline).remaining_time_ms().count();
 	// Round to the nearest second like Redis; truncating would report 99
 	// immediately after SET ... EX 100.
 	out.integer(InMillis ? left : (left + 500) / 1000);
@@ -135,14 +120,22 @@ constexpr std::array COMMANDS{
 	CommandInfo{.name = "EXISTS", .fn = exists, .arity = -2},
 	CommandInfo{.name = "KEYS", .fn = keys, .arity = 2},
 	CommandInfo{.name = "TYPE", .fn = type, .arity = 2},
-	CommandInfo{
-		.name = "EXPIRE", .fn = expire_generic<after_seconds>, .arity = 3, .write = true},
-	CommandInfo{
-		.name = "PEXPIRE", .fn = expire_generic<after_millis>, .arity = 3, .write = true},
-	CommandInfo{
-		.name = "EXPIREAT", .fn = expire_generic<at_seconds>, .arity = 3, .write = true},
-	CommandInfo{
-		.name = "PEXPIREAT", .fn = expire_generic<at_millis>, .arity = 3, .write = true},
+	CommandInfo{.name  = "EXPIRE",
+				.fn    = expire_generic<DeadlineTimer::after_s>,
+				.arity = 3,
+				.write = true},
+	CommandInfo{.name  = "PEXPIRE",
+				.fn    = expire_generic<DeadlineTimer::after_ms>,
+				.arity = 3,
+				.write = true},
+	CommandInfo{.name  = "EXPIREAT",
+				.fn    = expire_generic<DeadlineTimer::at_s>,
+				.arity = 3,
+				.write = true},
+	CommandInfo{.name  = "PEXPIREAT",
+				.fn    = expire_generic<DeadlineTimer::at_ms>,
+				.arity = 3,
+				.write = true},
 	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .write = true},
 	CommandInfo{.name = "TTL", .fn = ttl_generic<false>, .arity = 2},
 	CommandInfo{.name = "PTTL", .fn = ttl_generic<true>, .arity = 2},

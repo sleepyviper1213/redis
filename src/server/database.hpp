@@ -1,10 +1,10 @@
 #pragma once
+#include "core/deadline_timer.hpp"
+#include "core/object.hpp"
 #include "core/utils/attributes.hpp"
 #include "core/utils/thread_owner.hpp"
-#include "server/storage/database_fwd.hpp"
-#include "server/storage/object.hpp"
+#include "database_fwd.hpp"
 
-#include <chrono>
 #include <cstddef>
 #include <expected>
 #include <functional>
@@ -47,17 +47,18 @@ class BasicDatabase {
 	using KeyMap = typename Types::template KeyMap<V>;
 
 	template <typename T>
-	using rebound = typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
+	using rebound =
+		typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
 
 public:
 	using allocator_type = Allocator;
-	using clock          = std::chrono::system_clock;
-	using time_point     = clock::time_point;
+	using time_point     = DeadlineTimer::time_point;
 	using String         = typename Types::String;
 	using Key            = typename Types::Key;
 	using Object         = BasicObject<Allocator>;
 
-	BasicDatabase() requires std::is_default_constructible_v<Allocator>
+	BasicDatabase()
+		requires std::is_default_constructible_v<Allocator>
 		: BasicDatabase(Allocator()) {}
 
 	explicit BasicDatabase(const Allocator &alloc)
@@ -90,7 +91,9 @@ public:
 	 * past is stored rather than deleting its key, so the replay sees the
 	 * keyspace as it was. On again, due keys go the usual ways.
 	 */
-	void set_expiry_enabled(bool enabled) noexcept { expiry_enabled_ = enabled; }
+	void set_expiry_enabled(bool enabled) noexcept {
+		expiry_enabled_ = enabled;
+	}
 
 	/**
 	 * \brief Remember the keys removed because their deadline passed, for the
@@ -99,7 +102,9 @@ public:
 	 */
 	void track_expired(bool on) noexcept { track_expired_ = on; }
 
-	[[nodiscard]] bool has_expired() const noexcept { return !expired_.empty(); }
+	[[nodiscard]] bool has_expired() const noexcept {
+		return !expired_.empty();
+	}
 
 	/// Call \p fn(key) for each key remembered by track_expired(), then forget
 	/// them.
@@ -246,17 +251,17 @@ public:
 	 * key immediately, as EXPIRE with a non-positive TTL does in Redis.
 	 * \return false if the key does not exist.
 	 */
-	bool set_expiry(std::string_view key, time_point deadline) {
+	bool set_expiry(std::string_view key, DeadlineTimer timer) {
 		owner_.check();
 		if (!contains(key)) return false;
-		if (expiry_enabled_ && deadline <= clock::now()) {
+		if (expiry_enabled_ && timer.has_expired()) {
 			erase(key);
 			return true;
 		}
 		if (auto it = expires_.find(key); it != expires_.end())
 			erase_deadline(it);
-		auto [it, _] = expires_.emplace(make_key(key), deadline);
-		by_deadline_.emplace(deadline, it->first);
+		auto [it, _] = expires_.emplace(make_key(key), timer.deadline());
+		by_deadline_.emplace(timer.deadline(), it->first);
 		return true;
 	}
 
@@ -278,8 +283,7 @@ public:
 	 * \brief The deadline of \p key, or std::nullopt if it has none. The key
 	 * must exist; check with contains() or find() first.
 	 */
-	[[nodiscard]] std::optional<time_point>
-	expiry(std::string_view key) const {
+	[[nodiscard]] std::optional<time_point> expiry(std::string_view key) const {
 		owner_.check();
 		const auto it = expires_.find(key);
 		if (it == expires_.end()) return std::nullopt;
@@ -294,7 +298,7 @@ public:
 	size_t active_expire_cycle(size_t max_keys) {
 		owner_.check();
 		if (!expiry_enabled_) return 0;
-		const auto now = clock::now();
+		const auto now = DeadlineTimer::now();
 		size_t removed = 0;
 		while (removed < max_keys && !by_deadline_.empty() &&
 			   by_deadline_.begin()->first <= now) {
@@ -314,7 +318,7 @@ public:
 	 */
 	template <typename Fn>
 	void for_each(Fn &&fn) const {
-		const auto now = clock::now();
+		const auto now = DeadlineTimer::now();
 		for (const auto &[key, value] : dict_) {
 			std::optional<time_point> deadline;
 			if (auto it = expires_.find(key); it != expires_.end()) {
@@ -326,9 +330,8 @@ public:
 	}
 
 private:
-	using DeadlineIndex =
-		std::set<std::pair<time_point, Key>, std::less<>,
-				 rebound<std::pair<time_point, Key>>>;
+	using DeadlineIndex = std::set<std::pair<time_point, Key>, std::less<>,
+								   rebound<std::pair<time_point, Key>>>;
 
 	[[nodiscard]] Key make_key(std::string_view key) const {
 		return Key(key, rebound<char>(alloc_));
@@ -338,7 +341,8 @@ private:
 	bool expire_if_due(std::string_view key) {
 		if (!expiry_enabled_ || expires_.empty()) return false;
 		const auto it = expires_.find(key);
-		if (it == expires_.end() || it->second > clock::now()) return false;
+		if (it == expires_.end() || !DeadlineTimer::at(it->second).has_expired())
+			return false;
 		note_expired(key);
 		erase(key);
 		return true;

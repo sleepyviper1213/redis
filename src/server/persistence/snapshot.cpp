@@ -1,9 +1,11 @@
 #include "snapshot.hpp"
 
 #include "child_process.hpp"
-#include "server/storage/database.hpp"
-#include "server/storage/database_fwd.hpp"
-#include "server/storage/object.hpp"
+#include "core/chrono.hpp"
+#include "core/deadline_timer.hpp"
+#include "core/object.hpp"
+#include "server/database.hpp"
+#include "server/database_fwd.hpp"
 
 #include <cereal/archives/portable_binary.hpp>
 #include <cereal/cereal.hpp>
@@ -56,12 +58,6 @@ constexpr int64_t NO_DEADLINE     = -1;
 
 using OutArchive = cereal::PortableBinaryOutputArchive;
 using InArchive  = cereal::PortableBinaryInputArchive;
-
-int64_t to_unix_ms(Database::time_point tp) {
-	return std::chrono::duration_cast<std::chrono::milliseconds>(
-			   tp.time_since_epoch())
-		.count();
-}
 
 Database::time_point from_unix_ms(int64_t ms) {
 	return Database::time_point(std::chrono::milliseconds(ms));
@@ -154,10 +150,12 @@ std::expected<void, std::string> write_snapshot_file(const Database &db,
 	std::vector<Entry> entries;
 	db.for_each([&](std::string_view key,
 					const Object &value,
-					std::optional<Database::time_point> deadline) {
-		entries.push_back({std::string(key),
-						   deadline ? to_unix_ms(*deadline) : NO_DEADLINE,
-						   &value});
+					std::optional<Database::time_point>
+						deadline) {
+		entries.emplace_back(std::string(key),
+							 deadline ? chrono::to_unix_ms(*deadline)
+									  : NO_DEADLINE,
+							 &value);
 	});
 
 	std::ofstream stream(tmp, std::ios::binary | std::ios::trunc);
@@ -174,9 +172,7 @@ std::expected<void, std::string> write_snapshot_file(const Database &db,
 			out(e.deadline_ms);
 			write_object(out, *e.value);
 		}
-	} catch (const std::exception &e) {
-		return std::unexpected(e.what());
-	}
+	} catch (const std::exception &e) { return std::unexpected(e.what()); }
 
 	stream.flush();
 	if (!stream) return std::unexpected("write failed");
@@ -213,9 +209,8 @@ std::expected<void, std::string> save_snapshot(const Database &db,
 	return {};
 }
 
-std::expected<void, std::string> load_snapshot(Database &db,
-											   const fs::path &file,
-											   bool keep_expired) {
+std::expected<void, std::string>
+load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 	std::ifstream stream(file, std::ios::binary);
 	if (!stream) {
 		if (!fs::exists(file)) return {};
@@ -242,22 +237,23 @@ std::expected<void, std::string> load_snapshot(Database &db,
 		Database loaded;
 		// Stores a deadline in the past instead of deleting its key.
 		loaded.set_expiry_enabled(!keep_expired);
-		const auto now = Database::clock::now();
+		const auto now = DeadlineTimer::now();
 		for (auto n = read_size(in); n > 0; --n) {
 			String key;
 			int64_t deadline_ms = 0;
 			in(key, deadline_ms);
 			auto value = read_object(in);
 			if (!value)
-				return std::unexpected(fmt::format(
-					"{} is corrupt: {}", file.string(), value.error()));
+				return std::unexpected(fmt::format("{} is corrupt: {}",
+												   file.string(),
+												   value.error()));
 
 			if (deadline_ms == NO_DEADLINE) {
 				loaded.set(key, std::move(*value));
 			} else if (const auto deadline = from_unix_ms(deadline_ms);
 					   keep_expired || deadline > now) {
 				loaded.set(key, std::move(*value));
-				loaded.set_expiry(key, deadline);
+				loaded.set_expiry(key, DeadlineTimer::at(deadline));
 			}
 		}
 		loaded.set_expiry_enabled(true);

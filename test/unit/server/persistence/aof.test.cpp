@@ -1,10 +1,11 @@
 #include "../commands/commands.fixture.hpp"
+#include "core/deadline_timer.hpp"
 #include "core/resp/value.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "server/storage/database.hpp"
+#include "server/database.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -391,7 +392,7 @@ SCENARIO("A keyspace that tracks its expiry", "[aof][database]") {
 		db.set("k", String("v"));
 		db.set_expiry_enabled(false);
 		db.track_expired(true);
-		db.set_expiry("k", Database::clock::now() - 1s);
+		db.set_expiry("k", DeadlineTimer::after(-1s));
 
 		THEN("the key is kept") {
 			CHECK(db.contains("k"));

@@ -1,5 +1,5 @@
 #pragma once
-#include "server/storage/allocator.hpp"
+#include "core/allocator.hpp"
 
 namespace redis {
 

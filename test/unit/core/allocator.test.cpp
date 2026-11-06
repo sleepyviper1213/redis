@@ -1,4 +1,5 @@
-#include "server/storage/database.hpp"
+#include "server/database.hpp"
+#include "core/deadline_timer.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -56,12 +57,13 @@ struct TrackingAllocator {
 	}
 };
 
-using Alloc    = TrackingAllocator<char>;
-using Object   = redis::BasicObject<Alloc>;
-using Database = redis::BasicDatabase<Alloc>;
-using String   = Object::String;
-using List     = Object::List;
-using Hash     = Object::Hash;
+using Alloc         = TrackingAllocator<char>;
+using Object        = redis::BasicObject<Alloc>;
+using Database      = redis::BasicDatabase<Alloc>;
+using String        = Object::String;
+using List          = Object::List;
+using Hash          = Object::Hash;
+using DeadlineTimer = redis::DeadlineTimer;
 } // namespace
 
 SCENARIO("An object takes its storage from its allocator", "[allocator]") {
@@ -213,7 +215,7 @@ SCENARIO("A database allocates keys, values and tables from one allocator",
 			(*hash)->emplace(String("field", Alloc{7, &ledger}),
 							 String("value", Alloc{7, &ledger}));
 			db.set_expiry("key:1:long enough to allocate",
-						  Database::clock::now() + std::chrono::hours(1));
+						  DeadlineTimer::after(std::chrono::hours(1)));
 
 			THEN("they all went through it") {
 				CHECK(ledger.allocations > 200);

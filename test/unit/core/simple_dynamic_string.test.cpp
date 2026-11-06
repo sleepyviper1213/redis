@@ -1,4 +1,4 @@
-#include "server/storage/simple_dynamic_string.hpp"
+#include "core/simple_dynamic_string.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,6 +23,7 @@ struct SizingAllocator {
 	Sizes *sizes;
 
 	explicit SizingAllocator(Sizes *s) noexcept : sizes(s) {}
+
 	template <typename U>
 	SizingAllocator( // NOLINT(google-explicit-constructor)
 		const SizingAllocator<U> &other) noexcept
@@ -33,6 +34,7 @@ struct SizingAllocator {
 		sizes->live_bytes += n;
 		return std::allocator<T>{}.allocate(n);
 	}
+
 	void deallocate(T *p, std::size_t n) noexcept {
 		sizes->live_bytes -= n;
 		std::allocator<T>{}.deallocate(p, n);
@@ -49,7 +51,8 @@ using Sds = redis::BasicSimpleDynamicString<SizingAllocator<char>>;
 
 SCENARIO("An sds is one pointer to header, bytes and NUL", "[sds]") {
 	static_assert(sizeof(redis::BasicSimpleDynamicString<>) == sizeof(char *));
-	static_assert(std::is_nothrow_move_constructible_v<redis::BasicSimpleDynamicString<>>);
+	static_assert(std::is_nothrow_move_constructible_v<
+				  redis::BasicSimpleDynamicString<>>);
 
 	Sizes sizes;
 	const SizingAllocator<char> alloc(&sizes);
@@ -58,8 +61,14 @@ SCENARIO("An sds is one pointer to header, bytes and NUL", "[sds]") {
 		THEN("each takes the smallest header that holds its length") {
 			// type 5 below 32 bytes, then 8, 16 and 32 bits of len and alloc.
 			const std::pair<std::size_t, std::size_t> cases[] = {
-				{0, 1},	 {16, 1},	 {31, 1},	 {32, 3},
-				{255, 3}, {256, 5}, {65535, 5}, {65536, 9},
+				{0, 1},
+				{16, 1},
+				{31, 1},
+				{32, 3},
+				{255, 3},
+				{256, 5},
+				{65535, 5},
+				{65536, 9},
 			};
 			for (const auto &[length, header] : cases) {
 				const std::string text(length, 'x');

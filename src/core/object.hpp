@@ -9,8 +9,8 @@
 
 #include "core/utils/attributes.hpp"
 #include "core/utils/ring_buffer.hpp"
-#include "server/storage/allocator.hpp"
-#include "server/storage/simple_dynamic_string.hpp"
+#include "core/allocator.hpp"
+#include "core/simple_dynamic_string.hpp"
 
 #include <cassert>
 #include <cstddef>
