@@ -51,7 +51,9 @@ RedisServer::RedisServer(ServerConfig config)
 	  signals_(io_, SIGINT, SIGTERM),
 	  services_(std::make_shared<Services>(config_.dump_file,
 										   config_.io_threads > 1,
-										   config_.aof)) {}
+										   config_.aof,
+										   config_.limits,
+										   config_.config_set_enabled)) {}
 
 std::expected<void, std::string> RedisServer::run() {
 	// With an append-only file it is the source of truth: it holds everything

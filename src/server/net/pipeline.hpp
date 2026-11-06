@@ -3,6 +3,7 @@
 #include "server/commands/command.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <string>
 #include <string_view>
@@ -71,9 +72,14 @@ void parse_pending(std::string_view pending, ParsedBatch &batch);
  * encoded reply to \p replies, followed by the batch's protocol error, if any.
  *
  * Touches the keyspace, so it must only run on the one thread that owns it.
+ *
+ * Stops early, returning Close, once \p replies has grown past \p max_output:
+ * the client is about to be dropped for it, so running the rest of a pipelined
+ * batch would only build replies nobody will read.
  */
 AfterReplies execute_batch(const ParsedBatch &batch, std::string &replies,
-						   const CommandHandler &handler, CommandContext &ctx);
+						   const CommandHandler &handler, CommandContext &ctx,
+						   size_t max_output = SIZE_MAX);
 
 /**
  * \brief Erase the bytes \p batch was cut from off the front of \p pending, in
@@ -95,6 +101,6 @@ void drop_consumed(std::string &pending, ParsedBatch &batch);
 AfterReplies execute_pending(std::string &pending, ParsedBatch &batch,
 							 std::string &replies,
 							 const CommandHandler &handler,
-							 CommandContext &ctx);
+							 CommandContext &ctx, size_t max_output = SIZE_MAX);
 
 } // namespace redis

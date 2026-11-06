@@ -57,14 +57,19 @@ void prefetch_keys(const ParsedBatch &batch, const Database &db) {
 } // namespace
 
 AfterReplies execute_batch(const ParsedBatch &batch, std::string &replies,
-						   const CommandHandler &handler, CommandContext &ctx) {
+						   const CommandHandler &handler, CommandContext &ctx,
+						   size_t max_output) {
 	prefetch_keys(batch, ctx.db);
-	for (size_t i = 0; i < batch.size(); ++i)
+	bool over_limit = false;
+	for (size_t i = 0; i < batch.size() && !over_limit; ++i) {
 		handler.execute(ctx, batch.request(i), replies);
+		over_limit = replies.size() > max_output;
+	}
 	// The replies go out once this returns: what they acknowledge must be in
 	// the file by then (and on disk, with appendfsync always).
 	if (ctx.aof != nullptr) ctx.aof->after_batch();
 
+	if (over_limit) return AfterReplies::Close;
 	if (batch.protocol_error.empty()) return AfterReplies::KeepOpen;
 	replies += batch.protocol_error;
 	return AfterReplies::Close;
@@ -83,9 +88,10 @@ void drop_consumed(std::string &pending, ParsedBatch &batch) {
 AfterReplies execute_pending(std::string &pending, ParsedBatch &batch,
 							 std::string &replies,
 							 const CommandHandler &handler,
-							 CommandContext &ctx) {
+							 CommandContext &ctx, size_t max_output) {
 	parse_pending(pending, batch);
-	const AfterReplies after = execute_batch(batch, replies, handler, ctx);
+	const AfterReplies after =
+		execute_batch(batch, replies, handler, ctx, max_output);
 	drop_consumed(pending, batch);
 	return after;
 }

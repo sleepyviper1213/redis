@@ -31,6 +31,10 @@ struct ServerConfig {
 	/// Log write commands to an append-only file; unset, snapshots alone
 	/// persist the keyspace.
 	std::optional<AofConfig> aof;
+	/// Client count, buffer and idle limits.
+	NetLimits limits;
+	/// Let clients change settings with CONFIG SET.
+	bool config_set_enabled = false;
 };
 
 /**

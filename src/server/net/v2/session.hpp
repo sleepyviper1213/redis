@@ -2,6 +2,7 @@
 #include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
 #include "asio_context.hpp"
+#include "server/net/guard.hpp"
 #include "server/net/pipeline.hpp"
 
 #include <boost/asio/ip/tcp.hpp>
@@ -56,7 +57,7 @@ public:
 
 private:
 	Session(boost::asio::ip::tcp::socket socket,
-			std::shared_ptr<Services> services);
+			std::shared_ptr<Services> services, NetGuard::Ticket ticket);
 
 	// The stages of one round, each a sender. Defined in session.cpp, their
 	// only user, which is why their types can be deduced.
@@ -78,13 +79,14 @@ private:
 
 	static constexpr size_t READ_CHUNK_SIZE = 16uz * 1024;
 
-	/// Same limit as redis::Session.
-	static constexpr size_t MAX_QUERY_BUFFER = 1024uz * 1024 * 1024;
-
 	boost::asio::ip::tcp::socket socket_;
 	/// The socket's strand as a scheduler, to come back to after executing.
 	std::unique_ptr<AsioContext> strand_;
 	std::shared_ptr<Services> services_;
+	/// Holds this client's slot under Services::guard until the session ends.
+	NetGuard::Ticket ticket_;
+	/// "address:port", for the log lines about this client.
+	std::string peer_;
 
 	std::string chunk_;
 	std::string pending_;

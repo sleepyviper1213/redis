@@ -134,7 +134,12 @@ const CommandInfo *CommandHandler::dispatch(CommandContext &ctx, Args args,
 void CommandHandler::execute(CommandContext &ctx, Args args,
 							 std::string &out) const {
 	spdlog::logger &logger = log();
-	logger.trace("Query: {::?}", args);
+	// Only the command's name and size, never its arguments or reply: those are
+	// the clients' data (keys, values, and anything else they send), and a log
+	// file is read and kept by other people.
+	logger.trace("Query: {} ({} args)",
+				 args.empty() ? std::string_view{} : args[0],
+				 args.size());
 
 	const size_t reply_start = out.size();
 	ReplyWriter writer(out);
@@ -164,7 +169,7 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 			ctx.db, ran != nullptr && ran->write && !failed, args);
 	}
 
-	logger.trace("Response: {:?}", std::string_view(out).substr(reply_start));
+	logger.trace("Response: {} bytes", out.size() - reply_start);
 }
 
 } // namespace redis

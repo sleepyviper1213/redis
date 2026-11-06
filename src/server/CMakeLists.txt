@@ -13,7 +13,9 @@ add_library(
     commands/string.cpp
 
     diagnostics/current_command.cpp
+    net/admission.cpp
     net/executor.cpp
+    net/guard.cpp
     net/pipeline.cpp
     redis_server.cpp
     net/session.cpp

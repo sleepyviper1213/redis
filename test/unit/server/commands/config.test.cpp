@@ -50,3 +50,27 @@ SCENARIO("Changing the log level at runtime", "[commands][config]") {
 		REQUIRE(logging::set_level("info"));
 	}
 }
+
+SCENARIO("CONFIG SET is off unless the operator enables it",
+		 "[commands][config][security]") {
+	GIVEN("a server started without --enable-config-set") {
+		test::Server server;
+		server.ctx.config_set_enabled = false;
+		REQUIRE(logging::set_level("info"));
+
+		WHEN("a client tries to change the log level") {
+			const auto reply = server.run({"CONFIG", "SET", "loglevel", "trace"});
+
+			THEN("it is refused and nothing changes") {
+				CHECK(reply.starts_with("-ERR CONFIG SET is disabled"));
+				CHECK(logging::level() == "info");
+			}
+		}
+		WHEN("a client reads settings") {
+			THEN("CONFIG GET still works") {
+				CHECK(server.run({"CONFIG", "GET", "loglevel"}) ==
+					  "*2\r\n$8\r\nloglevel\r\n$4\r\ninfo\r\n");
+			}
+		}
+	}
+}

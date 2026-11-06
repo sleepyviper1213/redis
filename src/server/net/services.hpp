@@ -1,10 +1,10 @@
 #pragma once
 #include "executor.hpp"
+#include "guard.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
-#include "server/persistence/append_only_file.hpp"
-#include "server/persistence/snapshot_manager.hpp"
-#include "server/database.hpp"
+#include "server/database.hpp" // IWYU pragma: keep
+#include "server/persistence.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -24,18 +24,25 @@ struct Services {
 	/// \param aof_config Log write commands to an append-only file; if not
 	///        set, the server persists with snapshots alone.
 	Services(std::filesystem::path dump_file, bool threaded,
-			 std::optional<AofConfig> aof_config = std::nullopt)
+			 std::optional<AofConfig> aof_config = std::nullopt,
+			 NetLimits limits                    = {},
+			 bool config_set_enabled             = false)
 		: persistence(dump_file), // copies dump_file; move is below
+		  guard(limits),
 		  keyspace(threaded) {
-		if (aof_config) aof.emplace(std::move(*aof_config), std::move(dump_file));
+		ctx.config_set_enabled = config_set_enabled;
+		if (aof_config)
+			aof.emplace(std::move(*aof_config), std::move(dump_file));
 	}
 
 	Database db;
 	SnapshotManager persistence;
 	CommandHandler handler;
 	/// Gets its aof once the log has been replayed; see AppendOnlyFile::load.
-	CommandContext ctx{db, persistence};
+	CommandContext ctx{.db = db, .persistence = persistence};
 	std::optional<AppendOnlyFile> aof;
+	/// Admission control and buffer limits for every client; see NetGuard.
+	NetGuard guard;
 	/// Declared last so it is destroyed first: its thread, the only one
 	/// touching the keyspace, is joined before the keyspace goes away.
 	Executor keyspace;

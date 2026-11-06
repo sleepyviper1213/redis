@@ -43,6 +43,8 @@ struct Server {
 	SnapshotManager persistence{dump.path()};
 	CommandContext ctx{db, persistence};
 
+	Server() { ctx.config_set_enabled = true; }
+
 	/// Run one command and return the RESP-encoded reply, exactly the bytes
 	/// a client would receive.
 	std::string run(std::vector<std::string> argv) {

@@ -22,6 +22,9 @@ struct CommandContext {
 	/// The append-only file the write commands are logged to; null when the
 	/// server runs without one, and while a log is being replayed.
 	AppendOnlyFile *aof = nullptr;
+	/// Whether CONFIG SET may change settings. Off unless the operator asks
+	/// (--enable-config-set): any client could otherwise change them.
+	bool config_set_enabled = false;
 };
 
 /// A command's arguments; args[0] is the command name itself. They view the

@@ -1,5 +1,6 @@
 #include "setup_cli_options.hpp"
 
+#include "server/net/guard.hpp"
 #include "server/persistence/append_only_file.hpp"
 
 #include <CLI/CLI.hpp>
@@ -121,6 +122,42 @@ CLI::App_p setup_cli_options() {
 		->check(CLI::PositiveNumber)
 		->default_val(6379);
 	
+	app->add_option("--maxclients", "Maximum number of simultaneous clients")
+		->envname("REDIS_MAXCLIENTS")
+		->option_text("<count>")
+		->group("Limits")
+		->check(CLI::PositiveNumber)
+		->default_val(NetLimits{}.max_clients);
+	app->add_option("--client-query-buffer-limit",
+					"Bytes one client may have buffered, not yet parsed")
+		->envname("REDIS_CLIENT_QUERY_BUFFER_LIMIT")
+		->option_text("<bytes>")
+		->group("Limits")
+		->check(CLI::PositiveNumber)
+		->default_val(NetLimits{}.max_query_buffer);
+	app->add_option("--client-output-buffer-limit",
+					"Bytes of unsent replies after which a client is dropped")
+		->envname("REDIS_CLIENT_OUTPUT_BUFFER_LIMIT")
+		->option_text("<bytes>")
+		->group("Limits")
+		->check(CLI::PositiveNumber)
+		->default_val(NetLimits{}.max_output_buffer);
+	app->add_option("--timeout",
+					"Close a client idle this many seconds; 0 never "
+					"(coroutine sessions only)")
+		->envname("REDIS_TIMEOUT")
+		->option_text("<seconds>")
+		->group("Limits")
+		->check(CLI::NonNegativeNumber)
+		->default_val(0);
+
+	app->add_flag("--enable-config-set",
+				  "Let any client change settings with CONFIG SET (there is no "
+				  "authentication, so leave it off unless the port is private)")
+		->envname("REDIS_ENABLE_CONFIG_SET")
+		->group("Limits")
+		->default_val(false);
+
 	app->add_option("--log-file", "Log file path")
 		->envname("REDIS_LOGFILE")
 		->group("Logging")

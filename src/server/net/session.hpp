@@ -5,8 +5,11 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
+#include "guard.hpp"
+
 #include <cstddef>
 #include <memory>
+#include <string>
 
 namespace redis {
 struct Services;
@@ -47,21 +50,19 @@ public:
 	Session &operator=(const Session &) = delete;
 
 private:
-	Session(net::ip::tcp::socket socket, std::shared_ptr<Services> services);
+	Session(net::ip::tcp::socket socket, std::shared_ptr<Services> services,
+			NetGuard::Ticket ticket);
 
 	net::awaitable<void> loop();
 
 	static constexpr size_t READ_CHUNK_SIZE = 16uz * 1024;
 
-	/**
-	 * \brief Upper bound on buffered, not-yet-parsed bytes per client (same
-	 * default as Redis' client-query-buffer-limit), so a slow or malicious
-	 * client cannot grow server memory without bound.
-	 */
-	static constexpr size_t MAX_QUERY_BUFFER = 1024uz * 1024 * 1024;
-
 	net::ip::tcp::socket socket_;
 	std::shared_ptr<Services> services_;
+	/// Holds this client's slot under Services::guard until the session ends.
+	NetGuard::Ticket ticket_;
+	/// "address:port", for the log lines about this client.
+	std::string peer_;
 };
 } // namespace v1
 } // namespace redis

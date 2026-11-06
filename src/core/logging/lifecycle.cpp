@@ -42,7 +42,8 @@ class json_line_formatter final : public spdlog::formatter {
 public:
 	void format(const spdlog::details::log_msg &msg,
 				spdlog::memory_buf_t &dest) final {
-		const auto epoch_ms = DateTime::from_std_time_point(msg.time).to_msecs_since_epoch();
+		const auto epoch_ms =
+			DateTime::from_std_time_point(msg.time).to_msecs_since_epoch();
 		fmt::format_to(fmt::appender(dest),
 					   R"({{"ts_ms":{},"level":"{}","logger":"{}","msg":")",
 					   epoch_ms,

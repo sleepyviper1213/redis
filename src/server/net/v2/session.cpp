@@ -1,6 +1,7 @@
 #include "session.hpp"
 
 #include "core/logging.hpp"
+#include "server/net/admission.hpp"
 #include "server/net/formatter.hpp"
 #include "server/net/pipeline.hpp"
 #include "server/net/services.hpp"
@@ -18,9 +19,7 @@ using boost::asio::ip::tcp;
 
 namespace redis::v2 {
 namespace {
-spdlog::logger &log() {
-	return logging::logger_for(logging::channel::net);
-}
+spdlog::logger &log() { return logging::logger_for(logging::channel::net); }
 
 /**
  * \p sender if \p condition holds, otherwise a sender that completes at once
@@ -36,14 +35,15 @@ auto run_if(bool condition, Sender sender) {
 }
 } // namespace
 
-Session::Session(tcp::socket socket, std::shared_ptr<Services> services)
+Session::Session(tcp::socket socket, std::shared_ptr<Services> services,
+				 NetGuard::Ticket ticket)
 	: socket_(std::move(socket)),
 	  strand_(std::make_unique<AsioContext>(socket_.get_executor())),
 	  services_(std::move(services)),
+	  ticket_(std::move(ticket)),
+	  peer_(peer_name(socket_)),
 	  chunk_(READ_CHUNK_SIZE, '\0') {
-	boost::system::error_code ec;
-	const auto peer = socket_.remote_endpoint(ec);
-	if (!ec) log().debug("Accepted from {}", peer);
+	log().debug("Accepted from {}", peer_);
 }
 
 bool Session::ingest(size_t bytes) {
@@ -52,8 +52,10 @@ bool Session::ingest(size_t bytes) {
 	// thread).
 	drop_consumed(pending_, batch_);
 	pending_.append(chunk_.data(), bytes);
-	if (pending_.size() > MAX_QUERY_BUFFER) {
-		log().warn("Query buffer limit exceeded, closing connection");
+	if (!services_->guard.check_input(pending_.size())) {
+		services_->guard.record(Violation::QueryBufferFull,
+								peer_,
+								pending_.size());
 		done_ = true;
 		return false;
 	}
@@ -67,12 +69,27 @@ bool Session::ingest(size_t bytes) {
 }
 
 void Session::run_batch() {
-	Services &services = *services_;
-	after_ = services.keyspace.is_threaded()
-				 ? execute_batch(batch_, replies_, services.handler,
-								 services.ctx)
-				 : execute_pending(pending_, batch_, replies_, services.handler,
-								   services.ctx);
+	Services &services      = *services_;
+	const size_t max_output = services.guard.limits().max_output_buffer;
+	after_ = services.keyspace.is_threaded() ? execute_batch(batch_,
+															 replies_,
+															 services.handler,
+															 services.ctx,
+															 max_output)
+											 : execute_pending(pending_,
+															   batch_,
+															   replies_,
+															   services.handler,
+															   services.ctx,
+															   max_output);
+	if (!services.guard.check_output(replies_.size())) {
+		// Nobody is going to read this much: drop it with the client.
+		services.guard.record(Violation::OutputBufferFull,
+							  peer_,
+							  replies_.size());
+		replies_.clear();
+		done_ = true;
+	}
 }
 
 void Session::fail(const std::exception_ptr &error) {
@@ -82,8 +99,7 @@ void Session::fail(const std::exception_ptr &error) {
 	} catch (const boost::system::system_error &e) {
 		if (e.code() == boost::asio::error::eof)
 			log().debug("Client disconnected normally");
-		else
-			log().error("Connection: {}", e.code());
+		else log().error("Connection: {}", e.code());
 	} catch (const std::exception &e) {
 		log().error("Connection: {}", e.what());
 	}
@@ -102,47 +118,52 @@ auto Session::execute() {
 }
 
 auto Session::write() {
-	return boost::asio::async_write(socket_, boost::asio::buffer(replies_),
-									exec::asio::use_sender)
-		 | stdexec::then([this](size_t) { replies_.clear(); });
+	return boost::asio::async_write(socket_,
+									boost::asio::buffer(replies_),
+									exec::asio::use_sender) |
+		   stdexec::then([this](size_t) { replies_.clear(); });
 }
 
 auto Session::round() {
 	using stdexec::just;
 
-	return read()
-		 | stdexec::let_value([this](size_t bytes) {
+	return read() | stdexec::let_value([this](size_t bytes) {
 			   return run_if(ingest(bytes), execute());
-		   })
-		 | stdexec::let_value([this] {
+		   }) |
+		   stdexec::let_value([this] {
 			   if (after_ == AfterReplies::Close) done_ = true;
 			   // A client whose request is still incomplete gets no reply.
 			   return run_if(!replies_.empty(), write());
-		   })
-		 | stdexec::let_error([this](const std::exception_ptr &error) {
+		   }) |
+		   stdexec::let_error([this](const std::exception_ptr &error) {
 			   fail(error);
 			   return just();
-		   })
-		 | stdexec::then([this] { return done_; });
+		   }) |
+		   stdexec::then([this] { return done_; });
 }
 
 SessionSender Session::serve(tcp::socket socket,
 							 std::shared_ptr<Services> services) {
-	return stdexec::just(Session(std::move(socket), std::move(services)))
-		 | stdexec::let_value([](Session &session) {
+	auto ticket = services->guard.admit();
+	if (!ticket) {
+		reject_over_capacity(socket, services->guard);
+		return stdexec::just();
+	}
+	return stdexec::just(Session(std::move(socket),
+								 std::move(services),
+								 std::move(*ticket))) |
+		   stdexec::let_value([](Session &session) {
 			   return exec::repeat_until(session.round());
 		   })
-		 // The chain's only failures are the ones round() did not already turn
-		 // into "the session is over"; log them and finish normally.
-		 | stdexec::upon_error([](const std::exception_ptr &e) noexcept {
-			   try {
-				   std::rethrow_exception(e);
-			   } catch (const std::exception &ex) {
-				   log().error("Session failed: {}", ex.what());
-			   } catch (...) {
-				   log().error("Session failed");
-			   }
-		   });
+		   // The chain's only failures are the ones round() did not already
+		   // turn into "the session is over"; log them and finish normally.
+		   | stdexec::upon_error([](const std::exception_ptr &e) noexcept {
+				 try {
+					 std::rethrow_exception(e);
+				 } catch (const std::exception &ex) {
+					 log().error("Session failed: {}", ex.what());
+				 } catch (...) { log().error("Session failed"); }
+			 });
 }
 
 } // namespace redis::v2

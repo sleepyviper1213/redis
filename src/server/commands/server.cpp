@@ -69,7 +69,12 @@ void bgrewriteaof(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 
 // CONFIG SET loglevel <level>: the one setting worth changing without a
 // restart, to look closer at a running server without losing its state.
-void config_set(Args args, ReplyWriter &out) {
+void config_set(const CommandContext &ctx, Args args, ReplyWriter &out) {
+	if (!ctx.config_set_enabled) {
+		out.error("ERR CONFIG SET is disabled; start the server with "
+				  "--enable-config-set to allow it");
+		return;
+	}
 	if (tolower(std::string(args[2])) != "loglevel") {
 		out.error(fmt::format("ERR Unsupported CONFIG parameter: {}", args[2]));
 		return;
@@ -90,7 +95,7 @@ void config_set(Args args, ReplyWriter &out) {
 void config(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto sub = toupper(std::string(args[1]));
 	if (sub == "SET" && args.size() == 4) {
-		config_set(args, out);
+		config_set(ctx, args, out);
 		return;
 	}
 	if (sub != "GET" || args.size() != 3) {

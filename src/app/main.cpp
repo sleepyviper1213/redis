@@ -42,6 +42,18 @@ std::optional<redis::AofConfig> aof_config(const CLI::App &app) {
 	};
 }
 
+redis::NetLimits net_limits(const CLI::App &app) {
+	return redis::NetLimits{
+		.max_clients = app.get_option("--maxclients")->as<size_t>(),
+		.max_query_buffer =
+			app.get_option("--client-query-buffer-limit")->as<size_t>(),
+		.max_output_buffer =
+			app.get_option("--client-output-buffer-limit")->as<size_t>(),
+		.idle_timeout =
+			std::chrono::seconds(app.get_option("--timeout")->as<int64_t>()),
+	};
+}
+
 int run(int argc, char **argv) {
 	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
@@ -75,6 +87,9 @@ int run(int argc, char **argv) {
 			.io_threads      = app->get_option("--io-threads")->as<unsigned>(),
 			.sender_sessions = app->get_option("--sender-sessions")->as<bool>(),
 			.aof             = aof_config(*app),
+			.limits          = net_limits(*app),
+			.config_set_enabled =
+				app->get_option("--enable-config-set")->as<bool>(),
 		});
 		if (const auto ran = server.run(); !ran) {
 			log.critical("{}", ran.error());
