@@ -1,5 +1,7 @@
 // String commands: SET, GET, INCR and friends, MSET/MGET, APPEND, STRLEN.
 #include "command.hpp"
+#include "expire_time.hpp"
+#include "core/date_time.hpp"
 #include "core/deadline_timer.hpp"
 #include "core/utils/saturating.hpp"
 #include "core/utils/toupper.hpp"
@@ -28,7 +30,7 @@ using std::chrono::seconds;
 
 struct SetOptions {
 	bool nx = false, xx = false, get = false, keep_ttl = false;
-	std::optional<DeadlineTimer::time_point> deadline;
+	std::optional<DateTime> deadline;
 };
 
 // Parses SET's options. On failure returns the error message to reply with.
@@ -52,16 +54,17 @@ std::expected<SetOptions, std::string_view> parse_set_options(Args args) {
 			has_expiry      = true;
 			const auto time = parse_int(args[++i]);
 			if (!time) return std::unexpected(ReplyWriter::NOT_INTEGER);
-			if (*time <= 0)
+			const auto unit = opt == "EX" || opt == "EXAT"
+								  ? ExpireUnit::Seconds
+								  : ExpireUnit::Milliseconds;
+			const auto base = opt == "EX" || opt == "PX" ? ExpireBase::Relative
+														 : ExpireBase::Absolute;
+			const auto timer = *time > 0 ? expire_time(*time, unit, base)
+										 : std::nullopt;
+			if (!timer)
 				return std::unexpected(
 					"ERR invalid expire time in 'set' command");
-
-			const auto now = DeadlineTimer::now();
-			if (opt == "EX") opts.deadline = now + seconds(*time);
-			else if (opt == "PX") opts.deadline = now + milliseconds(*time);
-			else if (opt == "EXAT")
-				opts.deadline = DeadlineTimer::time_point(seconds(*time));
-			else opts.deadline = DeadlineTimer::time_point(milliseconds(*time));
+			opts.deadline = timer->deadline();
 		} else {
 			return std::unexpected(ReplyWriter::SYNTAX_ERROR);
 		}

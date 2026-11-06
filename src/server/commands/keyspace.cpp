@@ -1,6 +1,7 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
+#include "expire_time.hpp"
 #include "core/deadline_timer.hpp"
 #include "core/object.hpp"
 #include "core/utils/glob.hpp"
@@ -56,14 +57,19 @@ void type(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
-template <auto ToDeadline>
+template <ExpireUnit Unit, ExpireBase Base>
 void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto amount = parse_int(args[2]);
 	if (!amount) {
 		out.not_integer();
 		return;
 	}
-	const DeadlineTimer timer = ToDeadline(*amount);
+	const auto deadline = expire_time(*amount, Unit, Base);
+	if (!deadline) {
+		out.error("ERR invalid expire time");
+		return;
+	}
+	const DeadlineTimer timer = *deadline;
 	const bool applied        = ctx.db.set_expiry(args[1], timer);
 	out.integer(applied ? 1 : 0);
 
@@ -121,19 +127,19 @@ constexpr std::array COMMANDS{
 	CommandInfo{.name = "KEYS", .fn = keys, .arity = 2},
 	CommandInfo{.name = "TYPE", .fn = type, .arity = 2},
 	CommandInfo{.name  = "EXPIRE",
-				.fn    = expire_generic<DeadlineTimer::after_s>,
+				.fn    = expire_generic<ExpireUnit::Seconds, ExpireBase::Relative>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name  = "PEXPIRE",
-				.fn    = expire_generic<DeadlineTimer::after_ms>,
+				.fn    = expire_generic<ExpireUnit::Milliseconds, ExpireBase::Relative>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name  = "EXPIREAT",
-				.fn    = expire_generic<DeadlineTimer::at_s>,
+				.fn    = expire_generic<ExpireUnit::Seconds, ExpireBase::Absolute>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name  = "PEXPIREAT",
-				.fn    = expire_generic<DeadlineTimer::at_ms>,
+				.fn    = expire_generic<ExpireUnit::Milliseconds, ExpireBase::Absolute>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .write = true},

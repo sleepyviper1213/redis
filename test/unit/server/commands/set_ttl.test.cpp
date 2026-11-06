@@ -281,3 +281,26 @@ SCENARIO("A plain SET overwrites without looking at the old value",
 		}
 	}
 }
+
+SCENARIO("Expiry arguments that overflow the clock are rejected",
+		 "[commands][set][limits]") {
+	test::Server server;
+	const std::string huge = "9223372036854775807";
+	// Seconds cannot be scaled to milliseconds, and a relative amount cannot be
+	// added to the current time, without overflowing.
+	for (const char *opt : {"EX", "PX", "EXAT"})
+		CHECK(server.run({"SET", "k", "v", opt, huge}) ==
+			  "-ERR invalid expire time in 'set' command\r\n");
+	server.run({"SET", "k", "v"});
+	for (const char *cmd : {"EXPIRE", "PEXPIRE", "EXPIREAT"})
+		CHECK(server.run({cmd, "k", huge}) == "-ERR invalid expire time\r\n");
+	CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
+	CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
+
+	// An absolute time in milliseconds needs no arithmetic, so it is valid, as
+	// in Redis: the key simply never expires.
+	CHECK(server.run({"PEXPIREAT", "k", huge}) == ":1\r\n");
+	CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
+	CHECK(server.run({"SET", "j", "v", "PXAT", huge}) == "+OK\r\n");
+	CHECK(server.run({"GET", "j"}) == "$1\r\nv\r\n");
+}
