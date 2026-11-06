@@ -1,10 +1,9 @@
 #include "snapshot_manager.hpp"
 
-#include "core/chrono.hpp"
+#include "core/date_time.hpp"
 #include "core/logging.hpp"
-#include "server/persistence/child_process.hpp"
 #include "server/database.hpp" // IWYU pragma: keep (db.size())
-#include "server/database_fwd.hpp"
+#include "server/persistence/child_process.hpp"
 #include "snapshot.hpp"
 
 #include <fmt/chrono.h> // IWYU pragma: keep (fmt formatters used by the logger)
@@ -12,7 +11,6 @@
 #include <fmt/std.h>    // IWYU pragma: keep
 #include <spdlog/logger.h>
 
-#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -25,7 +23,8 @@ spdlog::logger &log() {
 }
 } // namespace
 
-SnapshotManager::SnapshotManager(std::filesystem::path file) : file_(std::move(file)) {}
+SnapshotManager::SnapshotManager(std::filesystem::path file)
+	: file_(std::move(file)) {}
 
 // Only logging can throw here; ending the process on that is acceptable.
 SnapshotManager::~SnapshotManager() { // NOLINT(bugprone-exception-escape)
@@ -45,7 +44,7 @@ std::expected<void, std::string> SnapshotManager::save(const Database &db) {
 		log().error("{}", result.error());
 		return std::unexpected("ERR " + result.error());
 	}
-	last_save_ = std::chrono::system_clock::now();
+	last_save_ = DateTime::current();
 	log().info("DB saved on disk to {}", file_);
 	return {};
 }
@@ -65,7 +64,7 @@ SnapshotManager::background_save(const Database &db) {
 
 	log().info("Background saving started by pid {}", child->pid());
 	child_.emplace(std::move(*child));
-	child_forked_at_ = std::chrono::system_clock::now();
+	child_forked_at_ = DateTime::current();
 	child_timer_.start();
 	return {};
 }
@@ -101,17 +100,14 @@ SnapshotManager::background_save_in_progress() const noexcept {
 	return child_.has_value();
 }
 
-[[nodiscard]] std::chrono::system_clock::time_point
-SnapshotManager::last_snapshot() const noexcept {
+[[nodiscard]] DateTime SnapshotManager::last_snapshot() const noexcept {
 	return last_save_;
 }
-
 
 [[nodiscard]] const std::filesystem::path &
 SnapshotManager::file() const noexcept {
 	return file_;
 }
-
 
 void SnapshotManager::finish_background_save(
 	const persistence::posix::ChildResult &result) {
@@ -120,13 +116,15 @@ void SnapshotManager::finish_background_save(
 		last_save_ = child_forked_at_; // the snapshot reflects fork time
 		log().info("Background saving terminated with success in {}", elapsed);
 	} else {
-		log().error("Background saving failed after {}: {}", elapsed,
+		log().error("Background saving failed after {}: {}",
+					elapsed,
 					result.error);
 		// A child that died mid-save (killed, out of memory) could not remove
 		// its temporary file itself.
 		std::error_code ignored;
 		std::filesystem::remove(
-			persistence::snapshot_temp_path(file_, child_->pid()), ignored);
+			persistence::snapshot_temp_path(file_, child_->pid()),
+			ignored);
 	}
 	child_.reset();
 }

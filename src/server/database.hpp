@@ -1,4 +1,5 @@
 #pragma once
+#include "core/date_time.hpp"
 #include "core/deadline_timer.hpp"
 #include "core/object.hpp"
 #include "core/utils/attributes.hpp"
@@ -52,7 +53,7 @@ class BasicDatabase {
 
 public:
 	using allocator_type = Allocator;
-	using time_point     = DeadlineTimer::time_point;
+	using time_point     = DateTime;
 	using String         = typename Types::String;
 	using Key            = typename Types::Key;
 	using Object         = BasicObject<Allocator>;
@@ -298,7 +299,7 @@ public:
 	size_t active_expire_cycle(size_t max_keys) {
 		owner_.check();
 		if (!expiry_enabled_) return 0;
-		const auto now = DeadlineTimer::now();
+		const auto now = DateTime::current();
 		size_t removed = 0;
 		while (removed < max_keys && !by_deadline_.empty() &&
 			   by_deadline_.begin()->first <= now) {
@@ -318,7 +319,7 @@ public:
 	 */
 	template <typename Fn>
 	void for_each(Fn &&fn) const {
-		const auto now = DeadlineTimer::now();
+		const auto now = DateTime::current();
 		for (const auto &[key, value] : dict_) {
 			std::optional<time_point> deadline;
 			if (auto it = expires_.find(key); it != expires_.end()) {

@@ -1,7 +1,6 @@
 #include "snapshot.hpp"
 
 #include "child_process.hpp"
-#include "core/chrono.hpp"
 #include "core/deadline_timer.hpp"
 #include "core/object.hpp"
 #include "server/database.hpp"
@@ -11,10 +10,9 @@
 #include <cereal/cereal.hpp>
 #include <cereal/details/helpers.hpp>
 #include <cereal/types/string.hpp> // IWYU pragma: keep (std::string serialization)
-#include <fmt/format.h>
+#include <fmt/std.h>
 
 #include <array>
-#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <expected>
@@ -58,10 +56,6 @@ constexpr int64_t NO_DEADLINE     = -1;
 
 using OutArchive = cereal::PortableBinaryOutputArchive;
 using InArchive  = cereal::PortableBinaryInputArchive;
-
-Database::time_point from_unix_ms(int64_t ms) {
-	return Database::time_point(std::chrono::milliseconds(ms));
-}
 
 template <typename Range>
 void write_strings(OutArchive &out, const Range &range) {
@@ -152,10 +146,11 @@ std::expected<void, std::string> write_snapshot_file(const Database &db,
 					const Object &value,
 					std::optional<Database::time_point>
 						deadline) {
-		entries.emplace_back(std::string(key),
-							 deadline ? chrono::to_unix_ms(*deadline)
-									  : NO_DEADLINE,
-							 &value);
+		entries.emplace_back(
+			std::string(key),
+			deadline ? deadline->to_msecs_since_epoch()
+					 : NO_DEADLINE,
+			&value);
 	});
 
 	std::ofstream stream(tmp, std::ios::binary | std::ios::trunc);
@@ -181,7 +176,7 @@ std::expected<void, std::string> write_snapshot_file(const Database &db,
 } // namespace
 
 fs::path snapshot_temp_path(const fs::path &file, posix::pid_type pid) {
-	return fs::path(file).concat(fmt::format(".tmp-{}", pid));
+	return fmt::format("{}.tmp-{}", file, pid);
 }
 
 std::expected<void, std::string> save_snapshot(const Database &db,
@@ -192,8 +187,7 @@ std::expected<void, std::string> save_snapshot(const Database &db,
 	const auto failed = [&](std::string_view why) {
 		std::error_code ignored;
 		fs::remove(tmp, ignored);
-		return std::unexpected(
-			fmt::format("saving {} failed: {}", file.string(), why));
+		return std::unexpected(fmt::format("saving {} failed: {}", file, why));
 	};
 
 	if (auto written = write_snapshot_file(db, tmp); !written)
@@ -214,7 +208,7 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 	std::ifstream stream(file, std::ios::binary);
 	if (!stream) {
 		if (!fs::exists(file)) return {};
-		return std::unexpected(fmt::format("cannot open {}", file.string()));
+		return std::unexpected(fmt::format("cannot open {}", file));
 	}
 
 	try {
@@ -225,11 +219,11 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 		in(version);
 		if (magic != MAGIC)
 			return std::unexpected(
-				fmt::format("{} is not a snapshot file", file.string()));
+				fmt::format("{} is not a snapshot file", file));
 		if (version != FORMAT_VERSION)
 			return std::unexpected(
 				fmt::format("{} has format version {}, expected {}",
-							file.string(),
+							file,
 							version,
 							FORMAT_VERSION));
 
@@ -237,20 +231,19 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 		Database loaded;
 		// Stores a deadline in the past instead of deleting its key.
 		loaded.set_expiry_enabled(!keep_expired);
-		const auto now = DeadlineTimer::now();
+		const auto now = DateTime::current();
 		for (auto n = read_size(in); n > 0; --n) {
 			String key;
 			int64_t deadline_ms = 0;
 			in(key, deadline_ms);
 			auto value = read_object(in);
 			if (!value)
-				return std::unexpected(fmt::format("{} is corrupt: {}",
-												   file.string(),
-												   value.error()));
+				return std::unexpected(
+					fmt::format("{} is corrupt: {}", file, value.error()));
 
 			if (deadline_ms == NO_DEADLINE) {
 				loaded.set(key, std::move(*value));
-			} else if (const auto deadline = from_unix_ms(deadline_ms);
+			} else if (const auto deadline = DateTime::from_msecs_since_epoch(deadline_ms);
 					   keep_expired || deadline > now) {
 				loaded.set(key, std::move(*value));
 				loaded.set_expiry(key, DeadlineTimer::at(deadline));
@@ -259,9 +252,8 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 		loaded.set_expiry_enabled(true);
 		db = std::move(loaded);
 	} catch (const std::exception &e) {
-		return std::unexpected(fmt::format("{} is corrupt or truncated: {}",
-										   file.string(),
-										   e.what()));
+		return std::unexpected(
+			fmt::format("{} is corrupt or truncated: {}", file, e));
 	}
 	return {};
 }

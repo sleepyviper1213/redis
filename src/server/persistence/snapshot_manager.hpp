@@ -1,9 +1,9 @@
 #pragma once
+#include "core/date_time.hpp"
 #include "core/elapsed_timer.hpp"
-#include "server/persistence/child_process.hpp"
 #include "server/database_fwd.hpp"
+#include "server/persistence/child_process.hpp"
 
-#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -53,8 +53,7 @@ public:
 	[[nodiscard]] bool background_save_in_progress() const noexcept;
 
 	/// Time of the last successful snapshot; server start if there was none.
-	[[nodiscard]] std::chrono::system_clock::time_point
-	last_snapshot() const noexcept;
+	[[nodiscard]] DateTime last_snapshot() const noexcept;
 
 	[[nodiscard]] const std::filesystem::path &file() const noexcept;
 
@@ -62,9 +61,8 @@ private:
 	void finish_background_save(const persistence::posix::ChildResult &result);
 
 	std::filesystem::path file_;
-	std::chrono::system_clock::time_point last_save_ =
-		std::chrono::system_clock::now();
-	std::chrono::system_clock::time_point child_forked_at_;
+	DateTime last_save_ = DateTime::current();
+	DateTime child_forked_at_;
 	std::optional<persistence::posix::Child> child_;
 	ElapsedTimer child_timer_;
 };

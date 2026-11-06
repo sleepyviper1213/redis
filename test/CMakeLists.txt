@@ -13,6 +13,8 @@ add_executable(redis_unit_test
     unit/logging.setup.cpp
 
     unit/core/allocator.test.cpp
+    unit/core/date_time.test.cpp
+    unit/core/deadline_timer.test.cpp
     unit/core/resp/parser.test.cpp
     unit/core/resp/request.test.cpp
     unit/core/simple_dynamic_string.test.cpp

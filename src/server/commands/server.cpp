@@ -1,7 +1,7 @@
 // Connection and server commands: PING, ECHO, SAVE, BGSAVE, LASTSAVE,
 // CONFIG GET, CONFIG SET loglevel.
 #include "command.hpp"
-#include "core/chrono.hpp"
+#include "core/date_time.hpp"
 #include "core/logging.hpp"
 #include "core/utils/glob.hpp"
 #include "core/utils/toupper.hpp"
@@ -53,7 +53,7 @@ void bgsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 }
 
 void lastsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
-	const auto unix_seconds = chrono::to_unix_s(ctx.persistence.last_snapshot());
+	const auto unix_seconds = ctx.persistence.last_snapshot().to_secs_since_epoch();
 	out.integer(unix_seconds);
 }
 

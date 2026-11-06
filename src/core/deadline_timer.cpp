@@ -1,67 +1,68 @@
 #include "deadline_timer.hpp"
 
+#include "utils/saturating.hpp"
+
+#include <cstdint>
+
 namespace redis {
 
-DeadlineTimer::DeadlineTimer(time_point deadline) noexcept
+DeadlineTimer::DeadlineTimer(DateTime deadline) noexcept
 	: deadline_(deadline) {}
 
-[[nodiscard]] DeadlineTimer DeadlineTimer::at(time_point deadline) noexcept {
+[[nodiscard]] DeadlineTimer DeadlineTimer::at(DateTime deadline) noexcept {
 	return DeadlineTimer(deadline);
 }
 
 [[nodiscard]] DeadlineTimer DeadlineTimer::after(duration from_now) noexcept {
-	return DeadlineTimer(now() + from_now);
+	return DeadlineTimer(DateTime::current().add_msecs(from_now.count()));
 }
 
-[[nodiscard]] DeadlineTimer::time_point
-DeadlineTimer::deadline() const noexcept {
+[[nodiscard]] DateTime DeadlineTimer::deadline() const noexcept {
 	return deadline_;
 }
 
 [[nodiscard]] bool DeadlineTimer::has_expired() const noexcept {
-	return clock::now() >= deadline_;
+	return DateTime::current() >= deadline_;
 }
 
 [[nodiscard]] DeadlineTimer::duration
 DeadlineTimer::remaining_time() const noexcept {
-	const auto left = deadline_ - clock::now();
+	const auto left = duration(DateTime::current().msecs_to(deadline_));
 	return left > duration::zero() ? left : duration::zero();
 }
 
 [[nodiscard]] std::chrono::milliseconds
 DeadlineTimer::remaining_time_ms() const noexcept {
-	return std::chrono::ceil<std::chrono::milliseconds>(remaining_time());
-}
-
-[[nodiscard]] int64_t DeadlineTimer::remaining_time_nsecs() const noexcept {
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(remaining_time())
-		.count();
+	return remaining_time();
 }
 
 [[nodiscard]] int64_t DeadlineTimer::millis_since_epoch() const noexcept {
-	return std::chrono::duration_cast<std::chrono::milliseconds>(
-			   deadline_.time_since_epoch())
-		.count();
+	return deadline_.to_msecs_since_epoch();
+}
+
+[[nodiscard]] DeadlineTimer DeadlineTimer::forever() noexcept {
+	return DeadlineTimer(DateTime::distant_future());
+}
+
+[[nodiscard]] bool DeadlineTimer::is_forever() const noexcept {
+	return deadline_ == DateTime::distant_future();
 }
 
 [[nodiscard]] DeadlineTimer DeadlineTimer::after_s(int64_t secs) noexcept {
-	return after(std::chrono::seconds(secs));
+	constexpr int64_t MS_PER_S = 1000;
+	return after(duration(mul_sat(secs, MS_PER_S)));
 }
 
 [[nodiscard]] DeadlineTimer DeadlineTimer::after_ms(int64_t millis) noexcept {
-	return after(std::chrono::milliseconds(millis));
+	return after(duration(millis));
 }
 
 [[nodiscard]] DeadlineTimer DeadlineTimer::at_s(int64_t unix_secs) noexcept {
-	return at(time_point(std::chrono::seconds(unix_secs)));
+	return at(DateTime::from_secs_since_epoch(unix_secs));
 }
 
 [[nodiscard]] DeadlineTimer DeadlineTimer::at_ms(int64_t unix_ms) noexcept {
-	return at(time_point(std::chrono::milliseconds(unix_ms)));
-}
-
-[[nodiscard]] DeadlineTimer::time_point DeadlineTimer::now() noexcept {
-	return clock::now();
+	return at(DateTime::from_msecs_since_epoch(unix_ms));
 }
 
 } // namespace redis
