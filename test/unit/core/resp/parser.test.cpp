@@ -639,3 +639,13 @@ SCENARIO("encode_to produces the same bytes as the fmt 'e' presentation",
 		CHECK(buffer == "+earlier\r\n" + expected);
 	}
 }
+
+SCENARIO("Parser bounds array nesting", "[resp][parser][limits]") {
+	THEN("deeply nested arrays are rejected instead of overflowing the stack") {
+		std::string data;
+		for (int i = 0; i < 100000; ++i) data += "*1\r\n";
+		const auto result = Parser::parse(data);
+		REQUIRE(!result);
+		REQUIRE(result.error() == Parser::RespError::NESTING_TOO_DEEP);
+	}
+}

@@ -23,8 +23,12 @@ public:
 		PARSE_NUMBER,
 		NOT_SUPPORTED,
 		SYNTAX_ERROR,
-		INLINE_TOO_LONG
+		INLINE_TOO_LONG,
+		NESTING_TOO_DEEP
 	};
+
+	/// Deepest array nesting accepted; bounds recursion on hostile input.
+	static constexpr int MAX_DEPTH = 8;
 
 	/**
 	 * \brief Parse a single RESP value from the provided buffer.
@@ -59,7 +63,7 @@ public:
 	static std::expected<double, std::errc> parse_double(std::string_view s);
 
 	static std::expected<Value, RespError>
-	parse_recursive(std::string_view data, size_t &pos);
+	parse_recursive(std::string_view data, size_t &pos, int depth = 0);
 
 	/**
 	 * \brief Whether \p err means the input is a valid but incomplete prefix.

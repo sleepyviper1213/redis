@@ -23,8 +23,9 @@ std::expected<Value, Parser::RespError> Parser::parse(std::string_view data) {
 }
 
 std::expected<Value, Parser::RespError>
-Parser::parse_recursive(std::string_view data, size_t &pos) {
+Parser::parse_recursive(std::string_view data, size_t &pos, int depth) {
 	using enum RespError;
+	if (depth > MAX_DEPTH) FAILED(NESTING_TOO_DEEP);
 	if (pos >= data.size()) FAILED(UNEXPECTED_EOF);
 
 	// Read a line
@@ -72,8 +73,8 @@ Parser::parse_recursive(std::string_view data, size_t &pos) {
 		std::vector<Value> arr;
 		arr.reserve(static_cast<size_t>(std::min(len, MAX_ARRAY_RESERVE)));
 
-		for (int i = 0; i < len; ++i) {
-			auto v = TRY(parse_recursive(data, pos));
+		for (int64_t i = 0; i < len; ++i) {
+			auto v = TRY(parse_recursive(data, pos, depth + 1));
 			arr.push_back(std::move(v));
 		}
 
