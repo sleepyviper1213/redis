@@ -414,3 +414,58 @@ SCENARIO("A keyspace that tracks its expiry", "[aof][database]") {
 		}
 	}
 }
+
+SCENARIO("A manifest cannot point outside the append-only directory",
+		 "[aof][security]") {
+	GIVEN("a directory with a manifest and a file beside it that must survive") {
+		TempDir dir;
+		test::TempFile snapshot;
+		{
+			AofServer server(dir.path(), snapshot.path());
+			REQUIRE(server.start().has_value());
+			server.run({"SET", "a", "1"});
+		}
+		const fs::path precious = dir.path().parent_path() / "precious.txt";
+		std::ofstream(precious) << "keep me";
+
+		const auto start_with = [&](const std::string &manifest) {
+			std::ofstream(dir.path() / "appendonly.manifest", std::ios::trunc)
+				<< manifest;
+			AofServer server(dir.path(), snapshot.path());
+			return server.start();
+		};
+
+		WHEN("an incremental file name climbs out of the directory") {
+			const auto started =
+				start_with("incr ../precious.txt\nseq 1\n");
+			THEN("the server refuses to start and leaves the file alone") {
+				REQUIRE_FALSE(started);
+				CHECK(started.error().find("bad incremental file name") !=
+					  std::string::npos);
+				CHECK(fs::file_size(precious) == 7);
+			}
+		}
+		WHEN("a base file name is a path or not one of the server's names") {
+			for (const char *name :
+				 {"../x.snap", "/etc/passwd", "sub/appendonly.1.base.snap",
+				  "appendonly..base.snap", "appendonly.1x.base.snap",
+				  "other.snap"}) {
+				const auto started = start_with(std::string("base ") + name +
+												"\nincr appendonly.1.incr.aof\n"
+												"seq 1\n");
+				THEN(std::string("it is refused: ") + name) {
+					REQUIRE_FALSE(started);
+					CHECK(started.error().find("bad base file name") !=
+						  std::string::npos);
+				}
+			}
+		}
+		WHEN("the names are the server's own") {
+			const auto started = start_with("incr appendonly.1.incr.aof\nseq 1\n");
+			THEN("it starts") { CHECK(started); }
+		}
+
+		std::error_code ignored;
+		fs::remove(precious, ignored);
+	}
+}

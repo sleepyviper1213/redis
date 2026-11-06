@@ -4,13 +4,14 @@
 #include "core/resp/parser.hpp"
 #include "core/resp/request.hpp"
 #include "server/commands/handler.hpp"
-#include "server/persistence/snapshot.hpp"
 #include "server/database.hpp" // IWYU pragma: keep (db.drain_expired())
+#include "server/persistence/snapshot.hpp"
 
 #include <fmt/format.h>
 #include <fmt/std.h>
 #include <spdlog/logger.h>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <charconv>
@@ -57,6 +58,22 @@ void encode_command(std::string &out, const Range &args) {
 		fmt::format_to(into, "${}\r\n{}\r\n", arg.size(), arg);
 }
 
+// Whether \p name is one the server itself would have written, appendonly.<n>
+// followed by \p suffix. The manifest names files in the AOF directory and the
+// server reads, truncates and deletes them, so a name must never reach outside
+// it: only digits are allowed between the fixed parts, so no separator, "..",
+// drive letter or absolute path can get through.
+bool is_managed_name(std::string_view name, std::string_view suffix) {
+	constexpr std::string_view PREFIX = "appendonly.";
+	if (name.size() <= PREFIX.size() + suffix.size() ||
+		!name.starts_with(PREFIX) || !name.ends_with(suffix))
+		return false;
+	const auto seq =
+		name.substr(PREFIX.size(), name.size() - PREFIX.size() - suffix.size());
+	return std::ranges::all_of(seq,
+							   [](char c) { return c >= '0' && c <= '9'; });
+}
+
 std::expected<std::string, std::string> read_file(const fs::path &file) {
 	std::ifstream in(file, std::ios::binary);
 	if (!in) return std::unexpected(fmt::format("cannot open {}", file));
@@ -88,8 +105,16 @@ AppendOnlyFile::read_manifest(const fs::path &file) {
 	std::string value;
 	while (in >> key >> value) {
 		if (key == "base") {
+			if (!is_managed_name(value, ".base.snap"))
+				return std::unexpected(
+					fmt::format("{}: bad base file name '{}'", file, value));
 			manifest.base = value;
 		} else if (key == "incr") {
+			if (!is_managed_name(value, ".incr.aof"))
+				return std::unexpected(
+					fmt::format("{}: bad incremental file name '{}'",
+								file,
+								value));
 			manifest.incr.push_back(value);
 		} else if (key == "seq") {
 			const auto [ptr, ec] = std::from_chars(value.data(),
@@ -350,11 +375,14 @@ void AppendOnlyFile::write_out() {
 		out_.clear();
 		std::error_code ec;
 		fs::resize_file(incr_path_, good_size_, ec);
-		// Cap the pending buffer so a sustained disk error cannot exhaust memory.
+		// Cap the pending buffer so a sustained disk error cannot exhaust
+		// memory.
 		constexpr size_t MAX_PENDING = 64 * 1024 * 1024;
 		if (buf_.size() > MAX_PENDING) {
-			log().critical("AOF pending buffer exceeded {}MB; discarding {} bytes",
-						   MAX_PENDING / (1024 * 1024), buf_.size());
+			log().critical(
+				"AOF pending buffer exceeded {}MB; discarding {} bytes",
+				MAX_PENDING / (1024 * 1024),
+				buf_.size());
 			buf_.clear();
 		}
 		return;
