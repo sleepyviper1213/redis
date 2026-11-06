@@ -15,3 +15,17 @@
 #ifndef REDIS_NO_UNIQUE_ADDRESS
 #define REDIS_NO_UNIQUE_ADDRESS
 #endif
+
+/// [[gnu::const]]: return depends only on arguments; no memory reads.
+/// [[gnu::pure]]:  return depends on arguments and readable memory, no writes.
+/// [[gnu::hot]]:   function is on a hot path; optimise more aggressively.
+/// All are no-ops on compilers that do not understand GNU attributes.
+#if defined(__GNUC__) || defined(__clang__)
+#define REDIS_CONST_FN [[gnu::const]]
+#define REDIS_PURE_FN  [[gnu::pure]]
+#define REDIS_HOT_FN   [[gnu::hot]]
+#else
+#define REDIS_CONST_FN
+#define REDIS_PURE_FN
+#define REDIS_HOT_FN
+#endif

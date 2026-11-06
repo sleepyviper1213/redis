@@ -55,7 +55,8 @@ bool read_length(std::string_view data, size_t &pos, int64_t &out) {
 		value = (value * BASE) + (data[i] - '0');
 		++i;
 	}
-	if (i == pos || data.size() - i < 2 || data[i] != '\r' || data[i + 1] != '\n')
+	if (i == pos || data.size() - i < 2 || data[i] != '\r' ||
+		data[i + 1] != '\n')
 		return false;
 	out = value;
 	pos = i + 2;
@@ -124,8 +125,9 @@ parse_request(std::string_view data, size_t &pos,
 	const auto is_argument = [](const Value &v) {
 		return v.is_bulk_string() || v.is_simple_string();
 	};
-	const bool well_formed = value->is_array() && !value->as_array().empty() &&
-							 std::ranges::all_of(value->as_array(), is_argument);
+	const bool well_formed =
+		value->is_array() && !value->as_array().empty() &&
+		std::ranges::all_of(value->as_array(), is_argument);
 	if (!well_formed) return RequestKind::Malformed;
 	for (const Value &arg : value->as_array())
 		args.push_back(owned.emplace_back(arg.as_string()));

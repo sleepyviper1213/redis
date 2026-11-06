@@ -1,7 +1,7 @@
 #pragma once
 #include "server/commands/command.hpp"
 #include "server/persistence/child_process.hpp"
-#include "server/storage/database_fwd.hpp"
+#include "server/database_fwd.hpp"
 
 #include <atomic>
 #include <condition_variable>

@@ -12,13 +12,16 @@ include(Catch)
 add_executable(redis_unit_test
     unit/logging.setup.cpp
 
+    unit/core/allocator.test.cpp
     unit/core/resp/parser.test.cpp
     unit/core/resp/request.test.cpp
+    unit/core/simple_dynamic_string.test.cpp
     unit/core/utils/glob.test.cpp
     unit/core/utils/indirect.test.cpp
     unit/core/utils/ring_buffer.test.cpp
     unit/core/utils/saturating.test.cpp
 
+    unit/server/database.test.cpp
     unit/server/persistence/aof.test.cpp
     unit/server/commands/config.test.cpp
     unit/server/commands/handler.test.cpp
@@ -32,9 +35,6 @@ add_executable(redis_unit_test
     unit/server/net/executor.test.cpp
     unit/server/net/pipeline.test.cpp
     unit/server/persistence/snapshot.test.cpp
-    unit/server/storage/allocator.test.cpp
-    unit/server/storage/database.test.cpp
-    unit/server/storage/simple_dynamic_string.test.cpp
 )
 target_link_libraries(redis_unit_test PRIVATE Catch2::Catch2WithMain
                                               redis::server_lib)

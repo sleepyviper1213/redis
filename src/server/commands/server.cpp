@@ -1,13 +1,14 @@
 // Connection and server commands: PING, ECHO, SAVE, BGSAVE, LASTSAVE,
 // CONFIG GET, CONFIG SET loglevel.
 #include "command.hpp"
+#include "core/chrono.hpp"
 #include "core/logging.hpp"
 #include "core/utils/glob.hpp"
 #include "core/utils/toupper.hpp"
 #include "server/commands/reply.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep
+#include "server/database.hpp" // IWYU pragma: keep
 
 #include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
@@ -52,10 +53,7 @@ void bgsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
 }
 
 void lastsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
-	const auto unix_seconds =
-		std::chrono::duration_cast<std::chrono::seconds>(
-			ctx.persistence.last_save().time_since_epoch())
-			.count();
+	const auto unix_seconds = chrono::to_unix_s(ctx.persistence.last_snapshot());
 	out.integer(unix_seconds);
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 #include "core/resp/value.hpp"
 #include "command.hpp"
-#include "server/storage/object.hpp"
+#include "core/object.hpp"
 
 #include <span>
 #include <string>

@@ -2,7 +2,7 @@
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "server/storage/database.hpp"
+#include "server/database.hpp"
 
 #include <atomic>
 #include <filesystem>

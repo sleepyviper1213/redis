@@ -4,9 +4,9 @@
 #include "core/resp/request.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
+#include "server/database.hpp" // IWYU pragma: keep (db.size(), db.prefetch())
+#include "server/database_fwd.hpp"
 #include "server/persistence/append_only_file.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep (db.size(), db.prefetch())
-#include "server/storage/database_fwd.hpp"
 
 #include <fmt/format.h>
 
@@ -23,9 +23,9 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 	size_t consumed = 0;
 
 	while (consumed < pending.size()) {
-		size_t pos       = consumed;
-		const auto found = resp::parse_request(pending, pos, batch.args,
-											   batch.owned);
+		size_t pos = consumed;
+		const auto found =
+			resp::parse_request(pending, pos, batch.args, batch.owned);
 		if (!found) {
 			if (resp::Parser::is_incomplete(found.error())) break;
 			ReplyWriter(batch.protocol_error)

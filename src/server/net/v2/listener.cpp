@@ -24,7 +24,7 @@ constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds(100);
 } // namespace
 
 Listener::Listener(boost::asio::any_io_executor ex,
-					 std::shared_ptr<Services> services)
+				   std::shared_ptr<Services> services)
 	: ex_(std::move(ex)),
 	  acceptor_(boost::asio::make_strand(ex_)),
 	  services_(std::move(services)),

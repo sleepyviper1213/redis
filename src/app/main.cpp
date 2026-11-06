@@ -1,10 +1,10 @@
-#include <CLI/CLI.hpp>
 #include "core/logging.hpp"
 #include "server/diagnostics/crash.hpp"
-#include "server/redis_server.hpp"
 #include "server/persistence/append_only_file.hpp"
-#include "app/setup_cli_options.hpp"
+#include "server/redis_server.hpp"
+#include "setup_cli_options.hpp"
 
+#include <CLI/CLI.hpp>
 #include <fmt/base.h>
 #include <magic_enum/magic_enum.hpp>
 
@@ -34,7 +34,7 @@ int current_pid() {
 std::optional<redis::AofConfig> aof_config(const CLI::App &app) {
 	if (!app.get_option("--appendonly")->as<bool>()) return std::nullopt;
 	return redis::AofConfig{
-		.dir   = app.get_option("--appenddir")->as<std::string>(),
+		.dir = app.get_option("--appenddir")->as<std::string>(),
 		// The option only accepts the enumerators' names.
 		.fsync = magic_enum::enum_cast<redis::FsyncPolicy>(
 					 app.get_option("--appendfsync")->as<std::string>())

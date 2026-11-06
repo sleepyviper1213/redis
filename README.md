@@ -29,9 +29,16 @@ Background saving started
 - **Snapshot persistence**: `SAVE`, and `BGSAVE` that `fork()`s so the child
   writes a copy-on-write image while the parent keeps serving. Snapshots are
   loaded at startup and written on SIGINT/SIGTERM.
+- **Append-only file (AOF)**: enabled with `--appendonly`. Every write command
+  is appended to an AOF and replayed at startup, so writes since the last
+  snapshot survive a crash. Fsync policy is configurable: `always`,
+  `everysec` (default), or `no`.
 - **Crash-safe writes**: temp file, `fsync` (`F_FULLFSYNC` on macOS, where
   plain `fsync` stops at the drive's cache), atomic `rename`, then `fsync` of
   the directory. A reader sees the old snapshot or the new one, never half.
+- **Crash reporter**: on POSIX, a signal handler writes the in-flight command
+  and a stack trace to the log file before the process exits, so post-mortem
+  debugging has context even without a core dump.
 - **Defensive input handling**: client-declared lengths are bounded, per-client
   buffers are capped, and malformed input gets a RESP error before the
   connection closes.
@@ -45,11 +52,30 @@ Background saving started
 | Lists   | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, `LRANGE`, `LINDEX` |
 | Sets    | `SADD`, `SREM`, `SCARD`, `SMEMBERS`, `SISMEMBER`, `SINTER`, `SPOP` |
 | Hashes  | `HSET`, `HGET`, `HMGET`, `HDEL`, `HGETALL`, `HLEN`, `HEXISTS` |
-| Server  | `PING`, `ECHO`, `SAVE`, `BGSAVE`, `LASTSAVE`, `CONFIG GET` |
+| Server  | `PING`, `ECHO`, `SAVE`, `BGSAVE`, `LASTSAVE`, `CONFIG GET`, `CONFIG SET` |
 
 Not implemented: sorted sets, streams, pub/sub, transactions, replication and
 multiple databases (`SELECT`). The snapshot format is this project's own, not
 Redis' RDB.
+
+## Performance
+
+Measured with `scripts/bench_server.sh` against real Redis on Apple Silicon
+(M-series, `RUNS=7 REQUESTS=500000`), best of 7 runs:
+
+| Scenario | This server | Redis | |
+|----------|------------:|------:|-|
+| 50 clients, `SET` | 98,348 rps | 104,254 rps | 94 % |
+| 1 client, serial | 35,577 rps | 35,251 rps | ≈ 1× |
+| Pipelined (`-P 16`) | 1,377,411 rps | 1,422,475 rps | 97 % |
+| Large-value `GET` | **1,060,445 rps** | 823,045 rps | **+29 %** |
+
+The large-value `GET` lead comes from zero-copy argument parsing (args are
+`string_view`s into the read buffer) and writing replies straight into the
+output buffer without an intermediate copy. The keyspace is backed by
+`absl::flat_hash_map` by default; `boost::unordered_flat_map` or
+`std::unordered_map` can be selected at configure time with
+`-DREDIS_KEYSPACE_MAP=boost|std`.
 
 ## Design
 
@@ -139,6 +165,9 @@ scripts/run.sh linux-gcc Release -- --port 6379 --dump ./dump.snap
 | `--io-threads` | `1` | Network I/O threads; above 1, commands run on a separate thread (`REDIS_IO_THREADS`) |
 | `--sender-sessions` | off | Serve clients with sender-based (stdexec) sessions instead of coroutines (`REDIS_SENDER_SESSIONS`) |
 | `--dump` | `dump.snap` | Snapshot file (`REDIS_DUMP_FILE`) |
+| `--appendonly` | off | Enable the append-only file; write every command to it and replay at startup (`REDIS_APPENDONLY`) |
+| `--appendfsync` | `everysec` | AOF fsync policy: `always`, `everysec`, `no` (`REDIS_APPENDFSYNC`) |
+| `--appenddir` | `appendonlydir` | Directory for AOF files (`REDIS_APPENDDIR`) |
 | `--log-level` | `info` | `trace` … `critical`, or `off` (`REDIS_LOGLEVEL`) |
 | `--log-file` | `redis_server.log` | Log file in addition to stderr (`REDIS_LOGFILE`) |
 | `--config` | | Config file with any of the above (`REDIS_CONFIG_FILE`) |

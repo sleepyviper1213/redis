@@ -7,7 +7,7 @@
 #include "server/commands/reply.hpp"
 #include "server/diagnostics/current_command.hpp"
 #include "server/persistence/append_only_file.hpp"
-#include "server/storage/database.hpp"
+#include "server/database.hpp"
 
 #include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
 #include <fmt/format.h>

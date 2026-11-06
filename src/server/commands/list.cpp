@@ -1,8 +1,8 @@
 // List commands: LPUSH, RPUSH, LPOP, RPOP, LLEN, LRANGE, LINDEX.
 #include "command.hpp"
+#include "core/object.hpp"
 #include "server/commands/reply.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep
-#include "server/storage/object.hpp"
+#include "server/database.hpp" // IWYU pragma: keep
 
 #include <algorithm>
 #include <array>
@@ -94,7 +94,8 @@ void llen(CommandContext &ctx, Args args, ReplyWriter &out) {
 }
 
 // Converts a Redis list index (negative counts from the tail) to an offset.
-int64_t normalize_index(int64_t index, int64_t size) {
+REDIS_CONST_FN REDIS_HOT_FN int64_t normalize_index(int64_t index,
+													int64_t size) {
 	return index < 0 ? index + size : index;
 }
 
@@ -156,10 +157,14 @@ void lindex(CommandContext &ctx, Args args, ReplyWriter &out) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "LPUSH", .fn = push<End::Head>, .arity = -3, .write = true},
-	CommandInfo{.name = "RPUSH", .fn = push<End::Tail>, .arity = -3, .write = true},
-	CommandInfo{.name = "LPOP", .fn = pop<End::Head>, .arity = -2, .write = true},
-	CommandInfo{.name = "RPOP", .fn = pop<End::Tail>, .arity = -2, .write = true},
+	CommandInfo{
+		.name = "LPUSH", .fn = push<End::Head>, .arity = -3, .write = true},
+	CommandInfo{
+		.name = "RPUSH", .fn = push<End::Tail>, .arity = -3, .write = true},
+	CommandInfo{
+		.name = "LPOP", .fn = pop<End::Head>, .arity = -2, .write = true},
+	CommandInfo{
+		.name = "RPOP", .fn = pop<End::Tail>, .arity = -2, .write = true},
 	CommandInfo{.name = "LLEN", .fn = llen, .arity = 2},
 	CommandInfo{.name = "LRANGE", .fn = lrange, .arity = 4},
 	CommandInfo{.name = "LINDEX", .fn = lindex, .arity = 3},

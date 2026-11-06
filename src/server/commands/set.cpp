@@ -2,8 +2,8 @@
 #include "command.hpp"
 #include "server/commands/reply.hpp"
 #include "server/persistence/append_only_file.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep
-#include "server/storage/object.hpp"
+#include "server/database.hpp" // IWYU pragma: keep
+#include "core/object.hpp"
 
 #include <algorithm>
 #include <array>

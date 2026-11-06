@@ -1,6 +1,7 @@
 #include "lifecycle.hpp"
 
 #include "channels.hpp"
+#include "core/chrono.hpp"
 #include "settings.hpp"
 
 #include <fmt/base.h>
@@ -41,10 +42,7 @@ class json_line_formatter final : public spdlog::formatter {
 public:
 	void format(const spdlog::details::log_msg &msg,
 				spdlog::memory_buf_t &dest) final {
-		const auto epoch_ms =
-			std::chrono::duration_cast<std::chrono::milliseconds>(
-				msg.time.time_since_epoch())
-				.count();
+		const auto epoch_ms = chrono::to_unix_ms(msg.time);
 		fmt::format_to(fmt::appender(dest),
 					   R"({{"ts_ms":{},"level":"{}","logger":"{}","msg":")",
 					   epoch_ms,

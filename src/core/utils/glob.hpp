@@ -1,5 +1,7 @@
 #pragma once
 
+#include "attributes.hpp"
+
 #include <string_view>
 
 namespace redis {
@@ -16,7 +18,7 @@ namespace redis {
  * Runs in O(|pattern| * |text|) worst case: `*` backtracks only to the most
  * recent star, never recursively.
  */
-[[nodiscard]] bool glob_match(std::string_view pattern,
-							  std::string_view text) noexcept;
+[[nodiscard]] REDIS_PURE_FN bool glob_match(std::string_view pattern,
+										   std::string_view text) noexcept;
 
 } // namespace redis

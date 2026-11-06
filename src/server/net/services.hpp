@@ -4,7 +4,7 @@
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "server/storage/database.hpp"
+#include "server/database.hpp"
 
 #include <filesystem>
 #include <optional>

@@ -10,7 +10,10 @@ add_library(
     resp/request.cpp
     resp/value.cpp
     utils/glob.cpp
-    utils/toupper.cpp)
+    utils/toupper.cpp
+    deadline_timer.cpp
+    elapsed_timer.cpp
+)
 
 add_library(redis::core ALIAS redis_core)
 

@@ -1,9 +1,10 @@
 #include "snapshot_manager.hpp"
 
+#include "core/chrono.hpp"
 #include "core/logging.hpp"
 #include "server/persistence/child_process.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep (db.size())
-#include "server/storage/database_fwd.hpp"
+#include "server/database.hpp" // IWYU pragma: keep (db.size())
+#include "server/database_fwd.hpp"
 #include "snapshot.hpp"
 
 #include <fmt/chrono.h> // IWYU pragma: keep (fmt formatters used by the logger)
@@ -44,7 +45,7 @@ std::expected<void, std::string> SnapshotManager::save(const Database &db) {
 		log().error("{}", result.error());
 		return std::unexpected("ERR " + result.error());
 	}
-	last_save_ = clock::now();
+	last_save_ = std::chrono::system_clock::now();
 	log().info("DB saved on disk to {}", file_);
 	return {};
 }
@@ -64,7 +65,8 @@ SnapshotManager::background_save(const Database &db) {
 
 	log().info("Background saving started by pid {}", child->pid());
 	child_.emplace(std::move(*child));
-	child_started_ = clock::now();
+	child_forked_at_ = std::chrono::system_clock::now();
+	child_timer_.start();
 	return {};
 }
 
@@ -94,12 +96,28 @@ std::expected<void, std::string> SnapshotManager::load(Database &db) {
 	return result;
 }
 
+[[nodiscard]] bool
+SnapshotManager::background_save_in_progress() const noexcept {
+	return child_.has_value();
+}
+
+[[nodiscard]] std::chrono::system_clock::time_point
+SnapshotManager::last_snapshot() const noexcept {
+	return last_save_;
+}
+
+
+[[nodiscard]] const std::filesystem::path &
+SnapshotManager::file() const noexcept {
+	return file_;
+}
+
+
 void SnapshotManager::finish_background_save(
 	const persistence::posix::ChildResult &result) {
-	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-		clock::now() - child_started_);
+	const auto elapsed = child_timer_.elapsed();
 	if (result.success) {
-		last_save_ = child_started_; // the snapshot reflects fork time
+		last_save_ = child_forked_at_; // the snapshot reflects fork time
 		log().info("Background saving terminated with success in {}", elapsed);
 	} else {
 		log().error("Background saving failed after {}: {}", elapsed,

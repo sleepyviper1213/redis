@@ -1,6 +1,7 @@
 #pragma once
+#include "core/utils/attributes.hpp"
 #include "reply.hpp"
-#include "server/storage/database_fwd.hpp"
+#include "server/database_fwd.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -51,6 +52,7 @@ std::span<const CommandInfo> hash_commands();
 std::span<const CommandInfo> server_commands();
 
 /// Parse a decimal int64 argument the way Redis does: no spaces, no '+'.
-[[nodiscard]] std::optional<int64_t> parse_int(std::string_view s) noexcept;
+[[nodiscard]] REDIS_PURE_FN REDIS_HOT_FN
+std::optional<int64_t> parse_int(std::string_view s) noexcept;
 
 } // namespace redis

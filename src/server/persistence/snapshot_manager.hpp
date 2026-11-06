@@ -1,6 +1,7 @@
 #pragma once
+#include "core/elapsed_timer.hpp"
 #include "server/persistence/child_process.hpp"
-#include "server/storage/database_fwd.hpp"
+#include "server/database_fwd.hpp"
 
 #include <chrono>
 #include <expected>
@@ -20,9 +21,6 @@ namespace redis {
  */
 class SnapshotManager {
 public:
-	using clock      = std::chrono::system_clock;
-	using time_point = clock::time_point;
-
 	explicit SnapshotManager(std::filesystem::path file);
 
 	SnapshotManager(const SnapshotManager &)            = delete;
@@ -52,24 +50,23 @@ public:
 	/// Load the snapshot file into \p db. A missing file is not an error.
 	[[nodiscard]] std::expected<void, std::string> load(Database &db);
 
-	[[nodiscard]] bool background_save_in_progress() const noexcept {
-		return child_.has_value();
-	}
+	[[nodiscard]] bool background_save_in_progress() const noexcept;
 
-	/// Time of the last successful save; server start if there was none.
-	[[nodiscard]] time_point last_save() const noexcept { return last_save_; }
+	/// Time of the last successful snapshot; server start if there was none.
+	[[nodiscard]] std::chrono::system_clock::time_point
+	last_snapshot() const noexcept;
 
-	[[nodiscard]] const std::filesystem::path &file() const noexcept {
-		return file_;
-	}
+	[[nodiscard]] const std::filesystem::path &file() const noexcept;
 
 private:
 	void finish_background_save(const persistence::posix::ChildResult &result);
 
 	std::filesystem::path file_;
-	time_point last_save_ = clock::now();
+	std::chrono::system_clock::time_point last_save_ =
+		std::chrono::system_clock::now();
+	std::chrono::system_clock::time_point child_forked_at_;
 	std::optional<persistence::posix::Child> child_;
-	time_point child_started_;
+	ElapsedTimer child_timer_;
 };
 
 } // namespace redis

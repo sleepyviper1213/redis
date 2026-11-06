@@ -1,6 +1,6 @@
 #pragma once
 #include "child_process.hpp"
-#include "server/storage/database_fwd.hpp"
+#include "server/database_fwd.hpp"
 
 #include <expected>
 #include <filesystem>

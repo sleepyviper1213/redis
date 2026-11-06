@@ -5,7 +5,7 @@
 #include "core/resp/request.hpp"
 #include "server/commands/handler.hpp"
 #include "server/persistence/snapshot.hpp"
-#include "server/storage/database.hpp" // IWYU pragma: keep (db.drain_expired())
+#include "server/database.hpp" // IWYU pragma: keep (db.drain_expired())
 
 #include <fmt/format.h>
 #include <fmt/std.h>
