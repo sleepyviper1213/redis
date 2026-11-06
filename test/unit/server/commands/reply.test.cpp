@@ -82,3 +82,21 @@ TEST_CASE("ReplyWriter appends to what is already in the buffer", "[reply]") {
 	writer.integer(1);
 	CHECK(out == "+OK\r\n:1\r\n");
 }
+
+TEST_CASE("A simple string or error cannot carry a line break", "[reply][security]") {
+	std::string out;
+	ReplyWriter writer(out);
+
+	SECTION("CR and LF become spaces") {
+		writer.error("ERR unknown command 'a\r\n+INJECTED'");
+		CHECK(out == "-ERR unknown command 'a  +INJECTED'\r\n");
+	}
+	SECTION("a lone LF or CR too, anywhere in the text") {
+		writer.simple("\nfirst\rsecond\n");
+		CHECK(out == "+ first second \r\n");
+	}
+	SECTION("text without one is unchanged") {
+		writer.simple("PONG");
+		CHECK(out == "+PONG\r\n");
+	}
+}

@@ -54,8 +54,22 @@ public:
 	void syntax_error() { error(SYNTAX_ERROR); }
 
 private:
+	// A simple string or error ends at the first CRLF, so one inside the text
+	// (a command name or argument echoed back, say) would end the reply early
+	// and let the rest pass as a reply of its own. Like Redis, turn them into
+	// spaces.
 	void line(char prefix, std::string_view text) {
-		fmt::format_to(std::back_inserter(out_), "{}{}\r\n", prefix, text);
+		out_ += prefix;
+		const auto first = text.find_first_of("\r\n");
+		if (first == std::string_view::npos) {
+			out_ += text;
+		} else {
+			const size_t from = out_.size();
+			out_ += text;
+			for (size_t i = from + first; i < out_.size(); ++i)
+				if (out_[i] == '\r' || out_[i] == '\n') out_[i] = ' ';
+		}
+		out_ += "\r\n";
 	}
 
 	template <typename T>
