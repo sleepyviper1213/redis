@@ -1,7 +1,7 @@
 #pragma once
 
 #include "date_time.hpp"
-#include "../utils/attributes.hpp"
+#include "core/utils/attributes.hpp"
 
 #include <chrono>
 #include <cstdint>

@@ -9,7 +9,7 @@
 #include "reply.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "common/store/database_fwd.hpp"
-#include "../persistence/append_only_file.hpp"
+#include "server/persistence/append_only_file.hpp"
 
 #include <fmt/format.h>
 

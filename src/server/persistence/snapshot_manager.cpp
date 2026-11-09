@@ -1,7 +1,7 @@
 #include "snapshot_manager.hpp"
 
 #include "core/chrono/date_time.hpp"
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.size())
 #include "core/os/child_process.hpp"
 #include "detail/snapshot.hpp"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "basic_value_types.hpp"
+#include "object_type.hpp"
 #include "core/utils/attributes.hpp"
 
 #include <cassert>
@@ -8,17 +9,11 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <string>
 #include <string_view>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace redis::detail {
-
-/// The type of a key's value. The order is the snapshot format's type byte.
-enum class ObjectType : uint8_t { String, List, Set, Hash };
 
 /**
  * \brief A key's value, laid out like Redis's robj: a type tag and one pointer
@@ -403,32 +398,6 @@ private:
 	REDIS_NO_UNIQUE_ADDRESS Allocator alloc_;
 	Repr repr_;
 };
-
-/// An object holding the collection \p value, using \p value's allocator.
-template <typename T>
-[[nodiscard]] auto make_object(T value) {
-	using Allocator = typename std::allocator_traits<
-		typename T::allocator_type>::template rebind_alloc<char>;
-	return BasicObject<Allocator>::template make<T>(
-		Allocator(value.get_allocator()),
-		std::move(value));
-}
-
-/// \return The collection as a \p T, or nullptr if \p object holds another
-///         type.
-template <typename T, typename Allocator>
-[[nodiscard]] T *object_as(BasicObject<Allocator> &object) noexcept {
-	return object.template as<T>();
-}
-
-/**
- * \brief The name the TYPE command reports for \p object.
- */
-template <typename Allocator>
-[[nodiscard]] std::string_view type_name(const BasicObject<Allocator> &object) {
-	constexpr std::string_view names[] = {"string", "list", "set", "hash"};
-	return names[static_cast<std::size_t>(object.type())];
-}
 
 static_assert(sizeof(BasicObject<std::allocator<char>>) == 16,
 			  "a type tag and a pointer, as in robj");

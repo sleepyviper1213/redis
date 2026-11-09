@@ -2,9 +2,9 @@
 
 #include "admission.hpp"
 #include "server/log_channels.hpp"
-#include "../executor.hpp"
-#include "../net_error.hpp"
-#include "../formatter.hpp"
+#include "server/net/executor.hpp"
+#include "server/net/net_error.hpp"
+#include "server/net/formatter.hpp"
 #include "pipeline.hpp"
 #include "server/services.hpp"
 

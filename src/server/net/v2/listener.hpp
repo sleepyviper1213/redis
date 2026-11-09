@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../net_error.hpp"
-#include "../nothrow_awaitable_t.hpp" // IWYU pragma: keep
+#include "server/net/net_error.hpp"
+#include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
 #include "detail/asio_context.hpp"
 #include "detail/session.hpp"

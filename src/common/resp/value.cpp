@@ -1,5 +1,5 @@
 #include "core/error.hpp"
-#include "../resp.hpp"
+#include "common/resp.hpp"
 
 #include <fmt/base.h>
 #include <fmt/ranges.h>

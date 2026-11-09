@@ -1,8 +1,8 @@
 #include "listener.hpp"
 
 #include "server/log_channels.hpp"
-#include "../formatter.hpp"
-#include "../listener.hpp"
+#include "server/net/formatter.hpp"
+#include "server/net/listener.hpp"
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>

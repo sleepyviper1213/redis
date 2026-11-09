@@ -7,7 +7,7 @@
 #include "core/utils/glob.hpp"
 #include "detail/expire_time.hpp"
 #include "reply.hpp"
-#include "../persistence/append_only_file.hpp"
+#include "server/persistence/append_only_file.hpp"
 
 #include <fmt/format.h>
 

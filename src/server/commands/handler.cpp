@@ -1,14 +1,14 @@
 #include "handler.hpp"
 
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 #include "common/resp/value.hpp"
 #include "core/utils/ascii.hpp"
 #include "command.hpp"
 #include "reply.hpp"
-#include "../diagnostics/current_command.hpp"
-#include "../persistence/append_only_file.hpp"
+#include "server/diagnostics/current_command.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "common/store/database.hpp"
-#include "../stats.hpp"
+#include "server/stats.hpp"
 
 #include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
 #include <fmt/format.h>

@@ -1,7 +1,7 @@
 // Set commands: SADD, SREM, SCARD, SMEMBERS, SISMEMBER, SINTER, SPOP.
 #include "command.hpp"
 #include "reply.hpp"
-#include "../persistence/append_only_file.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "common/store/object.hpp"
 

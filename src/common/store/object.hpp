@@ -10,10 +10,32 @@
 
 namespace redis {
 
-using detail::make_object;
-using detail::object_as;
-using detail::ObjectType;
-using detail::type_name;
+/// An object holding the collection \p value, using \p value's allocator.
+template <typename T>
+[[nodiscard]] auto make_object(T value) {
+	using Allocator = typename std::allocator_traits<
+		typename T::allocator_type>::template rebind_alloc<char>;
+	return detail::BasicObject<Allocator>::template make<T>(
+		Allocator(value.get_allocator()),
+		std::move(value));
+}
+
+/// \return The collection as a \p T, or nullptr if \p object holds another
+///         type.
+template <typename T, typename Allocator>
+[[nodiscard]] T *object_as(detail::BasicObject<Allocator> &object) noexcept {
+	return object.template as<T>();
+}
+
+/**
+ * \brief The name the TYPE command reports for \p object.
+ */
+template <typename Allocator>
+[[nodiscard]] std::string_view
+type_name(const detail::BasicObject<Allocator> &object) {
+	constexpr std::string_view names[] = {"string", "list", "set", "hash"};
+	return names[static_cast<std::size_t>(object.type())];
+}
 
 using ValueTypes = detail::BasicValueTypes<DefaultAllocator>;
 using String     = ValueTypes::String;

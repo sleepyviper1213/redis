@@ -1,7 +1,7 @@
 #include "admission.hpp"
 
-#include "../formatter.hpp" // IWYU pragma: keep (fmt formatter for endpoints)
-#include "../guard.hpp"
+#include "server/net/formatter.hpp" // IWYU pragma: keep (fmt formatter for endpoints)
+#include "server/net/guard.hpp"
 
 #include <boost/asio/buffer.hpp>
 #include <fmt/format.h>

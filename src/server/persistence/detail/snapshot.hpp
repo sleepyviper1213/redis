@@ -1,6 +1,6 @@
 #pragma once
 #include "core/os/child_process.hpp"
-#include "../persist_error.hpp"
+#include "server/persistence/persist_error.hpp"
 #include "common/store/database_fwd.hpp"
 
 #include <expected>

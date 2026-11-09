@@ -1,7 +1,7 @@
 #include "pipeline.hpp"
 
 #include "common/resp/parser.hpp"
-#include "../net_error.hpp"
+#include "server/net/net_error.hpp"
 #include "common/resp/request.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"

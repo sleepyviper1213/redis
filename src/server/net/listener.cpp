@@ -1,8 +1,8 @@
 #include "listener.hpp"
 
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 #include "formatter.hpp" // IWYU pragma: keep (fmt formatters for endpoints and errors)
-#include "../services.hpp"
+#include "server/services.hpp"
 #include "detail/session.hpp"
 
 #include <boost/asio/any_io_executor.hpp>

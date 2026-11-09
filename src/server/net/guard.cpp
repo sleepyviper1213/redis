@@ -1,6 +1,6 @@
 #include "guard.hpp"
 
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 
 #include <spdlog/logger.h>
 

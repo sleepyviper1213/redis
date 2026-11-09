@@ -4,7 +4,7 @@
 #include "persist_error.hpp"
 #include "aof_config.hpp"
 #include "common/store/database_fwd.hpp"
-#include "../commands/args.hpp"
+#include "server/commands/args.hpp"
 
 #include <atomic>
 #include <condition_variable>

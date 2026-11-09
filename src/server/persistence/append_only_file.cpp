@@ -1,9 +1,9 @@
 #include "append_only_file.hpp"
 
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 #include "common/resp/parser.hpp"
 #include "common/resp/request.hpp"
-#include "../commands/handler.hpp"
+#include "server/commands/handler.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.drain_expired())
 #include "core/os/save_file.hpp"
 #include "detail/snapshot.hpp"

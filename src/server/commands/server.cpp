@@ -3,16 +3,16 @@
 #include "command.hpp"
 #include "common/store/allocator.hpp"
 #include "core/chrono/date_time.hpp"
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 #include "core/utils/ascii.hpp"
 #include "core/utils/glob.hpp"
 #include "reply.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
-#include "../net/guard.hpp"
-#include "../persistence/append_only_file.hpp"
-#include "../persistence/persist_error.hpp"
-#include "../persistence/snapshot_manager.hpp"
-#include "../stats.hpp"
+#include "server/net/guard.hpp"
+#include "server/persistence/append_only_file.hpp"
+#include "server/persistence/persist_error.hpp"
+#include "server/persistence/snapshot_manager.hpp"
+#include "server/stats.hpp"
 
 #include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>

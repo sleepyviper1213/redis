@@ -1,11 +1,11 @@
 #pragma once
 // Makes co_await on Asio operations return (error_code, result) tuples.
-#include "../nothrow_awaitable_t.hpp" // IWYU pragma: keep
+#include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
-#include "../guard.hpp"
+#include "server/net/guard.hpp"
 
 #include <cstddef>
 #include <memory>

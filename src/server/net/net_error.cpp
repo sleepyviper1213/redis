@@ -1,6 +1,6 @@
 #include "net_error.hpp"
 
-#include "../log_channels.hpp"
+#include "server/log_channels.hpp"
 #include "common/resp/parser.hpp"
 
 #include <fmt/format.h>

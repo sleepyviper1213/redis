@@ -1,6 +1,6 @@
 #pragma once
-#include "../database_fwd.hpp"
 #include "basic_object.hpp"
+#include "common/store/database_fwd.hpp"
 #include "core/chrono/date_time.hpp"
 #include "core/chrono/deadline_timer.hpp"
 #include "core/utils/attributes.hpp"
@@ -153,7 +153,7 @@ public:
 	[[nodiscard]] std::expected<T *, WrongType> find_as(std::string_view key) {
 		Object *object = find(key);
 		if (object == nullptr) return nullptr;
-		if (T *value = object_as<T>(*object)) return value;
+		if (T *value = object->template as<T>()) return value;
 		return std::unexpected(WrongType{});
 	}
 
@@ -196,7 +196,7 @@ public:
 		if (!found || *found != nullptr) return found;
 		auto [it, _] =
 			dict_.emplace(make_key(key), Object::template make<T>(alloc_));
-		return object_as<T>(it->second);
+		return it->second.template as<T>();
 	}
 
 	/**
