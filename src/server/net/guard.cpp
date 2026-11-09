@@ -1,8 +1,10 @@
 #include "guard.hpp"
 
-#include "core/logging.hpp"
+#include "../log_channels.hpp"
 
 #include <spdlog/logger.h>
+
+#include <utility>
 
 namespace redis {
 namespace {
@@ -21,7 +23,7 @@ size_t limit_of(const NetLimits &limits, Violation violation) noexcept {
 }
 } // namespace
 
-std::string_view to_string(Violation violation) noexcept {
+std::string_view format_as(Violation violation) noexcept {
 	switch (violation) {
 	case Violation::TooManyClients: return "too many clients";
 	case Violation::QueryBufferFull: return "query buffer limit exceeded";
@@ -32,6 +34,8 @@ std::string_view to_string(Violation violation) noexcept {
 	return "unknown";
 }
 
+NetGuard::NetGuard(NetLimits limits) noexcept : limits_(limits) {}
+
 std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 	// Count first, undo on refusal: two threads racing for the last slot cannot
 	// both get it.
@@ -40,7 +44,26 @@ std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 		clients_.fetch_sub(1, std::memory_order_relaxed);
 		return std::unexpected(Violation::TooManyClients);
 	}
+	admitted_.fetch_add(1, std::memory_order_relaxed);
 	return Ticket(this);
+}
+
+[[nodiscard]] std::expected<void, Violation>
+NetGuard::check_input(size_t pending) const noexcept {
+	if (pending > limits_.max_query_buffer)
+		return std::unexpected(Violation::QueryBufferFull);
+	return {};
+}
+
+[[nodiscard]] std::expected<void, Violation>
+NetGuard::check_output(size_t replies) const noexcept {
+	if (replies > limits_.max_output_buffer)
+		return std::unexpected(Violation::OutputBufferFull);
+	return {};
+}
+
+[[nodiscard]] const NetLimits &NetGuard::limits() const noexcept {
+	return limits_;
 }
 
 void NetGuard::record(Violation violation, std::string_view peer,
@@ -50,9 +73,44 @@ void NetGuard::record(Violation violation, std::string_view peer,
 		std::memory_order_relaxed);
 	log().warn("Closing {}: {} ({} against a limit of {})",
 			   peer,
-			   to_string(violation),
+			   violation,
 			   observed,
 			   limit_of(limits_, violation));
 }
+
+[[nodiscard]] uint64_t NetGuard::count(Violation violation) const noexcept {
+	return counts_[static_cast<size_t>(violation)].load(
+		std::memory_order_relaxed);
+}
+
+[[nodiscard]] uint64_t NetGuard::admitted() const noexcept {
+	return admitted_.load(std::memory_order_relaxed);
+}
+
+[[nodiscard]] size_t NetGuard::clients() const noexcept {
+	return clients_.load(std::memory_order_relaxed);
+}
+
+NetGuard::Ticket::Ticket(Ticket &&other) noexcept
+	: owner_(std::exchange(other.owner_, nullptr)) {}
+
+NetGuard::Ticket &NetGuard::Ticket::operator=(Ticket &&other) noexcept {
+	if (this != &other) {
+		release();
+		owner_ = std::exchange(other.owner_, nullptr);
+	}
+	return *this;
+}
+
+NetGuard::Ticket::~Ticket() { release(); }
+
+NetGuard::Ticket::Ticket(NetGuard *owner) noexcept : owner_(owner) {}
+
+void NetGuard::Ticket::release() noexcept {
+	if (owner_ != nullptr)
+		owner_->clients_.fetch_sub(1, std::memory_order_relaxed);
+	owner_ = nullptr;
+}
+
 
 } // namespace redis

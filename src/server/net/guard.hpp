@@ -1,5 +1,7 @@
 #pragma once
 
+#include "net_limits.hpp"
+
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -19,18 +21,7 @@ enum class Violation : uint8_t {
 	Count_, ///< Number of kinds; not a violation.
 };
 
-[[nodiscard]] std::string_view to_string(Violation violation) noexcept;
-
-/// Per-server resource limits. The defaults are Redis's (maxclients,
-/// client-query-buffer-limit, timeout), except for an output-buffer limit,
-/// which Redis leaves unlimited for ordinary clients.
-struct NetLimits {
-	size_t max_clients       = 10'000;
-	size_t max_query_buffer  = size_t{1} << 30;  // 1 GiB, as Redis
-	size_t max_output_buffer = size_t{256} << 20; // 256 MiB
-	/// Close a client that sends nothing for this long; zero never does.
-	std::chrono::seconds idle_timeout{0};
-};
+[[nodiscard]] std::string_view format_as(Violation violation) noexcept;
 
 /**
  * \brief The admission-control layer between the network and the session logic.
@@ -50,29 +41,24 @@ public:
 	public:
 		Ticket(const Ticket &)            = delete;
 		Ticket &operator=(const Ticket &) = delete;
-		Ticket(Ticket &&other) noexcept
-			: owner_(std::exchange(other.owner_, nullptr)) {}
-		Ticket &operator=(Ticket &&other) noexcept {
-			if (this != &other) {
-				release();
-				owner_ = std::exchange(other.owner_, nullptr);
-			}
-			return *this;
-		}
-		~Ticket() { release(); }
+
+		Ticket(Ticket &&other) noexcept;
+
+		Ticket &operator=(Ticket &&other) noexcept;
+
+		~Ticket();
 
 	private:
 		friend class NetGuard;
-		explicit Ticket(NetGuard *owner) noexcept : owner_(owner) {}
-		void release() noexcept {
-			if (owner_ != nullptr)
-				owner_->clients_.fetch_sub(1, std::memory_order_relaxed);
-			owner_ = nullptr;
-		}
+
+		explicit Ticket(NetGuard *owner) noexcept;
+
+		void release() noexcept;
+
 		NetGuard *owner_;
 	};
 
-	explicit NetGuard(NetLimits limits = {}) noexcept : limits_(limits) {}
+	explicit NetGuard(NetLimits limits = {}) noexcept;
 
 	NetGuard(const NetGuard &)            = delete;
 	NetGuard &operator=(const NetGuard &) = delete;
@@ -82,21 +68,13 @@ public:
 
 	/// Whether \p pending buffered, unparsed bytes are within the limit.
 	[[nodiscard]] std::expected<void, Violation>
-	check_input(size_t pending) const noexcept {
-		if (pending > limits_.max_query_buffer)
-			return std::unexpected(Violation::QueryBufferFull);
-		return {};
-	}
+	check_input(size_t pending) const noexcept;
 
 	/// Whether \p replies bytes of unsent replies are within the limit.
 	[[nodiscard]] std::expected<void, Violation>
-	check_output(size_t replies) const noexcept {
-		if (replies > limits_.max_output_buffer)
-			return std::unexpected(Violation::OutputBufferFull);
-		return {};
-	}
+	check_output(size_t replies) const noexcept;
 
-	[[nodiscard]] const NetLimits &limits() const noexcept { return limits_; }
+	[[nodiscard]] const NetLimits &limits() const noexcept;
 
 	/// Log and count a violation by the client \p peer. \p observed is the
 	/// measured value that exceeded the limit (0 when there is none).
@@ -104,19 +82,18 @@ public:
 				size_t observed) noexcept;
 
 	/// How many times \p violation has been recorded.
-	[[nodiscard]] uint64_t count(Violation violation) const noexcept {
-		return counts_[static_cast<size_t>(violation)].load(
-			std::memory_order_relaxed);
-	}
+	[[nodiscard]] uint64_t count(Violation violation) const noexcept;
+
+	/// Connections admitted since the server started.
+	[[nodiscard]] uint64_t admitted() const noexcept;
 
 	/// Clients currently admitted.
-	[[nodiscard]] size_t clients() const noexcept {
-		return clients_.load(std::memory_order_relaxed);
-	}
+	[[nodiscard]] size_t clients() const noexcept;
 
 private:
 	NetLimits limits_;
 	std::atomic<size_t> clients_{0};
+	std::atomic<uint64_t> admitted_{0};
 	std::array<std::atomic<uint64_t>, static_cast<size_t>(Violation::Count_)>
 		counts_{};
 };

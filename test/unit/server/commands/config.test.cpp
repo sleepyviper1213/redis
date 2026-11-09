@@ -1,5 +1,6 @@
 #include "commands.fixture.hpp"
 #include "core/logging.hpp"
+#include "server/log_channels.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

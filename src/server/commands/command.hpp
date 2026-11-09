@@ -1,7 +1,7 @@
 #pragma once
+#include "args.hpp"
+#include "common/store/database_fwd.hpp"
 #include "core/utils/attributes.hpp"
-#include "reply.hpp"
-#include "server/database_fwd.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -11,6 +11,9 @@
 namespace redis {
 class SnapshotManager;
 class AppendOnlyFile;
+class NetGuard;
+class ServerStats;
+class ReplyWriter; // reply.hpp: a command's .cpp includes it to write replies
 
 /// Everything a command may act on. A borrow: the owner (Services) keeps what
 /// it points to alive and never rebinds or assigns the context.
@@ -25,11 +28,11 @@ struct CommandContext {
 	/// Whether CONFIG SET may change settings. Off unless the operator asks
 	/// (--enable-config-set): any client could otherwise change them.
 	bool config_set_enabled = false;
+	/// Counted by the dispatcher and reported by INFO; null in a bare context.
+	ServerStats *stats = nullptr;
+	/// Connection counts and limits for INFO; null when there is no network.
+	const NetGuard *guard = nullptr;
 };
-
-/// A command's arguments; args[0] is the command name itself. They view the
-/// client's input buffer, so a command that keeps one must copy it.
-using Args = std::span<const std::string_view>;
 
 /// Runs one command, writing its reply to the writer.
 using CommandFn = void (*)(CommandContext &, Args, ReplyWriter &);
@@ -55,7 +58,7 @@ std::span<const CommandInfo> hash_commands();
 std::span<const CommandInfo> server_commands();
 
 /// Parse a decimal int64 argument the way Redis does: no spaces, no '+'.
-[[nodiscard]] REDIS_PURE_FN REDIS_HOT_FN
-std::optional<int64_t> parse_int(std::string_view s) noexcept;
+[[nodiscard]] REDIS_PURE_FN REDIS_HOT_FN std::optional<int64_t>
+parse_int(std::string_view s) noexcept;
 
 } // namespace redis

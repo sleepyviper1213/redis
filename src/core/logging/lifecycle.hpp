@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/logging/settings.hpp"
+#include "settings.hpp"
 
 #include <string_view>
 

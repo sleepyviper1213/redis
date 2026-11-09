@@ -1,4 +1,4 @@
-#include "core/logging.hpp"
+#include "server/log_channels.hpp"
 #include "server/diagnostics/crash.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/redis_server.hpp"
@@ -62,6 +62,7 @@ int run(int argc, char **argv) {
 	const redis::logging::guard log_guard{{
 		.level    = app->get_option("--log-level")->as<std::string>(),
 		.log_file = app->get_option("--log-file")->as<std::string>(),
+		.channels = redis::logging::channel_names(),
 	}};
 	auto &log = redis::logging::logger_for(redis::logging::channel::server);
 	redis::diagnostics::install_crash_handler(

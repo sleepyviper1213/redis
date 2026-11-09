@@ -1,8 +1,8 @@
 #include "listener.hpp"
 
-#include "core/logging.hpp"
-#include "server/net/formatter.hpp"
-#include "server/net/listener.hpp"
+#include "server/log_channels.hpp"
+#include "../formatter.hpp"
+#include "../listener.hpp"
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
@@ -31,8 +31,8 @@ Listener::Listener(boost::asio::any_io_executor ex,
 	  retry_timer_(ex_),
 	  drain_context_(ex_) {}
 
-std::expected<void, std::string>
-Listener::listen(const std::string &host, boost::asio::ip::port_type port) {
+std::expected<void, ListenError>
+Listener::listen(std::string_view host, boost::asio::ip::port_type port) {
 	return listen_on(acceptor_, host, port);
 }
 
@@ -56,7 +56,7 @@ void Listener::start() {
 					exec::asio::use_sender);
 			}) |
 			then([this](tcp::socket client) {
-				stdexec::spawn(Session::serve(std::move(client), services_),
+				stdexec::spawn(detail::v2::Session::serve(std::move(client), services_),
 							   scope_.get_token());
 				return !acceptor_.is_open();
 			})
@@ -67,7 +67,8 @@ void Listener::start() {
 				  try {
 					  std::rethrow_exception(e);
 				  } catch (const std::exception &ex) {
-					  log().error("Accept failed: {}", ex.what());
+					  log_error({.kind   = ConnectionKind::AcceptFailed,
+								 .quoted = ex.what()});
 				  }
 				  // The error usually persists: wait a little rather than spin
 				  // on it. Cancellation by stop() ends the wait.
@@ -81,7 +82,8 @@ void Listener::start() {
 				  try {
 					  std::rethrow_exception(e);
 				  } catch (const std::exception &ex) {
-					  log().critical("Accept loop failed: {}", ex.what());
+					  log_error({.kind   = ConnectionKind::AcceptLoopFailed,
+								 .quoted = ex.what()});
 				  }
 			  }),
 		scope_.get_token());

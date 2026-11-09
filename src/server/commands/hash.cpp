@@ -1,8 +1,8 @@
 // Hash commands: HSET, HGET, HDEL, HGETALL, HLEN, HEXISTS, HMGET.
 #include "command.hpp"
-#include "server/commands/reply.hpp"
-#include "server/database.hpp" // IWYU pragma: keep
-#include "core/object.hpp"
+#include "reply.hpp"
+#include "common/store/database.hpp" // IWYU pragma: keep
+#include "common/store/object.hpp"
 
 #include <array>
 #include <cstddef>

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "server/net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
+#include "../net_error.hpp"
+#include "../nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
-#include "asio_context.hpp"
-#include "session.hpp"
+#include "detail/asio_context.hpp"
+#include "detail/session.hpp"
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -36,10 +37,10 @@ public:
 	Listener(boost::asio::any_io_executor ex,
 			  std::shared_ptr<Services> services);
 
-	/// Bind and listen on \p host:\p port (IPv4). Fails, with a message, when
-	/// the port is in use or \p host is not an address.
-	[[nodiscard]] std::expected<void, std::string>
-	listen(const std::string &host, boost::asio::ip::port_type port);
+	/// Bind and listen on \p host:\p port (IPv4). Fails when the port is in use
+	/// or \p host is not an address.
+	[[nodiscard]] std::expected<void, ListenError>
+	listen(std::string_view host, boost::asio::ip::port_type port);
 
 	/// Start accepting. Returns at once; the loop runs on the I/O threads.
 	void start();
@@ -62,7 +63,7 @@ private:
 	/// Paces the accept loop after a failed accept, so it cannot spin.
 	boost::asio::steady_timer retry_timer_;
 	/// Where drained() completes: join needs a scheduler to complete on.
-	AsioContext drain_context_;
+	detail::AsioContext drain_context_;
 	stdexec::counting_scope scope_;
 };
 

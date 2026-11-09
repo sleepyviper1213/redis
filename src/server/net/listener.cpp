@@ -1,9 +1,9 @@
 #include "listener.hpp"
 
-#include "core/logging.hpp"
+#include "../log_channels.hpp"
 #include "formatter.hpp" // IWYU pragma: keep (fmt formatters for endpoints and errors)
-#include "services.hpp"
-#include "session.hpp"
+#include "../services.hpp"
+#include "detail/session.hpp"
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -39,10 +39,8 @@ void report_session_failure(const std::exception_ptr &error) {
 	try {
 		std::rethrow_exception(error);
 	} catch (const std::exception &e) {
-		log().error("Session failed: {}", e.what());
-	} catch (...) {
-		log().error("Session failed");
-	}
+		log_error({.kind = ConnectionKind::SessionFailed, .quoted = e.what()});
+	} catch (...) { log_error({.kind = ConnectionKind::SessionFailed}); }
 }
 
 /// How long to wait after a failed accept. The failure usually persists (out of
@@ -50,14 +48,15 @@ void report_session_failure(const std::exception_ptr &error) {
 constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds(100);
 } // namespace
 
-std::expected<void, std::string> listen_on(net::ip::tcp::acceptor &acceptor,
-										   const std::string &host,
+std::expected<void, ListenError> listen_on(net::ip::tcp::acceptor &acceptor,
+										   std::string_view host,
 										   net::ip::port_type port) {
 	boost::system::error_code error;
 	const auto address = net::ip::make_address_v4(host, error);
 	if (error)
-		return std::unexpected(
-			fmt::format("invalid host '{}': {}", host, error.message()));
+		return std::unexpected(ListenError{.kind   = ListenKind::InvalidHost,
+										   .cause  = error,
+										   .quoted = std::string(host)});
 
 	const net::ip::tcp::endpoint endpoint(address, port);
 	acceptor.open(endpoint.protocol(), error);
@@ -69,10 +68,10 @@ std::expected<void, std::string> listen_on(net::ip::tcp::acceptor &acceptor,
 	if (error) {
 		boost::system::error_code ignored;
 		acceptor.close(ignored);
-		return std::unexpected(fmt::format("cannot listen on {}:{}: {}",
-										   host,
-										   port,
-										   error.message()));
+		return std::unexpected(ListenError{.kind   = ListenKind::CannotListen,
+										   .cause  = error,
+										   .at     = port,
+										   .quoted = std::string(host)});
 	}
 	return {};
 }
@@ -80,13 +79,13 @@ std::expected<void, std::string> listen_on(net::ip::tcp::acceptor &acceptor,
 inline namespace v1 {
 
 Listener::Listener(const net::any_io_executor &ex,
-					 std::shared_ptr<Services> services, bool concurrent)
+				   std::shared_ptr<Services> services, bool concurrent)
 	: acceptor_(net::make_strand(ex)),
 	  services_(std::move(services)),
 	  concurrent_(concurrent) {}
 
-std::expected<void, std::string>
-Listener::listen(const std::string &host, net::ip::port_type port) {
+std::expected<void, ListenError> Listener::listen(std::string_view host,
+												  net::ip::port_type port) {
 	return listen_on(acceptor_, host, port);
 }
 
@@ -106,13 +105,14 @@ net::awaitable<void> Listener::start() {
 		if (err) {
 			// Transient failures (e.g. EMFILE when out of descriptors) must
 			// not kill the accept loop, and the failed socket is unusable.
-			log().error("Accept failed: {}", err);
+			log_error({.kind = ConnectionKind::AcceptFailed, .cause = err});
 			retry_timer.expires_after(ACCEPT_RETRY_DELAY);
 			co_await retry_timer.async_wait();
 			continue;
 		}
 		const auto ex = client.get_executor();
-		net::co_spawn(ex, Session::serve(std::move(client), services_),
+		net::co_spawn(ex,
+					  detail::Session::serve(std::move(client), services_),
 					  report_session_failure);
 	}
 }

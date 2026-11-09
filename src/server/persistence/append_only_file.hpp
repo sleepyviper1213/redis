@@ -1,7 +1,10 @@
 #pragma once
-#include "server/commands/command.hpp"
-#include "server/persistence/child_process.hpp"
-#include "server/database_fwd.hpp"
+#include "core/os/child_process.hpp"
+#include "core/os/durable_file.hpp"
+#include "persist_error.hpp"
+#include "aof_config.hpp"
+#include "common/store/database_fwd.hpp"
+#include "../commands/args.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -9,10 +12,10 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <fstream>
-#include <initializer_list>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -20,24 +23,7 @@
 
 namespace redis {
 class CommandHandler;
-
-/**
- * \brief When the log is forced to disk, as Redis' appendfsync.
- *
- * The enumerators are spelled as the option values, so magic_enum converts
- * between them and the command line and CONFIG GET.
- */
-enum class FsyncPolicy : uint8_t {
-	always,   ///< before the replies of a batch are sent: nothing acknowledged is lost
-	everysec, ///< once a second, off the command thread: at most ~1s is lost
-	no,       ///< never; the operating system decides
-};
-
-struct AofConfig {
-	/// Holds the manifest, the base snapshot and the incremental logs.
-	std::filesystem::path dir = "appendonlydir";
-	FsyncPolicy fsync         = FsyncPolicy::everysec;
-};
+struct CommandContext;
 
 /**
  * \brief The append-only file: every command that changes the keyspace, in
@@ -65,6 +51,14 @@ struct AofConfig {
  * chance) are logged in a form that can; see replace(). Keys that expire are
  * logged as DEL, and expiry is switched off while replaying, so the replay
  * does not depend on when it runs. @see Database::track_expired
+ *
+ * The directory belongs to one server at a time: load() takes an exclusive
+ * lock on appendonly.lock and holds it until close(), or until the process ends
+ * however it ends, so a second server pointed at the same directory refuses to
+ * start instead of racing the first one for the manifest and the log. The log
+ * is written, sized, truncated and synced through the descriptor it was opened
+ * with, never by its name again, and the files are created private to the owner
+ * (the directory too, when the server creates it).
  *
  * Used by the keyspace thread only, except the once-a-second fsync, which
  * runs on a thread of its own and touches nothing but the file.
@@ -94,7 +88,7 @@ public:
 	 * keys. Call on the thread that will start the server; the keyspace is
 	 * handed over afterwards.
 	 */
-	[[nodiscard]] std::expected<void, std::string>
+	[[nodiscard]] std::expected<void, persistence::PersistError>
 	load(CommandContext &ctx, const CommandHandler &handler);
 
 	/**
@@ -106,8 +100,13 @@ public:
 
 	/// Log \p args instead of the command's own arguments. Call from a command
 	/// while it runs, and only when `ctx.aof` is set.
-	void replace(std::initializer_list<std::string_view> args);
-	void replace(const std::vector<std::string_view> &args);
+	void replace(std::span<const std::string_view> args);
+
+	/// For a literal list, `replace({"DEL", key})`: the length is deduced.
+	template <size_t N>
+	void replace(const std::string_view (&args)[N]) {
+		replace(std::span<const std::string_view, N>(args));
+	}
 
 	/// Log the keys that expired since the last call (the periodic tick).
 	void log_expired(Database &db);
@@ -121,10 +120,9 @@ public:
 
 	/**
 	 * \brief Start rewriting the log into a snapshot (BGREWRITEAOF).
-	 * \return An error message, in reply form, if one is already running or it
-	 *         cannot start.
+	 * \return Why not, if one is already running or it cannot start.
 	 */
-	[[nodiscard]] std::expected<void, std::string>
+	[[nodiscard]] std::expected<void, persistence::PersistError>
 	start_rewrite(const Database &db);
 
 	/// Collect a finished rewrite, if any. Never blocks.
@@ -147,47 +145,52 @@ private:
 		uint64_t seq = 0; ///< the highest number used in a file name
 	};
 
-	[[nodiscard]] std::expected<void, std::string>
+	[[nodiscard]] std::expected<void, persistence::PersistError>
 	replay(const std::filesystem::path &file, bool last, CommandContext &ctx,
 		   const CommandHandler &handler, size_t &commands);
 
-	[[nodiscard]] std::expected<void, std::string> open_for_append();
+	[[nodiscard]] std::expected<void, persistence::PersistError>
+	open_for_append();
 
 	void write_out();
 	void sync_now();
 	void sync_loop(std::stop_token stop);
-	void finish_rewrite(const persistence::posix::ChildResult &result);
+	void finish_rewrite(const os::ChildResult &result);
 
-	[[nodiscard]] std::filesystem::path path_of(const std::string &name) const {
+	[[nodiscard]] std::filesystem::path path_of(std::string_view name) const {
 		return config_.dir / name;
 	}
 
-	[[nodiscard]] static std::expected<Manifest, std::string>
+	[[nodiscard]] static std::expected<Manifest, persistence::PersistError>
 	read_manifest(const std::filesystem::path &file);
 
-	[[nodiscard]] std::expected<void, std::string>
+	[[nodiscard]] std::expected<void, persistence::PersistError>
 	write_manifest(const Manifest &manifest) const;
 
 	AofConfig config_;
 	std::filesystem::path snapshot_file_;
 	Manifest manifest_;
 
+	/// Holds the directory's lock, from load() to close().
+	os::DurableFile lock_;
+
 	std::string buf_;      ///< logged but not yet written
 	std::string replaced_; ///< what replace() set, until command_ran() takes it
-	std::ofstream out_;
-	std::filesystem::path incr_path_;
-	uintmax_t good_size_ =
-		0; ///< bytes of incr_path_ known to be whole commands
+	/// The incremental file being appended to. Shared with the sync thread,
+	/// which keeps it open while it syncs even if a rewrite has moved on to the
+	/// next one. Replaced only under mutex_, and only by the keyspace thread.
+	std::shared_ptr<os::DurableFile> out_;
+	std::filesystem::path incr_path_; ///< out_'s name, for messages
+	uintmax_t good_size_ = 0; ///< bytes of out_ known to be whole commands
 
-	// The once-a-second sync: dirty_ says there is something to sync, and
-	// sync_path_ (under mutex_) which file.
+	// The once-a-second sync: dirty_ says there is something to sync; the file
+	// is out_, read under mutex_.
 	std::atomic<bool> dirty_{false};
 	std::mutex mutex_;
 	std::condition_variable_any wake_;
-	std::filesystem::path sync_path_;
 	std::jthread syncer_;
 
-	std::optional<persistence::posix::Child> child_;
+	std::optional<os::Child> child_;
 	std::string rewrite_base_;
 	std::filesystem::path rewrite_base_path_;
 };

@@ -1,6 +1,6 @@
 #include "../commands/commands.fixture.hpp"
 #include "server/net/guard.hpp"
-#include "server/net/pipeline.hpp"
+#include "server/net/detail/pipeline.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -82,7 +82,7 @@ SCENARIO("The guard bounds the buffers", "[net][guard]") {
 		for (const auto violation :
 			 {Violation::TooManyClients, Violation::QueryBufferFull,
 			  Violation::OutputBufferFull, Violation::IdleTimeout})
-			CHECK_FALSE(to_string(violation).empty());
+			CHECK_FALSE(format_as(violation).empty());
 	}
 }
 
@@ -96,17 +96,17 @@ SCENARIO("A batch stops once its replies pass the output limit",
 		std::string pending;
 		for (int i = 0; i < 10; ++i) pending += "GET k\r\n";
 		std::string replies;
-		ParsedBatch batch;
-		parse_pending(pending, batch);
+		detail::ParsedBatch batch;
+		detail::parse_pending(pending, batch);
 		REQUIRE(batch.size() == 10);
 
 		WHEN("the limit is 200 bytes") {
 			// A reply is "$100\r\n" + 100 bytes + "\r\n" = 108 bytes.
 			const auto after =
-				execute_batch(batch, replies, handler, server.ctx, 200);
+				detail::execute_batch(batch, replies, handler, server.ctx, 200);
 
 			THEN("execution stops after the reply that crossed it") {
-				CHECK(after == AfterReplies::Close);
+				CHECK(after == detail::AfterReplies::Close);
 				// 108 bytes is under 200, 216 is over: the second reply
 				// crosses the limit and the other eight never run.
 				CHECK(replies.size() == 2 * 108);
@@ -114,9 +114,9 @@ SCENARIO("A batch stops once its replies pass the output limit",
 		}
 		WHEN("the limit is not reached") {
 			const auto after =
-				execute_batch(batch, replies, handler, server.ctx, 1'000'000);
+				detail::execute_batch(batch, replies, handler, server.ctx, 1'000'000);
 			THEN("every request runs") {
-				CHECK(after == AfterReplies::KeepOpen);
+				CHECK(after == detail::AfterReplies::KeepOpen);
 				CHECK(replies.size() == 10 * 108);
 			}
 		}

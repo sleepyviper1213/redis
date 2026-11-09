@@ -1,8 +1,10 @@
 #pragma once
 // Must precede every Asio include: makes co_await on Asio operations return
 // (error_code, result) tuples.
+#include "net/net_limits.hpp"
 #include "net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
-#include "net/services.hpp"
+#include "persistence/aof_config.hpp"
+#include "server_error.hpp"
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
@@ -17,6 +19,8 @@
 
 namespace redis {
 namespace net = boost::asio;
+
+struct Services;
 
 struct ServerConfig {
 	std::string host                = "127.0.0.1";
@@ -60,7 +64,7 @@ public:
 	 *         persists to cannot be read, an I/O thread failed, or the final
 	 *         snapshot could not be written.
 	 */
-	[[nodiscard]] std::expected<void, std::string> run();
+	[[nodiscard]] std::expected<void, ServerError> run();
 
 private:
 	/// Periodic housekeeping, like Redis' serverCron: active expiry and

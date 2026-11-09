@@ -1,5 +1,5 @@
 #include "../commands/commands.fixture.hpp"
-#include "server/persistence/snapshot.hpp"
+#include "server/persistence/detail/snapshot.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,9 +21,9 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 				"+OK\r\n");
 
 		WHEN("it is saved and loaded into a fresh server") {
-			REQUIRE(persistence::save_snapshot(server.db, server.dump.path()));
+			REQUIRE(persistence::detail::save_snapshot(server.db, server.dump.path()));
 			test::Server restored;
-			REQUIRE(persistence::load_snapshot(restored.db, server.dump.path()));
+			REQUIRE(persistence::detail::load_snapshot(restored.db, server.dump.path()));
 
 			THEN("every value comes back") {
 				CHECK(restored.run({"DBSIZE"}) == ":5\r\n");
@@ -46,12 +46,12 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "short", "v", "PX", "30"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
-		REQUIRE(persistence::save_snapshot(server.db, server.dump.path()));
+		REQUIRE(persistence::detail::save_snapshot(server.db, server.dump.path()));
 		std::this_thread::sleep_for(50ms);
 
 		WHEN("the snapshot is loaded") {
 			test::Server restored;
-			REQUIRE(persistence::load_snapshot(restored.db, server.dump.path()));
+			REQUIRE(persistence::detail::load_snapshot(restored.db, server.dump.path()));
 
 			THEN("the expired key is not resurrected") {
 				CHECK(restored.run({"EXISTS", "short"}) == ":0\r\n");
@@ -69,7 +69,7 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 
 		WHEN("the snapshot file does not exist") {
 			const auto result =
-				persistence::load_snapshot(server.db, server.dump.path());
+				persistence::detail::load_snapshot(server.db, server.dump.path());
 
 			THEN("loading succeeds and leaves the keyspace alone") {
 				CHECK(result.has_value());
@@ -80,7 +80,7 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 		WHEN("the file is not a snapshot") {
 			std::ofstream(server.dump.path()) << "definitely not a snapshot";
 			const auto result =
-				persistence::load_snapshot(server.db, server.dump.path());
+				persistence::detail::load_snapshot(server.db, server.dump.path());
 
 			THEN("loading fails and the keyspace is untouched") {
 				CHECK_FALSE(result.has_value());
@@ -90,13 +90,13 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 
 		WHEN("a valid snapshot is truncated") {
 			REQUIRE(server.run({"RPUSH", "l", "a", "b", "c"}) == ":3\r\n");
-			REQUIRE(persistence::save_snapshot(server.db, server.dump.path()));
+			REQUIRE(persistence::detail::save_snapshot(server.db, server.dump.path()));
 			const auto size = std::filesystem::file_size(server.dump.path());
 			std::filesystem::resize_file(server.dump.path(), size - 3);
 
 			test::Server restored;
 			const auto result =
-				persistence::load_snapshot(restored.db, server.dump.path());
+				persistence::detail::load_snapshot(restored.db, server.dump.path());
 
 			THEN("loading fails instead of loading partial data") {
 				CHECK_FALSE(result.has_value());
@@ -162,7 +162,7 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 				CHECK_FALSE(server.persistence.background_save_in_progress());
 
 				test::Server restored;
-				REQUIRE(persistence::load_snapshot(restored.db,
+				REQUIRE(persistence::detail::load_snapshot(restored.db,
 												   server.dump.path()));
 				CHECK(restored.run({"GET", "k"}) == "$1\r\nv\r\n");
 			}

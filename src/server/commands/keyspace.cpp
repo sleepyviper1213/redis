@@ -1,28 +1,25 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
-#include "expire_time.hpp"
-#include "core/deadline_timer.hpp"
-#include "core/object.hpp"
+#include "common/store/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
+#include "common/store/object.hpp"
+#include "core/chrono/deadline_timer.hpp"
 #include "core/utils/glob.hpp"
-#include "server/commands/reply.hpp"
-#include "server/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
-#include "server/persistence/append_only_file.hpp"
+#include "detail/expire_time.hpp"
+#include "reply.hpp"
+#include "../persistence/append_only_file.hpp"
+
+#include <fmt/format.h>
 
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <span>
-#include <string>
 #include <string_view>
 #include <vector>
 
 namespace redis {
-
 namespace {
-using std::chrono::milliseconds;
-using std::chrono::seconds;
-
 void del(CommandContext &ctx, Args args, ReplyWriter &out) {
 	int64_t removed = 0;
 	for (const std::string_view key : args.subspan(1))
@@ -57,14 +54,14 @@ void type(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
-template <ExpireUnit Unit, ExpireBase Base>
+template <detail::ExpireUnit Unit, detail::ExpireBase Base>
 void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto amount = parse_int(args[2]);
 	if (!amount) {
 		out.not_integer();
 		return;
 	}
-	const auto deadline = expire_time(*amount, Unit, Base);
+	const auto deadline = detail::expire_time(*amount, Unit, Base);
 	if (!deadline) {
 		out.error("ERR invalid expire time");
 		return;
@@ -81,7 +78,7 @@ void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 			ctx.aof->replace({"DEL", args[1]});
 		} else {
 			const auto at = timer.millis_since_epoch();
-			ctx.aof->replace({"PEXPIREAT", args[1], std::to_string(at)});
+			ctx.aof->replace({"PEXPIREAT", args[1], fmt::to_string(at)});
 		}
 	}
 }
@@ -127,19 +124,23 @@ constexpr std::array COMMANDS{
 	CommandInfo{.name = "KEYS", .fn = keys, .arity = 2},
 	CommandInfo{.name = "TYPE", .fn = type, .arity = 2},
 	CommandInfo{.name  = "EXPIRE",
-				.fn    = expire_generic<ExpireUnit::Seconds, ExpireBase::Relative>,
+				.fn    = expire_generic<detail::ExpireUnit::Seconds,
+										detail::ExpireBase::Relative>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name  = "PEXPIRE",
-				.fn    = expire_generic<ExpireUnit::Milliseconds, ExpireBase::Relative>,
+				.fn    = expire_generic<detail::ExpireUnit::Milliseconds,
+										detail::ExpireBase::Relative>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name  = "EXPIREAT",
-				.fn    = expire_generic<ExpireUnit::Seconds, ExpireBase::Absolute>,
+				.fn    = expire_generic<detail::ExpireUnit::Seconds,
+										detail::ExpireBase::Absolute>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name  = "PEXPIREAT",
-				.fn    = expire_generic<ExpireUnit::Milliseconds, ExpireBase::Absolute>,
+				.fn    = expire_generic<detail::ExpireUnit::Milliseconds,
+										detail::ExpireBase::Absolute>,
 				.arity = 3,
 				.write = true},
 	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .write = true},

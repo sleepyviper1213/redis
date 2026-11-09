@@ -13,35 +13,36 @@ add_library(
     commands/string.cpp
 
     diagnostics/current_command.cpp
-    net/admission.cpp
+    net/detail/admission.cpp
     net/executor.cpp
     net/guard.cpp
-    net/pipeline.cpp
+    net/net_error.cpp
+    net/detail/pipeline.cpp
     redis_server.cpp
-    net/session.cpp
+    server_error.cpp
+    net/detail/session.cpp
     net/listener.cpp
-    net/v2/session.cpp
+    net/v2/detail/session.cpp
     net/v2/listener.cpp
 
     persistence/append_only_file.cpp
+    persistence/persist_error.cpp
     persistence/snapshot_manager.cpp
-    persistence/snapshot.cpp
+    persistence/detail/snapshot.cpp
 )
 
 add_library(redis::server_lib ALIAS redis_server_lib)
 
 if(WIN32)
-    target_sources(redis_server_lib PRIVATE persistence/windows.cpp)
     # Asio's Windows sockets; 0x0A00 is Windows 10.
     target_compile_definitions(redis_server_lib PUBLIC _WIN32_WINNT=0x0A00)
     target_link_libraries(redis_server_lib PUBLIC ws2_32 mswsock)
 else()
-    target_sources(redis_server_lib PRIVATE persistence/posix.cpp
-        diagnostics/crash_posix.cpp)
+    target_sources(redis_server_lib PRIVATE diagnostics/crash_posix.cpp)
 endif()
 
 target_compile_definitions(redis_server_lib PUBLIC BOOST_ASIO_NO_DEPRECATED)
-target_link_libraries(redis_server_lib PUBLIC redis::core CLI11::CLI11
+target_link_libraries(redis_server_lib PUBLIC redis::common CLI11::CLI11
     STDEXEC::stdexec
     Threads::Threads
     PRIVATE cereal::cereal)

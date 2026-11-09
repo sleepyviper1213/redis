@@ -1,12 +1,16 @@
 #pragma once
-#include "core/resp/value.hpp"
 #include "command.hpp"
-#include "core/object.hpp"
+#include "core/utils/transparent_hash.hpp"
 
+#include <functional>
 #include <span>
 #include <string>
+#include <unordered_map>
 
 namespace redis {
+namespace resp {
+class Value;
+} // namespace resp
 
 /**
  * \brief Dispatches client requests to command implementations.
@@ -50,6 +54,10 @@ private:
 	const CommandInfo *dispatch(CommandContext &ctx, Args args,
 								ReplyWriter &out) const;
 
-	StringMap<CommandInfo> commands_;
+	// Plain std::string keys: the command table is not keyspace, so it stays
+	// out of used_memory (StringMap would take DefaultAllocator).
+	std::unordered_map<std::string, CommandInfo, TransparentStringHash,
+					   std::equal_to<>>
+		commands_;
 };
 } // namespace redis

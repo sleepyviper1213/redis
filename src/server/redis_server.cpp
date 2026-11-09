@@ -1,14 +1,16 @@
 #include "redis_server.hpp"
 
-#include "core/logging.hpp"
+#include "log_channels.hpp"
 #include "net/formatter.hpp"
 #include "net/listener.hpp"
 #include "net/v2/listener.hpp"
+#include "services.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <exec/start_detached.hpp>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <csignal>
@@ -55,7 +57,7 @@ RedisServer::RedisServer(ServerConfig config)
 										   config_.limits,
 										   config_.config_set_enabled)) {}
 
-std::expected<void, std::string> RedisServer::run() {
+std::expected<void, ServerError> RedisServer::run() {
 	// With an append-only file it is the source of truth: it holds everything
 	// since the last rewrite, which the snapshot does not.
 	const auto loaded = services_->aof
@@ -65,7 +67,8 @@ std::expected<void, std::string> RedisServer::run() {
 	if (!loaded) {
 		// Refuse to start rather than serve an empty keyspace and later
 		// overwrite the unreadable files with it.
-		return std::unexpected(loaded.error());
+		return std::unexpected(ServerError{.kind   = ServerKind::LoadFailed,
+										   .source = loaded.error()});
 	}
 
 	// Exactly one front end: binding the port twice would fail.
@@ -75,12 +78,14 @@ std::expected<void, std::string> RedisServer::run() {
 		sender_server.emplace(io_.get_executor(), services_);
 		if (auto listening = sender_server->listen(config_.host, config_.port);
 			!listening)
-			return std::unexpected(listening.error());
+			return std::unexpected(ServerError{.kind   = ServerKind::ListenFailed,
+											   .source = listening.error()});
 	} else {
 		server.emplace(io_.get_executor(), services_, config_.io_threads > 1);
 		if (auto listening = server->listen(config_.host, config_.port);
 			!listening)
-			return std::unexpected(listening.error());
+			return std::unexpected(ServerError{.kind   = ServerKind::ListenFailed,
+											   .source = listening.error()});
 	}
 
 	// Leave the event loop, once. Coroutine sessions are simply dropped with
@@ -136,7 +141,9 @@ std::expected<void, std::string> RedisServer::run() {
 			workers.emplace_back(run_io);
 		run_io();
 	} // joins the workers
-	if (failure) return std::unexpected(*failure);
+	if (failure)
+		return std::unexpected(ServerError{.kind   = ServerKind::WorkerFailed,
+										   .detail = std::move(*failure)});
 
 	// A batch may still be executing: wait for it before reading the keyspace.
 	services_->keyspace.stop();
@@ -157,7 +164,8 @@ std::expected<void, std::string> RedisServer::run() {
 	// error is returned and main() exits non-zero, which a supervisor sees,
 	// rather than a clean shutdown that lost the data.
 	if (auto saved = services_->persistence.save(services_->db); !saved)
-		return std::unexpected("final snapshot failed: " + saved.error());
+		return std::unexpected(ServerError{.kind   = ServerKind::FinalSaveFailed,
+										   .source = saved.error()});
 	log().info("Redis is now ready to exit, bye bye...");
 	return {};
 }
@@ -174,6 +182,7 @@ net::awaitable<void> RedisServer::cron() {
 			if (const auto expired =
 					services->db.active_expire_cycle(EXPIRE_KEYS_PER_RUN))
 				log().trace("Expired {} keys", expired);
+			services->stats.sample();
 			services->persistence.poll();
 			if (services->aof) {
 				// The expiry above, and the writes since the last batch, if

@@ -1,49 +1,32 @@
 #pragma once
-#include "server/commands/command.hpp"
-#include "server/commands/handler.hpp"
+#include "support/temp_file.hpp"
+#include "common/resp/value.hpp"
+#include "server/commands.hpp"
+#include "server/commands/reply.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "server/database.hpp"
+#include "common/store/database.hpp"
+#include "server/stats.hpp"
+
+#include <fmt/format.h>
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <vector>
 
 namespace redis::test {
 
-/// A unique path in the system temp directory, removed on destruction.
-class TempFile {
-public:
-	TempFile() {
-		static std::atomic<int> counter{0};
-		path_ = std::filesystem::temp_directory_path() /
-				("redis_test_" + std::to_string(counter++) + "_" +
-				 std::to_string(std::chrono::steady_clock::now()
-									.time_since_epoch()
-									.count()) +
-				 ".snap");
-	}
-	TempFile(const TempFile &)            = delete;
-	TempFile &operator=(const TempFile &) = delete;
-	~TempFile() {
-		std::error_code ignored;
-		std::filesystem::remove(path_, ignored);
-	}
-
-	[[nodiscard]] const std::filesystem::path &path() const { return path_; }
-
-private:
-	std::filesystem::path path_;
-};
-
 /// Everything a command needs, in-process: no sockets, no event loop.
 struct Server {
 	TempFile dump;
 	Database db;
 	SnapshotManager persistence{dump.path()};
-	CommandContext ctx{db, persistence};
-
-	Server() { ctx.config_set_enabled = true; }
+	ServerStats stats;
+	CommandContext ctx{.db                 = db,
+					   .persistence        = persistence,
+					   .config_set_enabled = true,
+					   .stats              = &stats};
 
 	/// Run one command and return the RESP-encoded reply, exactly the bytes
 	/// a client would receive.

@@ -1,6 +1,7 @@
 #include "commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <fmt/format.h>
 
 #include <chrono>
 #include <string>
@@ -41,9 +42,9 @@ SCENARIO("SET applies each expiration option", "[commands][set]") {
 					.count() +
 				100;
 			REQUIRE(server.run({"SET", "a", "v", "EXAT",
-								std::to_string(in_100s)}) == "+OK\r\n");
+								fmt::to_string(in_100s)}) == "+OK\r\n");
 			REQUIRE(server.run({"SET", "b", "v", "PXAT",
-								std::to_string(in_100s * 1000)}) == "+OK\r\n");
+								fmt::to_string(in_100s * 1000)}) == "+OK\r\n");
 
 			THEN("both expire at the absolute time") {
 				// in_100s was truncated to a whole second, so up to a second
@@ -196,10 +197,11 @@ SCENARIO("Command names are matched without regard to case",
 		THEN("a name longer than any command is unknown, not truncated") {
 			const std::string longer(40, 'a');
 			CHECK(server.run({longer}) ==
-				  "-ERR unknown command '" + longer + "'\r\n");
+				  fmt::format("-ERR unknown command '{}'\r\n", longer));
 			// A long name must not match a real command by prefix.
-			CHECK(server.run({"GET" + std::string(40, 'x')}) ==
-				  "-ERR unknown command 'GET" + std::string(40, 'x') + "'\r\n");
+			const std::string long_get = fmt::format("GET{}", std::string(40, 'x'));
+			CHECK(server.run({long_get}) ==
+				  fmt::format("-ERR unknown command '{}'\r\n", long_get));
 		}
 	}
 }

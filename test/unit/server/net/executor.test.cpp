@@ -1,4 +1,4 @@
-#include "server/net/v2/asio_context.hpp"
+#include "server/net/v2/detail/asio_context.hpp"
 #include "server/net/executor.hpp"
 
 #include <boost/asio/co_spawn.hpp>
@@ -123,7 +123,7 @@ SCENARIO("Running work on the keyspace thread as a sender", "[net][executor]") {
 	GIVEN("an io_context and its executor as a scheduler") {
 		net::io_context io;
 		auto guard = net::make_work_guard(io);
-		AsioContext back(io.get_executor());
+		detail::AsioContext back(io.get_executor());
 
 		AND_GIVEN("an executor with a dedicated thread") {
 			Executor executor(true);

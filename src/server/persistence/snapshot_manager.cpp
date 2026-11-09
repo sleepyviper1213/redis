@@ -1,10 +1,10 @@
 #include "snapshot_manager.hpp"
 
-#include "core/date_time.hpp"
-#include "core/logging.hpp"
-#include "server/database.hpp" // IWYU pragma: keep (db.size())
-#include "server/persistence/child_process.hpp"
-#include "snapshot.hpp"
+#include "core/chrono/date_time.hpp"
+#include "../log_channels.hpp"
+#include "common/store/database.hpp" // IWYU pragma: keep (db.size())
+#include "core/os/child_process.hpp"
+#include "detail/snapshot.hpp"
 
 #include <fmt/chrono.h> // IWYU pragma: keep (fmt formatters used by the logger)
 #include <fmt/format.h> // IWYU pragma: keep
@@ -31,35 +31,41 @@ SnapshotManager::~SnapshotManager() { // NOLINT(bugprone-exception-escape)
 	// Wait, don't kill: when the server ends without a final save (an I/O
 	// thread failed), a save in flight is the best snapshot there will be.
 	if (child_)
-		if (const auto done = persistence::posix::reap(*child_, true))
+		if (const auto done = os::reap(*child_, true))
 			finish_background_save(*done);
 }
 
-std::expected<void, std::string> SnapshotManager::save(const Database &db) {
+std::expected<void, persistence::PersistError>
+SnapshotManager::save(const Database &db) {
+	using persistence::PersistKind;
 	if (child_)
-		return std::unexpected("ERR Background save already in progress");
+		return std::unexpected(
+			persistence::PersistError{.kind = PersistKind::SaveInProgress});
 
-	const auto result = persistence::save_snapshot(db, file_);
+	auto result = persistence::detail::save_snapshot(db, file_);
 	if (!result) {
 		log().error("{}", result.error());
-		return std::unexpected("ERR " + result.error());
+		return result;
 	}
 	last_save_ = DateTime::current();
 	log().info("DB saved on disk to {}", file_);
 	return {};
 }
 
-std::expected<void, std::string>
+std::expected<void, persistence::PersistError>
 SnapshotManager::background_save(const Database &db) {
+	using persistence::PersistKind;
 	if (child_)
-		return std::unexpected("ERR Background save already in progress");
+		return std::unexpected(
+			persistence::PersistError{.kind = PersistKind::SaveInProgress});
 
-	auto child = persistence::posix::fork_and_run(
-		[&] { return persistence::save_snapshot(db, file_); });
+	auto child = os::fork_and_run(
+		[&] { return persistence::detail::save_snapshot(db, file_); });
 	if (!child) {
 		log().error("Can't fork for background save: {}",
 					child.error().message());
-		return std::unexpected("ERR Can't fork: " + child.error().message());
+		return std::unexpected(persistence::PersistError{
+			.kind = PersistKind::CannotFork, .cause = child.error()});
 	}
 
 	log().info("Background saving started by pid {}", child->pid());
@@ -73,24 +79,25 @@ void SnapshotManager::cancel_background_save() {
 	if (!child_) return;
 	const auto pid = child_->pid();
 	log().warn("Killing the background saving child {}", pid);
-	persistence::posix::kill_child(pid);
+	os::kill_child(pid);
 	// Wait until it is gone: a kill is not instant, and the child must not
 	// recreate its temporary file after it has been removed.
-	(void)persistence::posix::reap(*child_, true);
+	(void)os::reap(*child_, true);
 	std::error_code ignored;
-	std::filesystem::remove(persistence::snapshot_temp_path(file_, pid),
+	std::filesystem::remove(persistence::detail::snapshot_temp_path(file_, pid),
 							ignored);
 	child_.reset();
 }
 
 void SnapshotManager::poll() {
 	if (!child_) return;
-	if (const auto done = persistence::posix::reap(*child_, false))
+	if (const auto done = os::reap(*child_, false))
 		finish_background_save(*done);
 }
 
-std::expected<void, std::string> SnapshotManager::load(Database &db) {
-	auto result = persistence::load_snapshot(db, file_);
+std::expected<void, persistence::PersistError>
+SnapshotManager::load(Database &db) {
+	auto result = persistence::detail::load_snapshot(db, file_);
 	if (result) log().info("DB loaded from {}: {} keys", file_, db.size());
 	return result;
 }
@@ -110,7 +117,7 @@ SnapshotManager::file() const noexcept {
 }
 
 void SnapshotManager::finish_background_save(
-	const persistence::posix::ChildResult &result) {
+	const os::ChildResult &result) {
 	const auto elapsed = child_timer_.elapsed();
 	if (result.success) {
 		last_save_ = child_forked_at_; // the snapshot reflects fork time
@@ -123,7 +130,7 @@ void SnapshotManager::finish_background_save(
 		// its temporary file itself.
 		std::error_code ignored;
 		std::filesystem::remove(
-			persistence::snapshot_temp_path(file_, child_->pid()),
+			persistence::detail::snapshot_temp_path(file_, child_->pid()),
 			ignored);
 	}
 	child_.reset();

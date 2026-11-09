@@ -1,4 +1,4 @@
-#include "core/resp/value.hpp"
+#include "common/resp/value.hpp"
 #include "server/commands/reply.hpp"
 
 #include <catch2/catch_test_macros.hpp>

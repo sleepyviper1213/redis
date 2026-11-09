@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
 
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -17,17 +18,18 @@ namespace {
 struct MyFormatter : public CLI::Formatter {
 	std::string make_option_opts(const CLI::Option *opt) const override {
 		if (opt->get_option_text().empty()) return {};
-		return " " + opt->get_option_text();
+		return fmt::format(" {}", opt->get_option_text());
 	}
 
 	std::string make_option_desc(const CLI::Option *opt) const override {
-		std::string out;
-
-		if (!opt->get_description().empty()) out += opt->get_description();
+		std::string out = opt->get_description();
+		const auto into = std::back_inserter(out);
 
 		if (!opt->get_envname().empty()) {
-			if (!out.empty()) out += " ";
-			out += "(Env: " + opt->get_envname();
+			fmt::format_to(into,
+						   "{}(Env: {}",
+						   out.empty() ? "" : " ",
+						   opt->get_envname());
 		} else if (!out.empty()) {
 			out += " (";
 		} else {
@@ -36,7 +38,7 @@ struct MyFormatter : public CLI::Formatter {
 
 		if (!opt->get_default_str().empty()) {
 			if (out.back() != '(') out += ", ";
-			out += "default: " + opt->get_default_str();
+			fmt::format_to(into, "default: {}", opt->get_default_str());
 		}
 
 		if (out.back() == '(') out.pop_back();

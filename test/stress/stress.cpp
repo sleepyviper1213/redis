@@ -23,6 +23,7 @@
 // client's last exchanges.
 #include <CLI/CLI.hpp>
 #include <boost/asio.hpp>
+#include <fmt/format.h>
 #include <hiredis/hiredis.h>
 
 #include <algorithm>
@@ -77,14 +78,10 @@ std::string printable(std::string_view bytes, size_t limit = 48) {
 		if (c == '\r') out += "\\r";
 		else if (c == '\n') out += "\\n";
 		else if (c >= 32 && c < 127) out += static_cast<char>(c);
-		else {
-			char hex[8];
-			std::snprintf(hex, sizeof hex, "\\x%02x", c);
-			out += hex;
-		}
+		else fmt::format_to(std::back_inserter(out), "\\x{:02x}", c);
 	}
 	if (bytes.size() > limit)
-		out += "...(" + std::to_string(bytes.size()) + " bytes)";
+		fmt::format_to(std::back_inserter(out), "...({} bytes)", bytes.size());
 	return out;
 }
 
@@ -94,31 +91,52 @@ std::string printable(std::string_view bytes, size_t limit = 48) {
 
 struct Reply {
 	enum class Kind { Status, Error, Integer, Bulk, Nil, Other };
-	Kind kind          = Kind::Other;
-	long long integer  = 0;
+	Kind kind         = Kind::Other;
+	long long integer = 0;
 	std::string text;
 
-	static Reply status(std::string s) { return {Kind::Status, 0, std::move(s)}; }
+	static Reply status(std::string s) {
+		return {Kind::Status, 0, std::move(s)};
+	}
+
 	static Reply error(std::string s) { return {Kind::Error, 0, std::move(s)}; }
+
 	static Reply integer_of(long long n) { return {Kind::Integer, n, {}}; }
+
 	static Reply bulk(std::string s) { return {Kind::Bulk, 0, std::move(s)}; }
+
 	static Reply nil() { return {Kind::Nil, 0, {}}; }
 
 	bool operator==(const Reply &) const = default;
+};
+} // namespace
 
-	[[nodiscard]] std::string str() const {
-		switch (kind) {
-		case Kind::Status: return "+" + printable(text);
-		case Kind::Error: return "-" + printable(text);
-		case Kind::Integer: return ":" + std::to_string(integer);
-		case Kind::Bulk: return "$" + printable(text);
-		case Kind::Nil: return "(nil)";
+/// A reply as the tests print it: RESP's type marker, then the value escaped.
+template <>
+struct fmt::formatter<Reply> {
+	static constexpr auto parse(fmt::format_parse_context &ctx) {
+		return ctx.begin();
+	}
+
+	static auto format(const Reply &reply, fmt::format_context &ctx) {
+		using Kind = Reply::Kind;
+		switch (reply.kind) {
+		case Kind::Status:
+			return fmt::format_to(ctx.out(), "+{}", printable(reply.text));
+		case Kind::Error:
+			return fmt::format_to(ctx.out(), "-{}", printable(reply.text));
+		case Kind::Integer:
+			return fmt::format_to(ctx.out(), ":{}", reply.integer);
+		case Kind::Bulk:
+			return fmt::format_to(ctx.out(), "${}", printable(reply.text));
+		case Kind::Nil: return fmt::format_to(ctx.out(), "(nil)");
 		case Kind::Other: break;
 		}
-		return "(other: " + printable(text) + ")";
+		return fmt::format_to(ctx.out(), "(other: {})", printable(reply.text));
 	}
 };
 
+namespace {
 Reply to_reply(const redisReply &r) {
 	switch (r.type) {
 	case REDIS_REPLY_STATUS: return Reply::status({r.str, r.len});
@@ -126,21 +144,25 @@ Reply to_reply(const redisReply &r) {
 	case REDIS_REPLY_INTEGER: return Reply::integer_of(r.integer);
 	case REDIS_REPLY_STRING: return Reply::bulk({r.str, r.len});
 	case REDIS_REPLY_NIL: return Reply::nil();
-	default: return {Reply::Kind::Other, 0, "type " + std::to_string(r.type)};
+	default: return {Reply::Kind::Other, 0, fmt::format("type {}", r.type)};
 	}
 }
 
 /// A request as RESP bytes, encoded by hiredis.
-std::string encode(std::initializer_list<std::string_view> args) {
-	std::vector<const char *> argv;
-	std::vector<size_t> lens;
-	for (const auto a : args) {
-		argv.push_back(a.data());
-		lens.push_back(a.size());
+/// The argument count is part of the type: `encode({"GET", key})` deduces it.
+template <size_t N>
+std::string encode(const std::string_view (&args)[N]) {
+	std::array<const char *, N> argv{};
+	std::array<size_t, N> lens{};
+	for (size_t i = 0; i < N; ++i) {
+		argv[i] = args[i].data();
+		lens[i] = args[i].size();
 	}
 	char *cmd      = nullptr;
-	const auto len = redisFormatCommandArgv(&cmd, static_cast<int>(argv.size()),
-											argv.data(), lens.data());
+	const auto len = redisFormatCommandArgv(&cmd,
+											static_cast<int>(N),
+											argv.data(),
+											lens.data());
 	if (len < 0) throw Failure("hiredis could not encode a request");
 	std::string out(cmd, static_cast<size_t>(len));
 	redisFreeCommand(cmd);
@@ -181,11 +203,12 @@ public:
 		for (;;) {
 			void *raw = nullptr;
 			if (redisReaderGetReply(reader_.get(), &raw) != REDIS_OK)
-				throw Failure(std::string("malformed RESP from the server: ") +
-							  reader_->errstr);
+				throw Failure(fmt::format("malformed RESP from the server: {}",
+										  reader_->errstr));
 			if (raw) {
 				const std::unique_ptr<redisReply, void (*)(void *)> reply(
-					static_cast<redisReply *>(raw), freeReplyObject);
+					static_cast<redisReply *>(raw),
+					freeReplyObject);
 				return to_reply(*reply);
 			}
 
@@ -198,16 +221,15 @@ public:
 				// bulk, status, error and integer replies are used, so a reply
 				// is never partly parsed.)
 				if (reader_->pos < reader_->len)
-					throw Failure(
-						"connection closed in the middle of a reply (" +
-						std::to_string(reader_->len - reader_->pos) +
-						" unparsed bytes)");
+					throw Failure(fmt::format("connection closed in the middle "
+											  "of a reply ({} unparsed bytes)",
+											  reader_->len - reader_->pos));
 				return std::nullopt;
 			}
-			if (ec) throw Failure("read failed: " + ec.message());
+			if (ec) throw Failure(fmt::format("read failed: {}", ec.message()));
 			if (redisReaderFeed(reader_.get(), buf.data(), n) != REDIS_OK)
-				throw Failure(std::string("malformed RESP from the server: ") +
-							  reader_->errstr);
+				throw Failure(fmt::format("malformed RESP from the server: {}",
+										  reader_->errstr));
 		}
 	}
 
@@ -225,9 +247,11 @@ public:
 private:
 	asio::io_context io_;
 	tcp::socket socket_;
+
 	struct ReaderDeleter {
 		void operator()(redisReader *r) const { redisReaderFree(r); }
 	};
+
 	std::unique_ptr<redisReader, ReaderDeleter> reader_;
 };
 
@@ -238,7 +262,7 @@ std::string diff(const Reply &want, const Reply &got) {
 						   want.kind == Reply::Kind::Status ||
 						   want.kind == Reply::Kind::Error;
 	if (want.kind != got.kind || !text_kind)
-		return "expected " + want.str() + ", got " + got.str();
+		return fmt::format("expected {}, got {}", want, got);
 
 	size_t i = 0;
 	while (i < want.text.size() && i < got.text.size() &&
@@ -246,14 +270,20 @@ std::string diff(const Reply &want, const Reply &got) {
 		++i;
 	const auto window = [i](const std::string &t) {
 		const size_t from = i > 12 ? i - 12 : 0;
-		return std::string(from ? "..." : "") +
-			   printable(std::string_view(t).substr(from, 32), 160);
+		return fmt::format(
+			"{}{}",
+			from ? "..." : "",
+			printable(std::string_view(t).substr(from, 32), 160));
 	};
-	return "the values differ at byte " + std::to_string(i) + " (expected " +
-		   std::to_string(want.text.size()) + " bytes, got " +
-		   std::to_string(got.text.size()) + ")\n        expected around it: " +
-		   window(want.text) + "\n        got around it:      " +
-		   window(got.text);
+	return fmt::format(
+		"the values differ at byte {} (expected {} bytes, got {})\n"
+		"        expected around it: {}\n"
+		"        got around it:      {}",
+		i,
+		want.text.size(),
+		got.text.size(),
+		window(want.text),
+		window(got.text));
 }
 
 // --------------------------------------------------------------------------
@@ -289,7 +319,7 @@ public:
 		  opt_(opt),
 		  shared_(shared),
 		  rng_(opt.seed * 1000003 + id),
-		  prefix_("r" + opt.run_id + ":w" + std::to_string(id) + ":"),
+		  prefix_(fmt::format("r{}:w{}:", opt.run_id, id)),
 		  conn_(opt) {}
 
 	/// Throws Failure on the first reply that is not the expected one.
@@ -303,9 +333,11 @@ public:
 		for (unsigned k = 0; k < KEYS; ++k) {
 			const auto key = str_key(k);
 			const auto it  = strs_.find(key);
-			check_one({encode({"GET", key}),
-					   it == strs_.end() ? Reply::nil() : Reply::bulk(it->second),
-					   Check::Exact, "sweep GET " + key});
+			check_one(
+				{encode({"GET", key}),
+				 it == strs_.end() ? Reply::nil() : Reply::bulk(it->second),
+				 Check::Exact,
+				 fmt::format("sweep GET {}", key)});
 		}
 		for (unsigned k = 0; k < COUNTERS; ++k) {
 			const auto key = counter_key(k);
@@ -313,30 +345,37 @@ public:
 			check_one({encode({"GET", key}),
 					   it == counters_.end()
 						   ? Reply::nil()
-						   : Reply::bulk(std::to_string(it->second)),
-					   Check::Exact, "sweep GET " + key});
+						   : Reply::bulk(fmt::to_string(it->second)),
+					   Check::Exact,
+					   fmt::format("sweep GET {}", key)});
 		}
 	}
 
 	[[nodiscard]] long long shared_incrs() const { return shared_incrs_; }
+
 	[[nodiscard]] long long shared_adds() const { return shared_adds_; }
 
 	[[nodiscard]] std::string trace() const {
 		std::string out;
-		for (const auto &line : trace_) out += "    " + line + "\n";
+		for (const auto &line : trace_)
+			fmt::format_to(std::back_inserter(out), "    {}\n", line);
 		return out;
 	}
 
 	[[noreturn]] void fail(const std::string &what) const {
-		throw Failure("client " + std::to_string(id_) + ", request #" +
-					  std::to_string(seq_) + ": " + what +
-					  "\n  last exchanges (oldest first):\n" + trace() +
-					  "  replay with --seed " + std::to_string(opt_.seed));
+		throw Failure(fmt::format("client {}, request #{}: {}\n"
+								  "  last exchanges (oldest first):\n{}"
+								  "  replay with --seed {}",
+								  id_,
+								  seq_,
+								  what,
+								  trace(),
+								  opt_.seed));
 	}
 
 private:
-	static constexpr unsigned KEYS     = 24;
-	static constexpr unsigned COUNTERS = 4;
+	static constexpr unsigned KEYS      = 24;
+	static constexpr unsigned COUNTERS  = 4;
 	static constexpr size_t BATCH_BYTES = 32 * 1024;
 	static constexpr size_t LARGE_VALUE = 16 * 1024;
 
@@ -347,26 +386,32 @@ private:
 		Reply expected;
 		Check check = Check::Exact;
 		std::string what;
-		bool large  = false;
+		bool large = false;
 	};
 
 	[[nodiscard]] std::string str_key(unsigned k) const {
-		return prefix_ + "k" + std::to_string(k);
+		return fmt::format("{}k{}", prefix_, k);
 	}
+
 	[[nodiscard]] std::string counter_key(unsigned k) const {
-		return prefix_ + "n" + std::to_string(k);
+		return fmt::format("{}n{}", prefix_, k);
 	}
 
 	/// "w3:41:" then bytes. Mostly short and printable, sometimes long and
 	/// binary with CR, LF, '$' and '*' inside, to stress the framing.
 	std::string make_value(bool &large) {
-		std::string v = "w" + std::to_string(id_) + ":" + std::to_string(seq_) + ":";
+		std::string v   = fmt::format("w{}:{}:", id_, seq_);
 		const auto roll = rng_() % 100;
 		size_t len;
 		bool binary = false;
 		if (roll < 90) len = rng_() % 65;
-		else if (roll < 98) { len = 64 + rng_() % 4000; binary = rng_() % 3 == 0; }
-		else { len = rng_() % opt_.max_value; binary = true; }
+		else if (roll < 98) {
+			len    = 64 + rng_() % 4000;
+			binary = rng_() % 3 == 0;
+		} else {
+			len    = rng_() % opt_.max_value;
+			binary = true;
+		}
 		for (size_t i = 0; i < len; ++i)
 			v += binary ? static_cast<char>(rng_() & 0xff)
 						: static_cast<char>('a' + rng_() % 26);
@@ -377,70 +422,77 @@ private:
 	Op make_op() {
 		++seq_;
 		const auto roll = rng_() % 100;
-		const auto key  = str_key(rng_() % KEYS);
+		const auto key  = str_key(static_cast<unsigned>(rng_() % KEYS));
 		Op op;
 
 		if (roll < 25) {
 			const auto v = make_value(op.large);
 			op.wire      = encode({"SET", key, v});
 			op.expected  = Reply::status("OK");
-			op.what      = "SET " + key + " " + printable(v, 24);
+			op.what      = fmt::format("SET {} {}", key, printable(v, 24));
 			strs_[key]   = v;
 		} else if (roll < 50) {
 			const auto it = strs_.find(key);
 			op.wire       = encode({"GET", key});
-			op.expected   = it == strs_.end() ? Reply::nil() : Reply::bulk(it->second);
-			op.what       = "GET " + key;
+			op.expected =
+				it == strs_.end() ? Reply::nil() : Reply::bulk(it->second);
+			op.what = fmt::format("GET {}", key);
 		} else if (roll < 58) {
 			op.wire     = encode({"DEL", key});
 			op.expected = Reply::integer_of(strs_.erase(key) ? 1 : 0);
-			op.what     = "DEL " + key;
+			op.what     = fmt::format("DEL {}", key);
 		} else if (roll < 63) {
 			op.wire     = encode({"EXISTS", key});
 			op.expected = Reply::integer_of(strs_.contains(key) ? 1 : 0);
-			op.what     = "EXISTS " + key;
+			op.what     = fmt::format("EXISTS {}", key);
 		} else if (roll < 73) {
-			std::string tail = "<" + std::to_string(seq_) + ">";
+			std::string tail = fmt::format("<{}>", seq_);
 			for (auto n = rng_() % 200; n; --n)
 				tail += static_cast<char>(rng_() & 0xff);
-			op.wire     = encode({"APPEND", key, tail});
-			auto &v     = strs_[key];
+			op.wire = encode({"APPEND", key, tail});
+			auto &v = strs_[key];
 			v += tail;
 			op.expected = Reply::integer_of(static_cast<long long>(v.size()));
-			op.what     = "APPEND " + key + " " + printable(tail, 24);
+			op.what     = fmt::format("APPEND {} {}", key, printable(tail, 24));
 			op.large    = v.size() > LARGE_VALUE;
 		} else if (roll < 78) {
 			const auto it = strs_.find(key);
 			op.wire       = encode({"STRLEN", key});
 			op.expected   = Reply::integer_of(
-				it == strs_.end() ? 0 : static_cast<long long>(it->second.size()));
-			op.what = "STRLEN " + key;
+				it == strs_.end() ? 0
+								  : static_cast<long long>(it->second.size()));
+			op.what = fmt::format("STRLEN {}", key);
 		} else if (roll < 88) {
-			const auto ck = counter_key(rng_() % COUNTERS);
+			const auto ck = counter_key(static_cast<unsigned>(rng_() % COUNTERS));
 			op.wire       = encode({"INCR", ck});
 			op.expected   = Reply::integer_of(++counters_[ck]);
-			op.what       = "INCR " + ck;
+			op.what       = fmt::format("INCR {}", ck);
 		} else if (roll < 95) {
 			op.wire  = encode({"INCR", shared_.counter_key});
 			op.check = Check::SharedCounter;
-			op.what  = "INCR " + shared_.counter_key + " (shared)";
+			op.what  = fmt::format("INCR {} (shared)", shared_.counter_key);
 			++shared_incrs_;
 		} else {
-			const auto member = prefix_ + "m" + std::to_string(seq_);
-			op.wire     = encode({"SADD", shared_.set_key, member});
-			op.expected = Reply::integer_of(1); // unique, so always new
-			op.what     = "SADD " + shared_.set_key + " " + member;
+			const auto member = fmt::format("{}m{}", prefix_, seq_);
+			op.wire           = encode({"SADD", shared_.set_key, member});
+			op.expected       = Reply::integer_of(1); // unique, so always new
+			op.what = fmt::format("SADD {} {}", shared_.set_key, member);
 			++shared_adds_;
 		}
 		return op;
 	}
 
 	void record(const Op &op, const Reply &got) {
-		trace_.push_back("#" + std::to_string(seq_) + " " + op.what + "\n        expected " +
-						 (op.check == Check::SharedCounter
-							  ? "an integer > " + std::to_string(last_shared_)
-							  : op.expected.str()) +
-						 "\n        got      " + got.str());
+		const std::string expected =
+			op.check == Check::SharedCounter
+				? fmt::format("an integer > {}", last_shared_)
+				: fmt::to_string(op.expected);
+		trace_.push_back(
+			fmt::format("#{} {}\n        expected {}\n        got      {}",
+						seq_,
+						op.what,
+						expected,
+						got));
 		if (trace_.size() > TRACE_LINES) trace_.pop_front();
 	}
 
@@ -448,10 +500,13 @@ private:
 		record(op, got);
 		if (op.check == Check::SharedCounter) {
 			if (got.kind != Reply::Kind::Integer || got.integer <= last_shared_)
-				fail("the shared counter did not strictly increase: " + got.str());
+				fail(fmt::format(
+					"the shared counter did not strictly increase: {}",
+					got));
 			last_shared_ = got.integer;
 		} else if (!(got == op.expected)) {
-			fail("reply differs from the model: " + diff(op.expected, got));
+			fail(fmt::format("reply differs from the model: {}",
+							 diff(op.expected, got)));
 		}
 		g_verified.fetch_add(1, std::memory_order_relaxed);
 		note_progress();
@@ -465,11 +520,13 @@ private:
 
 	/// One pipelined burst. Returns how many requests it held.
 	unsigned round() {
-		const unsigned depth = 1 + static_cast<unsigned>(rng_() % opt_.pipeline);
+		const unsigned depth =
+			1 + static_cast<unsigned>(rng_() % opt_.pipeline);
 		std::vector<Op> ops;
 		std::string wire;
 		bool large = false;
-		for (unsigned i = 0; i < depth && wire.size() < BATCH_BYTES && !large; ++i) {
+		for (unsigned i = 0; i < depth && wire.size() < BATCH_BYTES && !large;
+			 ++i) {
 			ops.push_back(make_op());
 			wire += ops.back().wire;
 			large = ops.back().large;
@@ -484,7 +541,8 @@ private:
 		for (const auto &op : ops) {
 			++seq_;
 			auto got = conn_.read_reply();
-			if (!got) fail("the server closed the connection with replies pending");
+			if (!got)
+				fail("the server closed the connection with replies pending");
 			verify(op, *got);
 		}
 		return static_cast<unsigned>(ops.size());
@@ -501,10 +559,10 @@ private:
 
 	std::unordered_map<std::string, std::string> strs_;
 	std::unordered_map<std::string, long long> counters_;
-	long long last_shared_   = 0;
-	long long shared_incrs_  = 0;
-	long long shared_adds_   = 0;
-	unsigned long long seq_  = 0;
+	long long last_shared_  = 0;
+	long long shared_incrs_ = 0;
+	long long shared_adds_  = 0;
+	unsigned long long seq_ = 0;
 	std::deque<std::string> trace_;
 };
 
@@ -518,14 +576,15 @@ void in_context(const std::string &context, Body &&body) {
 	try {
 		body();
 	} catch (const Failure &f) {
-		throw Failure(context + ": " + f.what());
+		throw Failure(fmt::format("{}: {}", context, f.what()));
 	} catch (const boost::system::system_error &e) {
-		throw Failure(context + ": " + e.what());
+		throw Failure(fmt::format("{}: {}", context, e.what()));
 	}
 }
 
 void expect(const Reply &got, const Reply &want, const std::string &context) {
-	if (!(got == want)) throw Failure(context + ": " + diff(want, got));
+	if (!(got == want))
+		throw Failure(fmt::format("{}: {}", context, diff(want, got)));
 }
 
 /// Every request split at every byte boundary, and sent one byte at a time,
@@ -536,23 +595,32 @@ void fragmentation(const Options &opt, std::mt19937_64 &rng) {
 		std::string wire;
 		std::vector<Reply> replies;
 	};
+
 	const std::string big(3000, 'x');
-	const std::vector<Case> cases = {
+	const std::array<Case, 8> cases = {{
 		{"RESP SET", encode({"SET", "frag:k", "hello"}), {Reply::status("OK")}},
 		{"RESP GET", encode({"GET", "frag:k"}), {Reply::bulk("hello")}},
 		{"RESP PING", encode({"PING"}), {Reply::status("PONG")}},
 		{"inline PING", "PING\r\n", {Reply::status("PONG")}},
-		{"two inline", "PING\r\nPING\r\n",
+		{"two inline",
+		 "PING\r\nPING\r\n",
 		 {Reply::status("PONG"), Reply::status("PONG")}},
-		{"RESP then inline", encode({"PING"}) + "PING\r\n",
+		{"RESP then inline",
+		 fmt::format("{}PING\r\n", encode({"PING"})),
 		 {Reply::status("PONG"), Reply::status("PONG")}},
 		{"binary value",
-		 encode({"SET", "frag:b", std::string("a\r\n$3\r\nb*1\r\n", 12)}) +
-			 encode({"GET", "frag:b"}),
-		 {Reply::status("OK"), Reply::bulk(std::string("a\r\n$3\r\nb*1\r\n", 12))}},
-		{"3000-byte value", encode({"SET", "frag:l", big}) + encode({"GET", "frag:l"}),
+		 fmt::format(
+			 "{}{}",
+			 encode({"SET", "frag:b", std::string("a\r\n$3\r\nb*1\r\n", 12)}),
+			 encode({"GET", "frag:b"})),
+		 {Reply::status("OK"),
+		  Reply::bulk(std::string("a\r\n$3\r\nb*1\r\n", 12))}},
+		{"3000-byte value",
+		 fmt::format("{}{}",
+					 encode({"SET", "frag:l", big}),
+					 encode({"GET", "frag:l"})),
 		 {Reply::status("OK"), Reply::bulk(big)}},
-	};
+	}};
 
 	Connection conn(opt);
 	for (const auto &c : cases) {
@@ -565,18 +633,21 @@ void fragmentation(const Options &opt, std::mt19937_64 &rng) {
 				splits.push_back(p);
 
 		for (const size_t p : splits)
-			in_context(c.name + " split at byte " + std::to_string(p) + " of " +
-						   std::to_string(c.wire.size()),
+			in_context(fmt::format("{} split at byte {} of {}",
+								   c.name,
+								   p,
+								   c.wire.size()),
 					   [&] {
 						   conn.send(std::string_view(c.wire).substr(0, p));
-						   std::this_thread::sleep_for(std::chrono::milliseconds(1));
+						   std::this_thread::sleep_for(
+							   std::chrono::milliseconds(1));
 						   conn.send(std::string_view(c.wire).substr(p));
 						   for (const auto &want : c.replies)
 							   expect(conn.expect_reply(), want, "reply");
 						   note_progress();
 					   });
 
-		in_context(c.name + " sent one byte at a time", [&] {
+		in_context(fmt::format("{} sent one byte at a time", c.name), [&] {
 			for (const char ch : c.wire) conn.send(std::string_view(&ch, 1));
 			for (const auto &want : c.replies)
 				expect(conn.expect_reply(), want, "reply");
@@ -589,43 +660,49 @@ void fragmentation(const Options &opt, std::mt19937_64 &rng) {
 /// connection closes; unknown commands and bad arity are errors the
 /// connection survives; garbage never kills the server.
 void malformed(const Options &opt, std::mt19937_64 &rng) {
-	const std::vector<std::pair<std::string, std::string>> rejected = {
-		{"missing CRLF after a bulk string", "*1\r\n$3\r\nabcXY"},
-		{"non-numeric array length", "*abc\r\n"},
-		{"non-numeric bulk length", "*1\r\n$abc\r\n"},
-		{"array element that is not a bulk string", "*1\r\nabc\r\n"},
-		{"negative bulk length", "*1\r\n$-5\r\nxx\r\n"},
-		{"negative array length", "*-5\r\n"},
-		{"absurd bulk length", "*1\r\n$99999999999999\r\n"},
-	};
+	const std::array<std::pair<std::string_view, std::string_view>, 7>
+		rejected = {{
+			{"missing CRLF after a bulk string", "*1\r\n$3\r\nabcXY"},
+			{"non-numeric array length", "*abc\r\n"},
+			{"non-numeric bulk length", "*1\r\n$abc\r\n"},
+			{"array element that is not a bulk string", "*1\r\nabc\r\n"},
+			{"negative bulk length", "*1\r\n$-5\r\nxx\r\n"},
+			{"negative array length", "*-5\r\n"},
+			{"absurd bulk length", "*1\r\n$99999999999999\r\n"},
+		}};
 	for (const auto &[name, wire] : rejected)
-		in_context("malformed request (" + name + ")", [&] {
+		in_context(fmt::format("malformed request ({})", name), [&] {
 			Connection conn(opt);
 			conn.send(wire);
 			const auto first = conn.expect_reply();
 			if (first.kind != Reply::Kind::Error ||
 				!first.text.starts_with("ERR Protocol error"))
-				throw Failure("not answered with ERR Protocol error: " +
-							  first.str());
+				throw Failure(
+					fmt::format("not answered with ERR Protocol error: {}",
+								first));
 			if (conn.read_reply())
-				throw Failure("connection stayed open after the protocol error");
+				throw Failure(
+					"connection stayed open after the protocol error");
 			note_progress();
 		});
 
-	const std::vector<std::pair<std::string, std::string>> survivable = {
-		{"unknown command", "NOSUCH 1 2\r\n"},
-		{"wrong arity", "GET\r\n"},
-		{"empty array", "*0\r\n"},
-	};
+	const std::array<std::pair<std::string_view, std::string_view>, 3>
+		survivable = {{
+			{"unknown command", "NOSUCH 1 2\r\n"},
+			{"wrong arity", "GET\r\n"},
+			{"empty array", "*0\r\n"},
+		}};
 	for (const auto &[name, wire] : survivable) {
 		Connection conn(opt);
 		conn.send(wire);
 		const auto r = conn.expect_reply();
 		if (r.kind != Reply::Kind::Error)
-			throw Failure(name + " was not answered with an error: " + r.str());
+			throw Failure(
+				fmt::format("{} was not answered with an error: {}", name, r));
 		conn.send("PING\r\n");
-		expect(conn.expect_reply(), Reply::status("PONG"),
-			   "PING after " + name + " on the same connection");
+		expect(conn.expect_reply(),
+			   Reply::status("PONG"),
+			   fmt::format("PING after {} on the same connection", name));
 		note_progress();
 	}
 
@@ -645,7 +722,8 @@ void malformed(const Options &opt, std::mt19937_64 &rng) {
 	}
 	Connection alive(opt);
 	alive.send("PING\r\n");
-	expect(alive.expect_reply(), Reply::status("PONG"),
+	expect(alive.expect_reply(),
+		   Reply::status("PONG"),
 		   "PING after garbage input and abandoned connections");
 }
 
@@ -674,7 +752,8 @@ int main(int argc, char **argv) {
 	app.add_option("--max-value", opt.max_value, "Largest value in bytes")
 		->capture_default_str();
 	app.add_option("--seed", opt.seed, "RNG seed (0 picks one and prints it)");
-	app.add_option("--stall", opt.stall_sec,
+	app.add_option("--stall",
+				   opt.stall_sec,
 				   "Seconds without progress before the run is declared hung")
 		->capture_default_str();
 	CLI11_PARSE(app, argc, argv);
@@ -688,7 +767,9 @@ int main(int argc, char **argv) {
 	}
 	if (opt.pipeline == 0) opt.pipeline = 1;
 	std::printf("stress: %u clients x %u requests, pipeline <= %u, seed %llu\n",
-				opt.clients, opt.ops, opt.pipeline,
+				opt.clients,
+				opt.ops,
+				opt.pipeline,
 				static_cast<unsigned long long>(opt.seed));
 
 	Run run;
@@ -700,12 +781,13 @@ int main(int argc, char **argv) {
 		for (;;) {
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 			if (now_ms() - g_progress_ms.load() > opt.stall_sec * 1000LL) {
-				std::fprintf(stderr,
-							 "\nSTALLED: no verified reply for %u s. The server "
-							 "is hung, or a reply was never sent.\nreplay with "
-							 "--seed %llu\n",
-							 opt.stall_sec,
-							 static_cast<unsigned long long>(opt.seed));
+				std::fprintf(
+					stderr,
+					"\nSTALLED: no verified reply for %u s. The server "
+					"is hung, or a reply was never sent.\nreplay with "
+					"--seed %llu\n",
+					opt.stall_sec,
+					static_cast<unsigned long long>(opt.seed));
 				std::fflush(stderr);
 				std::_Exit(2);
 			}
@@ -720,8 +802,8 @@ int main(int argc, char **argv) {
 		malformed(opt, rng);
 
 		std::printf("phase 2: load\n");
-		const Shared shared{"r" + opt.run_id + ":shared:counter",
-							"r" + opt.run_id + ":shared:set"};
+		const Shared shared{fmt::format("r{}:shared:counter", opt.run_id),
+							fmt::format("r{}:shared:set", opt.run_id)};
 		for (unsigned i = 0; i < opt.clients; ++i)
 			run.workers.push_back(std::make_unique<Worker>(i, opt, shared));
 
@@ -749,32 +831,37 @@ int main(int argc, char **argv) {
 			conn.send(encode({"GET", shared.counter_key}));
 			const auto counter = conn.expect_reply();
 			if (incrs == 0 ? counter.kind != Reply::Kind::Nil
-						   : counter != Reply::bulk(std::to_string(incrs)))
-				run.failures.push_back(
-					"shared counter: " + std::to_string(incrs) +
-					" increments were acknowledged but the counter reads " +
-					counter.str() + " (a lost or duplicated update)");
+						   : counter != Reply::bulk(fmt::to_string(incrs)))
+				run.failures.push_back(fmt::format(
+					"shared counter: {} increments were acknowledged but the "
+					"counter reads {} (a lost or duplicated update)",
+					incrs,
+					counter));
 			conn.send(encode({"SCARD", shared.set_key}));
 			const auto card = conn.expect_reply();
 			if (card != Reply::integer_of(adds))
-				run.failures.push_back("shared set: " + std::to_string(adds) +
-									   " unique members were added but SCARD is " +
-									   card.str());
+				run.failures.push_back(
+					fmt::format("shared set: {} unique members were added but "
+								"SCARD is {}",
+								adds,
+								card));
 		}
-	} catch (const std::exception &e) {
-		run.failures.emplace_back(e.what());
-	}
+	} catch (const std::exception &e) { run.failures.emplace_back(e.what()); }
 
 	const auto secs =
 		std::chrono::duration<double>(Clock::now() - started).count();
 	if (!run.failures.empty()) {
-		std::fprintf(stderr, "\nFAILED (%zu failure%s):\n", run.failures.size(),
+		std::fprintf(stderr,
+					 "\nFAILED (%zu failure%s):\n",
+					 run.failures.size(),
 					 run.failures.size() == 1 ? "" : "s");
-		for (const auto &f : run.failures) std::fprintf(stderr, "\n%s\n", f.c_str());
+		for (const auto &f : run.failures)
+			std::fprintf(stderr, "\n%s\n", f.c_str());
 		return 1;
 	}
 	std::printf("PASS: %llu replies verified in %.1f s (%.0f/s), seed %llu\n",
-				g_verified.load(), secs,
+				g_verified.load(),
+				secs,
 				static_cast<double>(g_verified.load()) / secs,
 				static_cast<unsigned long long>(opt.seed));
 	return 0;

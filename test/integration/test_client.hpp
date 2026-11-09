@@ -1,4 +1,5 @@
 #pragma once
+#include <fmt/format.h>
 #include <hiredis/hiredis.h>
 
 #include <memory>
@@ -40,9 +41,9 @@ public:
 	ReplyPtr() = default;
 
 	template <typename... Args>
-	void command(const RedisContext &context, const char *fmt, Args... args) {
+	void command(const RedisContext &context, const char *format, Args... args) {
 		rep_.reset(reinterpret_cast<redisReply *>(
-			redisCommand(context.ctx_.get(), fmt, args...)));
+			redisCommand(context.ctx_.get(), format, args...)));
 	}
 
 	[[nodiscard]] bool valid() const { return rep_ != nullptr; }
@@ -71,14 +72,14 @@ public:
 
 	// raw command
 	template <typename... Args>
-	TestResult send(const char *fmt, Args... args) {
+	TestResult send(const char *format, Args... args) {
 		if (!is_connected())
 			return {.ok    = false,
 					.value = "",
-					.error = "Not connected: " + error_};
+					.error = fmt::format("Not connected: {}", error_)};
 
 		ReplyPtr reply;
-		reply.command(context_, fmt, args...);
+		reply.command(context_, format, args...);
 		if (!reply.valid())
 			return {.ok = false, .value = "", .error = "NULL reply"};
 
@@ -99,7 +100,7 @@ private:
 			break;
 		case REDIS_REPLY_INTEGER:
 			res.ok    = true;
-			res.value = std::to_string(reply->integer);
+			res.value = fmt::to_string(reply->integer);
 			break;
 		case REDIS_REPLY_NIL:
 			res.ok    = true;

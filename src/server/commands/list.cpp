@@ -1,8 +1,8 @@
 // List commands: LPUSH, RPUSH, LPOP, RPOP, LLEN, LRANGE, LINDEX.
 #include "command.hpp"
-#include "core/object.hpp"
-#include "server/commands/reply.hpp"
-#include "server/database.hpp" // IWYU pragma: keep
+#include "common/store/object.hpp"
+#include "reply.hpp"
+#include "common/store/database.hpp" // IWYU pragma: keep
 
 #include <algorithm>
 #include <array>

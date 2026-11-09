@@ -1,4 +1,5 @@
 #pragma once
+#include "net_error.hpp"
 #include "nothrow_awaitable_t.hpp" // IWYU pragma: keep
 
 #include <boost/asio/any_io_executor.hpp>
@@ -18,11 +19,11 @@ namespace net = boost::asio;
  * \brief Open \p acceptor on \p host:\p port (IPv4) and start listening.
  *
  * What the acceptor's own constructor does, but a port in use or a host that
- * is not an address comes back as a message instead of an exception. Shared by
- * both Listeners.
+ * is not an address comes back as a ListenError instead of an exception.
+ * Shared by both Listeners.
  */
-[[nodiscard]] std::expected<void, std::string>
-listen_on(net::ip::tcp::acceptor &acceptor, const std::string &host,
+[[nodiscard]] std::expected<void, ListenError>
+listen_on(net::ip::tcp::acceptor &acceptor, std::string_view host,
 		  net::ip::port_type port);
 
 inline namespace v1 {
@@ -40,10 +41,10 @@ public:
 	Listener(const net::any_io_executor &ex, std::shared_ptr<Services> services,
 			 bool concurrent = true);
 
-	/// Bind and listen on \p host:\p port (IPv4). Fails, with a message, when
-	/// the port is in use or \p host is not an address.
-	[[nodiscard]] std::expected<void, std::string>
-	listen(const std::string &host, net::ip::port_type port);
+	/// Bind and listen on \p host:\p port (IPv4). Fails when the port is in use
+	/// or \p host is not an address.
+	[[nodiscard]] std::expected<void, ListenError>
+	listen(std::string_view host, net::ip::port_type port);
 
 	/// Accept connections until stop() is called.
 	net::awaitable<void> start();

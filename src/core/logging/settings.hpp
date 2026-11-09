@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 // Configuration vocabulary - data only, no behaviour.
 //
@@ -23,6 +24,11 @@ struct settings {
 	std::string log_file = "redis_server.log";
 
 	std::string logger_name = "redis";
+
+	/// Named sub-loggers, one clone of the default logger each, reached by
+	/// position with logger_at(). The program says what they are for.
+	/// @see channels.hpp
+	std::vector<std::string> channels;
 
 	/**
 	 * @brief Emit one JSON object per line instead of the human-readable

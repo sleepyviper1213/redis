@@ -1,6 +1,8 @@
 #pragma once
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <iterator>
 #include <string>
@@ -54,6 +56,8 @@ public:
 	void syntax_error() { error(SYNTAX_ERROR); }
 
 private:
+	static constexpr std::array<char, 2> LINE_BREAKS{'\r', '\n'};
+
 	// A simple string or error ends at the first CRLF, so one inside the text
 	// (a command name or argument echoed back, say) would end the reply early
 	// and let the rest pass as a reply of its own. Like Redis, turn them into
@@ -67,7 +71,7 @@ private:
 			const size_t from = out_.size();
 			out_ += text;
 			for (size_t i = from + first; i < out_.size(); ++i)
-				if (out_[i] == '\r' || out_[i] == '\n') out_[i] = ' ';
+				if (std::ranges::contains(LINE_BREAKS, out_[i])) out_[i] = ' ';
 		}
 		out_ += "\r\n";
 	}

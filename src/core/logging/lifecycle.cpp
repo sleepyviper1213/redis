@@ -1,7 +1,7 @@
 #include "lifecycle.hpp"
 
 #include "channels.hpp"
-#include "core/date_time.hpp"
+#include "../chrono/date_time.hpp"
 #include "settings.hpp"
 
 #include <fmt/base.h>
@@ -193,7 +193,7 @@ void init(const settings &config) {
 	spdlog::set_default_logger(make_logger(config, std::move(sinks), level));
 	// Immediately after, so every channel carries the sinks and level this
 	// call just chose. @see channels.hpp
-	install_channels();
+	install_channels(config.channels);
 
 	// Emitted only now, through the logger just installed, so they land on the
 	// sinks the caller asked for.
@@ -219,7 +219,8 @@ bool set_level(std::string_view name) {
 	if (!known) return false;
 	// The channels are clones made at init time, each with its own level.
 	spdlog::default_logger()->set_level(level);
-	for (const auto which : ALL_CHANNELS) logger_for(which).set_level(level);
+	for (std::size_t i = 0; i < channel_count(); ++i)
+		logger_at(i).set_level(level);
 	return true;
 }
 

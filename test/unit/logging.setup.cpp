@@ -1,4 +1,5 @@
 #include "core/logging.hpp"
+#include "server/log_channels.hpp"
 
 #include <catch2/reporters/catch_reporter_event_listener.hpp>
 #include <catch2/reporters/catch_reporter_registrars.hpp>
@@ -12,7 +13,10 @@ public:
 
 	void testRunStarting(const Catch::TestRunInfo &) override {
 		redis::logging::init(
-			{.level = "off", .log_file = "", .async = false});
+			{.level    = "off",
+			 .log_file = "",
+			 .channels = redis::logging::channel_names(),
+			 .async    = false});
 	}
 
 	void testRunEnded(const Catch::TestRunStats &) override {

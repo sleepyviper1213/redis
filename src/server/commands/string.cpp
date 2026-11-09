@@ -1,16 +1,19 @@
 // String commands: SET, GET, INCR and friends, MSET/MGET, APPEND, STRLEN.
 #include "command.hpp"
-#include "expire_time.hpp"
-#include "core/date_time.hpp"
-#include "core/deadline_timer.hpp"
+#include "core/chrono/date_time.hpp"
+#include "core/chrono/deadline_timer.hpp"
+#include "common/store/object.hpp"
+#include "core/utils/ascii.hpp"
 #include "core/utils/saturating.hpp"
-#include "core/utils/toupper.hpp"
-#include "server/commands/reply.hpp"
-#include "server/persistence/append_only_file.hpp"
-#include "server/database.hpp" // IWYU pragma: keep
-#include "server/database_fwd.hpp"
-#include "core/object.hpp"
+#include "detail/expire_time.hpp"
+#include "reply.hpp"
+#include "common/store/database.hpp" // IWYU pragma: keep
+#include "common/store/database_fwd.hpp"
+#include "../persistence/append_only_file.hpp"
 
+#include <fmt/format.h>
+
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -19,7 +22,6 @@
 #include <limits>
 #include <optional>
 #include <span>
-#include <string>
 #include <string_view>
 
 namespace redis {
@@ -33,40 +35,70 @@ struct SetOptions {
 	std::optional<DateTime> deadline;
 };
 
-// Parses SET's options. On failure returns the error message to reply with.
-std::expected<SetOptions, std::string_view> parse_set_options(Args args) {
+/// A SET option that takes an expiry as its next argument, and what that
+/// argument means.
+struct ExpiryOption {
+	std::string_view name;
+	detail::ExpireUnit unit;
+	detail::ExpireBase base;
+};
+
+constexpr std::array EXPIRY_OPTIONS{
+	ExpiryOption{.name = "EX",
+				 .unit = detail::ExpireUnit::Seconds,
+				 .base = detail::ExpireBase::Relative},
+	ExpiryOption{.name = "PX",
+				 .unit = detail::ExpireUnit::Milliseconds,
+				 .base = detail::ExpireBase::Relative},
+	ExpiryOption{.name = "EXAT",
+				 .unit = detail::ExpireUnit::Seconds,
+				 .base = detail::ExpireBase::Absolute},
+	ExpiryOption{.name = "PXAT",
+				 .unit = detail::ExpireUnit::Milliseconds,
+				 .base = detail::ExpireBase::Absolute},
+};
+
+/// Why SET's options were refused. What the client is told is chosen where the
+/// reply is written, not here.
+enum class SetError : std::uint8_t {
+	NotInteger,    ///< an expiry that is not a whole number
+	Syntax,        ///< an option that does not exist, or one too many
+	InvalidExpire, ///< an expiry that is not positive, or overflows
+};
+
+// Parses SET's options. On failure returns why.
+std::expected<SetOptions, SetError> parse_set_options(Args args) {
 	SetOptions opts;
 	bool has_expiry = false; // EX, PX, EXAT, PXAT or KEEPTTL seen
 
 	for (size_t i = 3; i < args.size(); ++i) {
-		const std::string opt = toupper(std::string(args[i]));
-		if (opt == "NX" && !opts.xx) {
+		// Looked up before the loop variable moves on to the option's value.
+		const std::string_view arg = args[i];
+		const auto expiry =
+			std::ranges::find_if(EXPIRY_OPTIONS,
+								 [arg](const ExpiryOption &option) {
+									 return iequals(arg, option.name);
+								 });
+		if (iequals(arg, "NX") && !opts.xx) {
 			opts.nx = true;
-		} else if (opt == "XX" && !opts.nx) {
+		} else if (iequals(arg, "XX") && !opts.nx) {
 			opts.xx = true;
-		} else if (opt == "GET") {
+		} else if (iequals(arg, "GET")) {
 			opts.get = true;
-		} else if (opt == "KEEPTTL" && !has_expiry) {
+		} else if (iequals(arg, "KEEPTTL") && !has_expiry) {
 			has_expiry = opts.keep_ttl = true;
-		} else if ((opt == "EX" || opt == "PX" || opt == "EXAT" ||
-					opt == "PXAT") &&
-				   !has_expiry && i + 1 < args.size()) {
+		} else if (expiry != EXPIRY_OPTIONS.end() && !has_expiry &&
+				   i + 1 < args.size()) {
 			has_expiry      = true;
 			const auto time = parse_int(args[++i]);
-			if (!time) return std::unexpected(ReplyWriter::NOT_INTEGER);
-			const auto unit = opt == "EX" || opt == "EXAT"
-								  ? ExpireUnit::Seconds
-								  : ExpireUnit::Milliseconds;
-			const auto base = opt == "EX" || opt == "PX" ? ExpireBase::Relative
-														 : ExpireBase::Absolute;
-			const auto timer = *time > 0 ? expire_time(*time, unit, base)
-										 : std::nullopt;
-			if (!timer)
-				return std::unexpected(
-					"ERR invalid expire time in 'set' command");
+			if (!time) return std::unexpected(SetError::NotInteger);
+			const auto timer =
+				*time > 0 ? detail::expire_time(*time, expiry->unit, expiry->base)
+						  : std::nullopt;
+			if (!timer) return std::unexpected(SetError::InvalidExpire);
 			opts.deadline = timer->deadline();
 		} else {
-			return std::unexpected(ReplyWriter::SYNTAX_ERROR);
+			return std::unexpected(SetError::Syntax);
 		}
 	}
 	return opts;
@@ -75,7 +107,13 @@ std::expected<SetOptions, std::string_view> parse_set_options(Args args) {
 void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 	const auto opts = parse_set_options(args);
 	if (!opts) {
-		out.error(opts.error());
+		switch (opts.error()) {
+		case SetError::NotInteger: out.not_integer(); break;
+		case SetError::Syntax: out.syntax_error(); break;
+		case SetError::InvalidExpire:
+			out.error("ERR invalid expire time in 'set' command");
+			break;
+		}
 		return;
 	}
 
@@ -107,7 +145,8 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 
 	ctx.db.set(key, String(args[2]));
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.
-	if (opts->deadline) ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline));
+	if (opts->deadline)
+		ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline));
 	else if (!opts->keep_ttl) ctx.db.persist(key);
 
 	// EX and PX are relative to now, which a replay does not share: log the
@@ -117,8 +156,9 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 		if (DeadlineTimer::at(*opts->deadline).has_expired()) {
 			ctx.aof->replace({"DEL", key});
 		} else {
-			const auto at = DeadlineTimer::at(*opts->deadline).millis_since_epoch();
-			ctx.aof->replace({"SET", key, args[2], "PXAT", std::to_string(at)});
+			const auto at =
+				DeadlineTimer::at(*opts->deadline).millis_since_epoch();
+			ctx.aof->replace({"SET", key, args[2], "PXAT", fmt::to_string(at)});
 		}
 	}
 
@@ -164,8 +204,11 @@ void increment_by(CommandContext &ctx, std::string_view key, int64_t delta,
 		return;
 	}
 
-	if (*value != nullptr) (*value)->assign_string(std::to_string(result));
-	else ctx.db.set(key, std::to_string(result));
+	if (*value != nullptr) (*value)->assign_string(fmt::to_string(result));
+	else {
+		const fmt::format_int digits(result);
+		ctx.db.set(key, String(digits.data(), digits.size()));
+	}
 	out.integer(result);
 }
 

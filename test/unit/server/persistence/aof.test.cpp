@@ -1,13 +1,14 @@
 #include "../commands/commands.fixture.hpp"
-#include "core/deadline_timer.hpp"
-#include "core/resp/value.hpp"
+#include "core/chrono/deadline_timer.hpp"
+#include "common/resp/value.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "server/database.hpp"
+#include "common/store/database.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <fmt/format.h>
 
 #include <atomic>
 #include <chrono>
@@ -31,9 +32,10 @@ public:
 	TempDir() {
 		static std::atomic<int> counter{0};
 		path_ = fs::temp_directory_path() /
-				("redis_aof_test_" + std::to_string(counter++) + "_" +
-				 std::to_string(
-					 std::chrono::steady_clock::now().time_since_epoch().count()));
+				fmt::format(
+					"redis_aof_test_{}_{}",
+					counter++,
+					std::chrono::steady_clock::now().time_since_epoch().count());
 	}
 	TempDir(const TempDir &)            = delete;
 	TempDir &operator=(const TempDir &) = delete;
@@ -57,7 +59,7 @@ struct AofServer {
 
 	/// Replay the files; separate from the constructor so a test can look at
 	/// the failure.
-	[[nodiscard]] std::expected<void, std::string> start() {
+	[[nodiscard]] std::expected<void, persistence::PersistError> start() {
 		return aof.load(ctx, handler);
 	}
 
@@ -85,9 +87,9 @@ struct AofServer {
 
 /// A command as it appears in the log.
 std::string logged(const std::vector<std::string> &argv) {
-	std::string out = "*" + std::to_string(argv.size()) + "\r\n";
+	std::string out = fmt::format("*{}\r\n", argv.size());
 	for (const auto &arg : argv)
-		out += "$" + std::to_string(arg.size()) + "\r\n" + arg + "\r\n";
+		fmt::format_to(std::back_inserter(out), "${}\r\n{}\r\n", arg.size(), arg);
 	return out;
 }
 
@@ -171,6 +173,9 @@ SCENARIO("Commands that cannot be replayed as received", "[aof]") {
 				CHECK(server.log().contains("SREM"));
 				CHECK_FALSE(server.log().contains("SPOP"));
 
+				// A restart, not a second server: the first lets go of the
+				// directory.
+				server.aof.close();
 				Restarted again(dir.path(), snapshot.path());
 				CHECK(again.run({"SMEMBERS", "s"}) == remaining);
 			}
@@ -220,6 +225,7 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 
 			AND_THEN("it keeps logging after the old commands") {
 				server.run({"SET", "more", "1"});
+				server.aof.close();
 				Restarted third(dir.path(), snapshot.path());
 				CHECK(third.run({"GET", "more"}) == "$1\r\n1\r\n");
 				CHECK(third.run({"GET", "str"}) == "$11\r\nhello world\r\n");
@@ -440,8 +446,11 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 				start_with("incr ../precious.txt\nseq 1\n");
 			THEN("the server refuses to start and leaves the file alone") {
 				REQUIRE_FALSE(started);
-				CHECK(started.error().find("bad incremental file name") !=
-					  std::string::npos);
+				CHECK(started.error().kind ==
+					  persistence::PersistKind::ManifestBadIncr);
+				CHECK(started.error().quoted == "../precious.txt");
+				CHECK(fmt::format("{}", started.error())
+						  .contains("bad incremental file name"));
 				CHECK(fs::file_size(precious) == 7);
 			}
 		}
@@ -455,8 +464,11 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 												"seq 1\n");
 				THEN(std::string("it is refused: ") + name) {
 					REQUIRE_FALSE(started);
-					CHECK(started.error().find("bad base file name") !=
-						  std::string::npos);
+					CHECK(started.error().kind ==
+						  persistence::PersistKind::ManifestBadBase);
+					CHECK(started.error().quoted == name);
+					CHECK(fmt::format("{}", started.error())
+							  .contains("bad base file name"));
 				}
 			}
 		}
@@ -468,4 +480,111 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 		std::error_code ignored;
 		fs::remove(precious, ignored);
 	}
+}
+
+SCENARIO("One server at a time uses the directory", "[aof][security]") {
+	GIVEN("a server that has started over a directory") {
+		TempDir dir;
+		test::TempFile snapshot;
+		AofServer first(dir.path(), snapshot.path());
+		REQUIRE(first.start().has_value());
+
+		WHEN("a second one starts over the same directory") {
+			AofServer second(dir.path(), snapshot.path());
+			const auto started = second.start();
+
+			THEN("it refuses, and the first carries on undisturbed") {
+				REQUIRE_FALSE(started);
+				CHECK(started.error().kind == persistence::PersistKind::InUse);
+				CHECK(started.error().path == dir.path());
+				CHECK(fmt::format("{}", started.error())
+						  .contains("in use by another server"));
+				CHECK(first.run({"SET", "a", "1"}) == "+OK\r\n");
+				CHECK(first.log() == logged({"SET", "a", "1"}));
+			}
+		}
+
+		WHEN("the first one is closed") {
+			first.aof.close();
+			AofServer second(dir.path(), snapshot.path());
+
+			THEN("the directory is free for the next") {
+				CHECK(second.start().has_value());
+			}
+		}
+	}
+}
+
+#ifndef _WIN32
+namespace {
+std::string contents_of(const fs::path &file) {
+	std::ifstream in(file, std::ios::binary);
+	return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+} // namespace
+#endif
+
+SCENARIO("The server's files are private, and links are not followed",
+		 "[aof][security]") {
+#ifdef _WIN32
+	SKIP("file modes and symbolic links are not what they are on POSIX");
+#else
+	GIVEN("a file elsewhere that must survive") {
+		TempDir dir;
+		test::TempFile snapshot;
+		test::TempFile precious;
+		std::ofstream(precious.path()) << "keep me";
+
+		WHEN("a link is planted where the manifest is written first") {
+			fs::create_directories(dir.path());
+			fs::create_symlink(precious.path(),
+							   dir.path() / "appendonly.manifest.tmp");
+			AofServer server(dir.path(), snapshot.path());
+
+			THEN("the server starts and the file behind the link is untouched") {
+				REQUIRE(server.start().has_value());
+				CHECK(contents_of(precious.path()) == "keep me");
+				CHECK_FALSE(fs::is_symlink(dir.path() / "appendonly.manifest"));
+			}
+		}
+
+		WHEN("the server makes the directory and its files") {
+			AofServer server(dir.path(), snapshot.path());
+			REQUIRE(server.start().has_value());
+			const auto mode = [](const fs::path &path) {
+				return fs::status(path).permissions() & fs::perms::mask;
+			};
+
+			THEN("only its owner can use them") {
+				constexpr auto FILE_MODE =
+					fs::perms::owner_read | fs::perms::owner_write;
+				CHECK(mode(dir.path()) == fs::perms::owner_all);
+				CHECK(mode(dir.path() / "appendonly.manifest") == FILE_MODE);
+				CHECK(mode(server.aof.files().back()) == FILE_MODE);
+			}
+		}
+
+		WHEN("the log it would append to has been replaced by a link") {
+			fs::path incr;
+			{
+				AofServer server(dir.path(), snapshot.path());
+				REQUIRE(server.start().has_value());
+				server.run({"SET", "a", "1"});
+				incr = server.aof.files().back();
+			}
+			fs::remove(incr);
+			fs::create_symlink(precious.path(), incr);
+			AofServer again(dir.path(), snapshot.path());
+			const auto started = again.start();
+
+			THEN("it refuses to start, and the file behind the link is untouched") {
+				REQUIRE_FALSE(started);
+				CHECK(started.error().kind == persistence::PersistKind::CannotOpen);
+				CHECK(started.error().cause);
+				CHECK(fmt::format("{}", started.error()).contains("cannot open"));
+				CHECK(contents_of(precious.path()) == "keep me");
+			}
+		}
+	}
+#endif
 }

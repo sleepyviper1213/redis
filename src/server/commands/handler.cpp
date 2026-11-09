@@ -1,13 +1,14 @@
 #include "handler.hpp"
 
-#include "core/logging.hpp"
-#include "core/resp/value.hpp"
-#include "core/utils/toupper.hpp"
-#include "server/commands/command.hpp"
-#include "server/commands/reply.hpp"
-#include "server/diagnostics/current_command.hpp"
-#include "server/persistence/append_only_file.hpp"
-#include "server/database.hpp"
+#include "../log_channels.hpp"
+#include "common/resp/value.hpp"
+#include "core/utils/ascii.hpp"
+#include "command.hpp"
+#include "reply.hpp"
+#include "../diagnostics/current_command.hpp"
+#include "../persistence/append_only_file.hpp"
+#include "common/store/database.hpp"
+#include "../stats.hpp"
 
 #include <fast_float/fast_float.h> // IWYU pragma: keep (integer from_chars overload)
 #include <fmt/format.h>
@@ -120,14 +121,21 @@ const CommandInfo *CommandHandler::dispatch(CommandContext &ctx, Args args,
 		info.arity >= 0 ? argc == info.arity : argc >= -info.arity;
 	if (!arity_ok) {
 		out.error(fmt::format("ERR wrong number of arguments for '{}' command",
-							  tolower(std::string{info.name})));
+							  ascii_lowered(info.name)));
 		return nullptr;
 	}
 	// Debug builds: the thread that runs commands owns the keyspace.
 	ctx.db.claim_owner();
 	// For a crash report: which command was running when the process died.
 	const diagnostics::CommandScope running{info.name, args.size()};
+	if (ctx.stats == nullptr) {
+		info.fn(ctx, args, out);
+		return &info;
+	}
+	const ElapsedTimer timer;
 	info.fn(ctx, args, out);
+	ctx.stats->command_ran(info.name,
+						   std::chrono::nanoseconds(timer.nsecs_elapsed()));
 	return &info;
 }
 

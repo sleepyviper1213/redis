@@ -1,6 +1,7 @@
 #include "core/utils/ring_buffer.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <fmt/format.h>
 
 #include <string>
 #include <type_traits>
@@ -49,7 +50,7 @@ SCENARIO("Pushing and popping at both ends", "[ring_buffer]") {
 SCENARIO("Growing while the contents wrap around", "[ring_buffer]") {
 	GIVEN("a full buffer whose start is not at index 0") {
 		RingBuffer<std::string> buffer;
-		for (int i = 0; i < 4; ++i) buffer.push_back(std::to_string(i));
+		for (int i = 0; i < 4; ++i) buffer.push_back(fmt::to_string(i));
 		buffer.pop_front();
 		buffer.push_back("4"); // wraps into the slot pop_front freed
 		REQUIRE(buffer.size() == buffer.capacity());
@@ -146,10 +147,11 @@ struct CountingAllocator {
 	using value_type      = T;
 	using is_always_equal = std::false_type;
 
-	int tag           = 0;
-	int *allocations  = nullptr;
+	int tag          = 0;
+	int *allocations = nullptr;
 
 	CountingAllocator(int t, int *counter) : tag(t), allocations(counter) {}
+
 	template <typename U>
 	explicit CountingAllocator(const CountingAllocator<U> &o)
 		: tag(o.tag), allocations(o.allocations) {}
@@ -158,6 +160,7 @@ struct CountingAllocator {
 		++*allocations;
 		return std::allocator<T>{}.allocate(n);
 	}
+
 	void deallocate(T *p, std::size_t n) noexcept {
 		std::allocator<T>{}.deallocate(p, n);
 	}

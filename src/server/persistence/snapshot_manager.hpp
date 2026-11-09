@@ -1,13 +1,13 @@
 #pragma once
-#include "core/date_time.hpp"
-#include "core/elapsed_timer.hpp"
-#include "server/database_fwd.hpp"
-#include "server/persistence/child_process.hpp"
+#include "core/chrono/date_time.hpp"
+#include "core/chrono/elapsed_timer.hpp"
+#include "common/store/database_fwd.hpp"
+#include "core/os/child_process.hpp"
+#include "persist_error.hpp"
 
 #include <expected>
 #include <filesystem>
 #include <optional>
-#include <string>
 
 namespace redis {
 
@@ -31,10 +31,11 @@ public:
 	~SnapshotManager();
 
 	/// Synchronous save (SAVE). Blocks the caller until the file is durable.
-	[[nodiscard]] std::expected<void, std::string> save(const Database &db);
+	[[nodiscard]] std::expected<void, persistence::PersistError>
+	save(const Database &db);
 
 	/// Start a background save (BGSAVE). Fails if one is already running.
-	[[nodiscard]] std::expected<void, std::string>
+	[[nodiscard]] std::expected<void, persistence::PersistError>
 	background_save(const Database &db);
 
 	/// Collect a finished background save, if any. Never blocks.
@@ -48,7 +49,8 @@ public:
 	void cancel_background_save();
 
 	/// Load the snapshot file into \p db. A missing file is not an error.
-	[[nodiscard]] std::expected<void, std::string> load(Database &db);
+	[[nodiscard]] std::expected<void, persistence::PersistError>
+	load(Database &db);
 
 	[[nodiscard]] bool background_save_in_progress() const noexcept;
 
@@ -58,12 +60,12 @@ public:
 	[[nodiscard]] const std::filesystem::path &file() const noexcept;
 
 private:
-	void finish_background_save(const persistence::posix::ChildResult &result);
+	void finish_background_save(const os::ChildResult &result);
 
 	std::filesystem::path file_;
 	DateTime last_save_ = DateTime::current();
 	DateTime child_forked_at_;
-	std::optional<persistence::posix::Child> child_;
+	std::optional<os::Child> child_;
 	ElapsedTimer child_timer_;
 };
 
