@@ -1,0 +1,5 @@
+# libstdc++ is not instrumented, so TSan cannot see the atomic refcount that
+# orders an exception_ptr's last use before the exception object is freed. The
+# worker thread frees the exception after the caller has read what(): a false
+# positive.
+race:std::runtime_error::~runtime_error

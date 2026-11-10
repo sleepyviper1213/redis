@@ -34,6 +34,10 @@ struct TrackingAllocator {
 	int tag        = 0;
 	Ledger *ledger = nullptr;
 
+	// Only so libc++ can form basic_string's defaulted allocator argument
+	// while checking is_constructible; nothing allocates through it.
+	TrackingAllocator() noexcept = default;
+
 	TrackingAllocator(int t, Ledger *l) noexcept : tag(t), ledger(l) {}
 
 	// Implicit, as std::allocator's is: uses-allocator construction hands a

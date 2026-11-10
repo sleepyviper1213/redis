@@ -42,3 +42,13 @@ unset(_hb_llvm_link)
 set(CMAKE_SYSTEM_NAME Darwin)
 set(CMAKE_SYSTEM_PROCESSOR "arm64" CACHE STRING "" FORCE)
 set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+
+# Chainloading replaces vcpkg's own macOS toolchain, which is what applies the
+# triplet's VCPKG_C_FLAGS / VCPKG_CXX_FLAGS to ports. Apply them here (vcpkg
+# passes them as -D only when building a port; the project itself has none).
+if(VCPKG_C_FLAGS)
+    string(APPEND CMAKE_C_FLAGS_INIT " ${VCPKG_C_FLAGS}")
+endif()
+if(VCPKG_CXX_FLAGS)
+    string(APPEND CMAKE_CXX_FLAGS_INIT " ${VCPKG_CXX_FLAGS}")
+endif()

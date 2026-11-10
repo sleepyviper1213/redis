@@ -55,7 +55,9 @@ set(REDIS_WARNINGS_GNU_EXTRA
     -Wlogical-op
     -Wmisleading-indentation
     -Wsuggest-override
-    -Wno-interference-size)
+    -Wno-interference-size
+    # Boost.Asio uses atomic_thread_fence, which ThreadSanitizer cannot model.
+    -Wno-tsan)
 
 # ---------------------------------------------------------------------------
 # Probe: treat "unused argument" as failure on Clang; -Werror on GCC

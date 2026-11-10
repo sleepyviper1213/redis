@@ -13,3 +13,9 @@ set(VCPKG_OSX_ARCHITECTURES arm64)
 
 set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE
     "${CMAKE_CURRENT_LIST_DIR}/../toolchains/homebrew-llvm.cmake")
+
+# stdexec's exec/libdispatch_queue.hpp uses std::vector without including
+# <vector>; Homebrew LLVM 23's libc++ no longer provides it transitively.
+# Drop this once the pinned stdexec includes it.
+set(VCPKG_C_FLAGS "")  # vcpkg wants both or neither
+set(VCPKG_CXX_FLAGS "-include vector")
