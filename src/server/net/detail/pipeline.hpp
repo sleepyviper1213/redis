@@ -102,8 +102,8 @@ void drop_consumed(std::string &pending, ParsedBatch &batch);
  */
 AfterReplies execute_pending(std::string &pending, ParsedBatch &batch,
 							 std::string &replies,
-							 const CommandHandler &handler,
-							 CommandContext &ctx, size_t max_output = SIZE_MAX);
+							 const CommandHandler &handler, CommandContext &ctx,
+							 size_t max_output = SIZE_MAX);
 
 } // namespace detail
 } // namespace redis

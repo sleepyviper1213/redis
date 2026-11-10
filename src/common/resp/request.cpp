@@ -1,4 +1,5 @@
 #include "request.hpp"
+#include "core/error/failed.hpp"
 
 #include "parser.hpp"
 
@@ -22,11 +23,11 @@ parse_inline(std::string_view data, size_t &pos,
 	const auto newline = data.find('\n', pos);
 	if (newline == std::string_view::npos) {
 		if (data.size() - pos > MAX_INLINE_LENGTH)
-			return std::unexpected(RespError::INLINE_TOO_LONG);
-		return std::unexpected(RespError::UNEXPECTED_EOF);
+			FAILED(RespError::INLINE_TOO_LONG);
+		FAILED(RespError::UNEXPECTED_EOF);
 	}
 	if (newline - pos > MAX_INLINE_LENGTH)
-		return std::unexpected(RespError::INLINE_TOO_LONG);
+		FAILED(RespError::INLINE_TOO_LONG);
 
 	std::string_view line = data.substr(pos, newline - pos);
 	pos                   = newline + 1;
@@ -111,7 +112,7 @@ std::expected<RequestKind, Parser::RespError>
 parse_request(std::string_view data, size_t &pos,
 			  std::vector<std::string_view> &args,
 			  std::deque<std::string> &owned) {
-	if (pos >= data.size()) return std::unexpected(RespError::UNEXPECTED_EOF);
+	if (pos >= data.size()) FAILED(RespError::UNEXPECTED_EOF);
 	if (data[pos] != '*') return parse_inline(data, pos, args);
 
 	if (parse_bulk_array(data, pos, args)) return RequestKind::Command;
@@ -122,7 +123,7 @@ parse_request(std::string_view data, size_t &pos,
 	auto value         = Parser::parse_recursive(data, pos);
 	if (!value) {
 		pos = start;
-		return std::unexpected(value.error());
+		FAILED(value.error());
 	}
 
 	// Not Value::is_string(): a null Value holds an empty string too.

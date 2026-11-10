@@ -1,4 +1,5 @@
 #include "redis_server.hpp"
+#include "core/error/failed.hpp"
 
 #include "log_channels.hpp"
 #include "net/formatter.hpp"
@@ -67,7 +68,7 @@ std::expected<void, ServerError> RedisServer::run() {
 	if (!loaded) {
 		// Refuse to start rather than serve an empty keyspace and later
 		// overwrite the unreadable files with it.
-		return std::unexpected(ServerError{.kind   = ServerKind::LoadFailed,
+		FAILED(ServerError{.kind   = ServerKind::LoadFailed,
 										   .source = loaded.error()});
 	}
 
@@ -78,13 +79,13 @@ std::expected<void, ServerError> RedisServer::run() {
 		sender_server.emplace(io_.get_executor(), services_);
 		if (auto listening = sender_server->listen(config_.host, config_.port);
 			!listening)
-			return std::unexpected(ServerError{.kind   = ServerKind::ListenFailed,
+			FAILED(ServerError{.kind   = ServerKind::ListenFailed,
 											   .source = listening.error()});
 	} else {
 		server.emplace(io_.get_executor(), services_, config_.io_threads > 1);
 		if (auto listening = server->listen(config_.host, config_.port);
 			!listening)
-			return std::unexpected(ServerError{.kind   = ServerKind::ListenFailed,
+			FAILED(ServerError{.kind   = ServerKind::ListenFailed,
 											   .source = listening.error()});
 	}
 
@@ -142,7 +143,7 @@ std::expected<void, ServerError> RedisServer::run() {
 		run_io();
 	} // joins the workers
 	if (failure)
-		return std::unexpected(ServerError{.kind   = ServerKind::WorkerFailed,
+		FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
 										   .detail = std::move(*failure)});
 
 	// A batch may still be executing: wait for it before reading the keyspace.
@@ -164,7 +165,7 @@ std::expected<void, ServerError> RedisServer::run() {
 	// error is returned and main() exits non-zero, which a supervisor sees,
 	// rather than a clean shutdown that lost the data.
 	if (auto saved = services_->persistence.save(services_->db); !saved)
-		return std::unexpected(ServerError{.kind   = ServerKind::FinalSaveFailed,
+		FAILED(ServerError{.kind   = ServerKind::FinalSaveFailed,
 										   .source = saved.error()});
 	log().info("Redis is now ready to exit, bye bye...");
 	return {};

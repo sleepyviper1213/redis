@@ -1,19 +1,21 @@
 #pragma once
 #include "args.hpp"
+#include "common/resp/value.hpp"
 #include "common/store/database_fwd.hpp"
-#include "core/utils/attributes.hpp"
+
+#include <fmt/format.h>
 
 #include <cstdint>
-#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 
 namespace redis {
 class SnapshotManager;
 class AppendOnlyFile;
 class NetGuard;
 class ServerStats;
-class ReplyWriter; // reply.hpp: a command's .cpp includes it to write replies
 
 /// Everything a command may act on. A borrow: the owner (Services) keeps what
 /// it points to alive and never rebinds or assigns the context.
@@ -34,8 +36,50 @@ struct CommandContext {
 	const NetGuard *guard = nullptr;
 };
 
-/// Runs one command, writing its reply to the writer.
-using CommandFn = void (*)(CommandContext &, Args, ReplyWriter &);
+/// Runs one command and returns its reply, which the dispatcher writes with
+/// `fmt::format("{:e}", reply)`. A command returns only once its outcome is
+/// known, so a failure part-way is still an error reply.
+using CommandFn = resp::Value (*)(CommandContext &, Args);
+
+/// The replies commands share.
+namespace reply {
+inline resp::Value ok() { return resp::Value::from_simple_string("OK"); }
+
+template <typename... Args>
+resp::Value simple(fmt::format_string<Args...> text, Args &&...args) {
+	return resp::Value::from_simple_string(
+		fmt::format(text, std::forward<Args>(args)...));
+}
+
+template <typename... Args>
+resp::Value error(fmt::format_string<Args...> message, Args &&...args) {
+	return resp::Value::from_simple_error(
+		fmt::format(message, std::forward<Args>(args)...));
+}
+
+inline resp::Value integer(int64_t n) { return resp::Value::from_integer(n); }
+
+inline resp::Value nil() { return resp::Value::from_null(); }
+
+inline resp::Value bulk(std::string_view text) {
+	return resp::Value::from_bulk_string(std::string(text));
+}
+
+inline resp::Value array(resp::Value::Array elements) {
+	return resp::Value::from_array(std::move(elements));
+}
+
+inline resp::Value wrong_type() {
+	return error("WRONGTYPE Operation against a key holding the wrong kind of "
+				 "value");
+}
+
+inline resp::Value not_integer() {
+	return error("ERR value is not an integer or out of range");
+}
+
+inline resp::Value syntax_error() { return error("ERR syntax error"); }
+} // namespace reply
 
 struct CommandInfo {
 	std::string_view name; ///< Upper case, as looked up.
@@ -56,9 +100,5 @@ std::span<const CommandInfo> list_commands();
 std::span<const CommandInfo> set_commands();
 std::span<const CommandInfo> hash_commands();
 std::span<const CommandInfo> server_commands();
-
-/// Parse a decimal int64 argument the way Redis does: no spaces, no '+'.
-[[nodiscard]] REDIS_PURE_FN REDIS_HOT_FN std::optional<int64_t>
-parse_int(std::string_view s) noexcept;
 
 } // namespace redis

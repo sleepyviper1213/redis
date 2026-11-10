@@ -1,6 +1,5 @@
 // Hash commands: HSET, HGET, HDEL, HGETALL, HLEN, HEXISTS, HMGET.
 #include "command.hpp"
-#include "reply.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "common/store/object.hpp"
 
@@ -8,20 +7,21 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
+#include <utility>
 #include <version> // IWYU pragma: keep (feature-test macros)
 
 namespace redis {
+using resp::Value;
 
 namespace {
-void hset(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hset(CommandContext &ctx, Args args) {
 	if (args.size() % 2 != 0) {
-		out.error("ERR wrong number of arguments for 'hset' command");
-		return;
+		return reply::error("ERR wrong number of arguments for 'hset' command");
 	}
 	const auto hash = ctx.db.find_or_create<Hash>(args[1]);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 
 	int64_t added = 0;
@@ -30,52 +30,48 @@ void hset(CommandContext &ctx, Args args, ReplyWriter &out) {
 			(*hash)->insert_or_assign(String(args[i]), String(args[i + 1]));
 		added += inserted ? 1 : 0;
 	}
-	out.integer(added);
+	return reply::integer(added);
 }
 
-void hget(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hget(CommandContext &ctx, Args args) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 	if (*hash == nullptr) {
-		out.nil();
-		return;
+		return reply::nil();
 	}
 	const auto it = (*hash)->find(args[2]);
-	if (it == (*hash)->end()) out.nil();
-	else out.bulk(it->second);
+	return it == (*hash)->end() ? reply::nil() : reply::bulk(it->second);
 }
 
-void hmget(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hmget(CommandContext &ctx, Args args) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
-	out.array(args.size() - 2);
+	Value::Array values;
+	values.reserve(args.size() - 2);
 	for (const std::string_view field : args.subspan(2)) {
 		if (*hash == nullptr) {
-			out.nil();
+			values.push_back(reply::nil());
 			continue;
 		}
 		const auto it = (*hash)->find(field);
-		if (it == (*hash)->end()) out.nil();
-		else out.bulk(it->second);
+		values.push_back(it == (*hash)->end() ? reply::nil()
+											  : reply::bulk(it->second));
 	}
+	return reply::array(std::move(values));
 }
 
-void hdel(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hdel(CommandContext &ctx, Args args) {
 	const std::string_view key = args[1];
 	const auto hash            = ctx.db.find_as<Hash>(key);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 	if (*hash == nullptr) {
-		out.integer(0);
-		return;
+		return reply::integer(0);
 	}
 
 	int64_t removed = 0;
@@ -91,43 +87,41 @@ void hdel(CommandContext &ctx, Args args, ReplyWriter &out) {
 		}
 #endif
 	ctx.db.erase_if_empty(key);
-	out.integer(removed);
+	return reply::integer(removed);
 }
 
-void hgetall(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hgetall(CommandContext &ctx, Args args) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 	if (*hash == nullptr) {
-		out.array(0);
-		return;
+		return reply::array({});
 	}
-	out.array((*hash)->size() * 2);
+	Value::Array pairs;
+	pairs.reserve((*hash)->size() * 2);
 	for (const auto &[field, value] : **hash) {
-		out.bulk(field);
-		out.bulk(value);
+		pairs.push_back(reply::bulk(field));
+		pairs.push_back(reply::bulk(value));
 	}
+	return reply::array(std::move(pairs));
 }
 
-void hlen(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hlen(CommandContext &ctx, Args args) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
-	out.integer(((*hash) != nullptr) ? static_cast<int64_t>((*hash)->size())
+	return reply::integer(((*hash) != nullptr) ? static_cast<int64_t>((*hash)->size())
 									 : 0);
 }
 
-void hexists(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value hexists(CommandContext &ctx, Args args) {
 	const auto hash = ctx.db.find_as<Hash>(args[1]);
 	if (!hash) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
-	out.integer(((*hash) != nullptr) && (*hash)->contains(args[2]) ? 1 : 0);
+	return reply::integer(((*hash) != nullptr) && (*hash)->contains(args[2]) ? 1 : 0);
 }
 
 constexpr std::array COMMANDS{

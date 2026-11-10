@@ -17,6 +17,7 @@ add_executable(redis_unit_test
     unit/common/store/simple_dynamic_string.test.cpp
     unit/core/utils/glob.test.cpp
     unit/core/utils/indirect.test.cpp
+    unit/core/utils/parse_number.test.cpp
     unit/core/utils/ring_buffer.test.cpp
     unit/core/utils/saturating.test.cpp
 

@@ -1,18 +1,18 @@
 #include "pipeline.hpp"
 
 #include "common/resp/parser.hpp"
-#include "server/net/net_error.hpp"
 #include "common/resp/request.hpp"
-#include "server/commands/command.hpp"
-#include "server/commands/handler.hpp"
-#include "server/commands/reply.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.size(), db.prefetch())
 #include "common/store/database_fwd.hpp"
+#include "server/commands/command.hpp"
+#include "server/commands/handler.hpp"
+#include "server/net/net_error.hpp"
 #include "server/persistence/append_only_file.hpp"
 
 #include <fmt/format.h>
 
 #include <cstddef>
+#include <iterator>
 #include <string_view>
 
 namespace redis::detail {
@@ -31,12 +31,14 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 		if (!found) {
 			if (resp::Parser::is_incomplete(found.error())) break;
 			// The wording is ConnectionError's; the "ERR" is the protocol's.
-			ReplyWriter(batch.protocol_error)
-				.error(fmt::format(
+			fmt::format_to(
+				std::back_inserter(batch.protocol_error),
+				"{:e}",
+				resp::Value::from_simple_error(fmt::format(
 					"ERR {}",
 					ConnectionError{
 						.kind = ConnectionKind::Protocol,
-						.code = static_cast<std::int64_t>(found.error())}));
+						.code = static_cast<std::int64_t>(found.error())})));
 			break;
 		}
 		consumed = pos;
@@ -94,8 +96,8 @@ void drop_consumed(std::string &pending, ParsedBatch &batch) {
 
 AfterReplies execute_pending(std::string &pending, ParsedBatch &batch,
 							 std::string &replies,
-							 const CommandHandler &handler,
-							 CommandContext &ctx, size_t max_output) {
+							 const CommandHandler &handler, CommandContext &ctx,
+							 size_t max_output) {
 	parse_pending(pending, batch);
 	const AfterReplies after =
 		execute_batch(batch, replies, handler, ctx, max_output);

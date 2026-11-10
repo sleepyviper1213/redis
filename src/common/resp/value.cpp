@@ -1,5 +1,6 @@
-#include "core/error.hpp"
 #include "common/resp.hpp"
+#include "core/error.hpp"
+#include "core/utils/parse_number.hpp"
 
 #include <fmt/base.h>
 #include <fmt/ranges.h>
@@ -7,12 +8,11 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <charconv>
 #include <cstdint>
 #include <expected>
-#include <iterator>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -40,7 +40,7 @@ int64_t Value::as_integer() const {
 
 std::expected<int64_t, std::errc> Value::try_as_integer() const {
 	if (is_integer()) return std::get<int64_t>(data_);
-	return TRY(Parser::parse_integer(as_string()));
+	return TRY(parse_integer(as_string()));
 }
 
 const Value::Array &Value::as_array() const {
@@ -51,8 +51,9 @@ const Value::Array &Value::as_array() const {
 const std::string &Value::as_string() const {
 	// Not inline in the assert: the commas of a braced list would split its
 	// macro arguments.
-	[[maybe_unused]] constexpr std::array TEXT_TYPES{
-		Type::SimpleString, Type::BulkString, Type::SimpleError};
+	[[maybe_unused]] constexpr std::array TEXT_TYPES{Type::SimpleString,
+													 Type::BulkString,
+													 Type::SimpleError};
 	assert(std::ranges::contains(TEXT_TYPES, type_));
 
 	assert(is_string());
@@ -107,60 +108,24 @@ bool Value::is_integer() const {
 bool Value::is_double() const {
 	return type_ == Type::Double && std::holds_alternative<double>(data_);
 }
-
-void encode_to(std::string &out, const Value &value) {
-	using enum Value::Type;
-
-	char digits[24]; // fits any int64_t or size_t in decimal
-	const auto append_number = [&](auto n) {
-		const auto [end, ec] = std::to_chars(digits, digits + sizeof digits, n);
-		out.append(digits, end);
-	};
-
-	switch (value.type()) {
-	case SimpleString:
-		out += '+';
-		out += value.as_string();
-		out += "\r\n";
-		break;
-	case SimpleError:
-		out += '-';
-		out += value.as_string();
-		out += "\r\n";
-		break;
-	case Integer:
-		out += ':';
-		append_number(value.as_integer());
-		out += "\r\n";
-		break;
-	case BulkString: {
-		const auto &str = value.as_string();
-		out += '$';
-		append_number(str.size());
-		out += "\r\n";
-		out += str;
-		out += "\r\n";
-		break;
-	}
-	case Array: {
-		const auto &arr = value.as_array();
-		out += '*';
-		append_number(arr.size());
-		out += "\r\n";
-		for (const auto &element : arr) encode_to(out, element);
-		break;
-	}
-	// RESP2 null bulk string; see the formatter below.
-	case Null: out += "$-1\r\n"; break;
-	case Double:
-		fmt::format_to(std::back_inserter(out), ",{}\r\n", value.as_double());
-		break;
-	default: std::unreachable();
-	}
-}
 } // namespace redis::resp
 
 using redis::resp::Value;
+
+namespace {
+// A simple string or error ends at the first CRLF, so one inside the text (a
+// command name or argument echoed back, say) would end the reply early and let
+// the rest pass as a reply of its own. Like Redis, turn them into spaces.
+fmt::format_context::iterator write_line(fmt::format_context::iterator it,
+										 char prefix, std::string_view text) {
+	if (text.find_first_of("\r\n") == std::string_view::npos)
+		return fmt::format_to(it, "{}{}\r\n", prefix, text);
+	std::string clean(text);
+	std::ranges::replace(clean, '\r', ' ');
+	std::ranges::replace(clean, '\n', ' ');
+	return fmt::format_to(it, "{}{}\r\n", prefix, clean);
+}
+} // namespace
 
 auto fmt::formatter<Value>::format(const Value &value,
 								   format_context &ctx) const
@@ -200,12 +165,8 @@ auto fmt::formatter<Value>::format(const Value &value,
 	case 'e':
 	case 0:
 		switch (value.type()) {
-		case SimpleString:
-			it = fmt::format_to(it, "+{}\r\n", value.as_string());
-			break;
-		case SimpleError:
-			it = fmt::format_to(it, "-{}\r\n", value.as_string());
-			break;
+		case SimpleString: it = write_line(it, '+', value.as_string()); break;
+		case SimpleError: it = write_line(it, '-', value.as_string()); break;
 		case Integer:
 			it = fmt::format_to(it, ":{}\r\n", value.as_integer());
 			break;
@@ -217,9 +178,9 @@ auto fmt::formatter<Value>::format(const Value &value,
 		case Array: {
 			const auto &arr = value.as_array();
 			it              = fmt::format_to(it,
-                                "*{}\r\n{:e}",
-                                arr.size(),
-                                fmt::join(arr, ""));
+											 "*{}\r\n{:e}",
+											 arr.size(),
+											 fmt::join(arr, ""));
 			break;
 		}
 		// RESP2 null bulk string. RESP3's "_" is only legal after a client

@@ -8,6 +8,7 @@ add_library(
     logging/lifecycle.cpp
     os/save_file.cpp
     utils/glob.cpp
+    utils/parse_number.cpp
     chrono/date_time.cpp
     chrono/deadline_timer.cpp
     chrono/elapsed_timer.cpp
@@ -31,6 +32,7 @@ target_include_directories(
 # list, which only carries it while spdlog is built against external fmt.
 target_link_libraries(redis_core PUBLIC fmt::fmt spdlog::spdlog
                                         magic_enum::magic_enum)
+target_link_libraries(redis_core PRIVATE FastFloat::fast_float)
 
 set_warnings(redis_core)
 enable_coverage(redis_core)

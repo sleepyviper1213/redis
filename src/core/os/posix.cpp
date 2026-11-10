@@ -1,4 +1,5 @@
 #include "child_process.hpp"
+#include "core/error/failed.hpp"
 #include "durable_file.hpp"
 
 #include <dirent.h>
@@ -106,7 +107,7 @@ void close_fd(int fd) noexcept {
 
 std::expected<Child, std::error_code> fork_process() {
 	std::array<int, 2> pipe_fds{-1, -1};
-	if (::pipe(pipe_fds.data()) == -1) return std::unexpected(last_error());
+	if (::pipe(pipe_fds.data()) == -1) FAILED(last_error());
 	const auto [read_fd, write_fd] = pipe_fds;
 	// The parent only polls it: reading must never block it.
 	(void)::fcntl(read_fd, F_SETFL, O_NONBLOCK);
@@ -116,7 +117,7 @@ std::expected<Child, std::error_code> fork_process() {
 		const std::error_code ec = last_error();
 		::close(read_fd);
 		::close(write_fd);
-		return std::unexpected(ec);
+		FAILED(ec);
 	}
 	if (pid == 0) {
 		::close(read_fd); // the child only writes
@@ -199,7 +200,7 @@ std::expected<int, std::error_code> open_fd(const std::filesystem::path &path,
 	do {
 		fd = ::open(path.c_str(), flags | O_CLOEXEC, PRIVATE_FILE_MODE);
 	} while (fd == -1 && errno == EINTR);
-	if (fd == -1) return std::unexpected(last_error());
+	if (fd == -1) FAILED(last_error());
 	return fd;
 }
 } // namespace
@@ -207,14 +208,14 @@ std::expected<int, std::error_code> open_fd(const std::filesystem::path &path,
 std::expected<DurableFile, std::error_code>
 DurableFile::open_append(const std::filesystem::path &path) {
 	const auto fd = open_fd(path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW);
-	if (!fd) return std::unexpected(fd.error());
+	if (!fd) FAILED(fd.error());
 	return DurableFile(*fd);
 }
 
 std::expected<DurableFile, std::error_code>
 DurableFile::create_new(const std::filesystem::path &path) {
 	const auto fd = open_fd(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW);
-	if (!fd) return std::unexpected(fd.error());
+	if (!fd) FAILED(fd.error());
 	return DurableFile(*fd);
 }
 
@@ -224,7 +225,7 @@ DurableFile::open_existing(const std::filesystem::path &path, Access access) {
 	// anything that may cut the file does not.
 	const int flags = access == Access::read ? O_RDONLY : O_RDWR | O_NOFOLLOW;
 	const auto fd   = open_fd(path, flags);
-	if (!fd) return std::unexpected(fd.error());
+	if (!fd) FAILED(fd.error());
 	return DurableFile(*fd);
 }
 
@@ -252,7 +253,7 @@ std::expected<std::string, std::error_code> DurableFile::read_all() const {
 		const ssize_t got = ::read(fd_, chunk.data(), chunk.size());
 		if (got == -1) {
 			if (errno == EINTR) continue;
-			return std::unexpected(last_error());
+			FAILED(last_error());
 		}
 		if (got == 0) return content;
 		content.append(chunk.data(), static_cast<size_t>(got));
@@ -261,7 +262,7 @@ std::expected<std::string, std::error_code> DurableFile::read_all() const {
 
 std::expected<std::uintmax_t, std::error_code> DurableFile::size() const {
 	struct stat info{};
-	if (::fstat(fd_, &info) == -1) return std::unexpected(last_error());
+	if (::fstat(fd_, &info) == -1) FAILED(last_error());
 	return static_cast<std::uintmax_t>(info.st_size);
 }
 

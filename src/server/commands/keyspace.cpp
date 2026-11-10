@@ -1,12 +1,12 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
+#include "core/utils/parse_number.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
 #include "common/store/object.hpp"
 #include "core/chrono/deadline_timer.hpp"
 #include "core/utils/glob.hpp"
 #include "detail/expire_time.hpp"
-#include "reply.hpp"
 #include "server/persistence/append_only_file.hpp"
 
 #include <fmt/format.h>
@@ -15,26 +15,29 @@
 #include <chrono>
 #include <cstdint>
 #include <span>
+#include <string>
+#include <utility>
 #include <string_view>
 #include <vector>
 
 namespace redis {
+using resp::Value;
 namespace {
-void del(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value del(CommandContext &ctx, Args args) {
 	int64_t removed = 0;
 	for (const std::string_view key : args.subspan(1))
 		removed += ctx.db.erase(key) ? 1 : 0;
-	out.integer(removed);
+	return reply::integer(removed);
 }
 
-void exists(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value exists(CommandContext &ctx, Args args) {
 	int64_t count = 0;
 	for (const std::string_view key : args.subspan(1))
 		count += ctx.db.contains(key) ? 1 : 0;
-	out.integer(count);
+	return reply::integer(count);
 }
 
-void keys(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value keys(CommandContext &ctx, Args args) {
 	const std::string_view pattern = args[1];
 	// The array header needs the count, so the matches are collected first.
 	// The keys live in the table, which nothing changes meanwhile.
@@ -42,33 +45,33 @@ void keys(CommandContext &ctx, Args args, ReplyWriter &out) {
 	ctx.db.for_each([&](std::string_view key, auto &&...) {
 		if (glob_match(pattern, key)) matches.push_back(key);
 	});
-	out.array(matches.size());
-	for (const std::string_view key : matches) out.bulk(key);
+	Value::Array found;
+	found.reserve(matches.size());
+	for (const std::string_view key : matches) found.push_back(reply::bulk(key));
+	return reply::array(std::move(found));
 }
 
-void type(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value type(CommandContext &ctx, Args args) {
 	const Object *object = ctx.db.find(args[1]);
-	out.simple((object != nullptr) ? std::string_view(type_name(*object))
-								   : "none");
+	return reply::simple(
+		"{}",
+		(object != nullptr) ? std::string_view(type_name(*object)) : "none");
 }
 
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
 template <detail::ExpireUnit Unit, detail::ExpireBase Base>
-void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
-	const auto amount = parse_int(args[2]);
+Value expire_generic(CommandContext &ctx, Args args) {
+	const auto amount = parse_integer(args[2]);
 	if (!amount) {
-		out.not_integer();
-		return;
+		return reply::not_integer();
 	}
 	const auto deadline = detail::expire_time(*amount, Unit, Base);
 	if (!deadline) {
-		out.error("ERR invalid expire time");
-		return;
+		return reply::error("ERR invalid expire time");
 	}
 	const DeadlineTimer timer = *deadline;
 	const bool applied        = ctx.db.set_expiry(args[1], timer);
-	out.integer(applied ? 1 : 0);
 
 	// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay
 	// does not share: log the absolute deadline. One already past deleted the
@@ -81,41 +84,40 @@ void expire_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
 			ctx.aof->replace({"PEXPIREAT", args[1], fmt::to_string(at)});
 		}
 	}
+	return reply::integer(applied ? 1 : 0);
 }
 
-void persist(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value persist(CommandContext &ctx, Args args) {
 	const std::string_view key = args[1];
-	out.integer(ctx.db.contains(key) && ctx.db.persist(key) ? 1 : 0);
+	return reply::integer(ctx.db.contains(key) && ctx.db.persist(key) ? 1 : 0);
 }
 
 // TTL and PTTL reply -2 for a missing key and -1 for a key without expiry,
 // as integers, so clients can tell the cases apart.
 template <bool InMillis>
-void ttl_generic(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value ttl_generic(CommandContext &ctx, Args args) {
 	const std::string_view key = args[1];
 	if (!ctx.db.contains(key)) {
-		out.integer(-2);
-		return;
+		return reply::integer(-2);
 	}
 	const auto deadline = ctx.db.expiry(key);
 	if (!deadline) {
-		out.integer(-1);
-		return;
+		return reply::integer(-1);
 	}
 
 	const auto left = DeadlineTimer::at(*deadline).remaining_time_ms().count();
 	// Round to the nearest second like Redis; truncating would report 99
 	// immediately after SET ... EX 100.
-	out.integer(InMillis ? left : (left + 500) / 1000);
+	return reply::integer(InMillis ? left : (left + 500) / 1000);
 }
 
-void flushdb(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
+Value flushdb(CommandContext &ctx, Args /*unused*/) {
 	ctx.db.clear();
-	out.ok();
+	return reply::ok();
 }
 
-void dbsize(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
-	out.integer(static_cast<int64_t>(ctx.db.size()));
+Value dbsize(CommandContext &ctx, Args /*unused*/) {
+	return reply::integer(static_cast<int64_t>(ctx.db.size()));
 }
 
 constexpr std::array COMMANDS{

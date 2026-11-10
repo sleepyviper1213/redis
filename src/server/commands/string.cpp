@@ -1,12 +1,13 @@
 // String commands: SET, GET, INCR and friends, MSET/MGET, APPEND, STRLEN.
 #include "command.hpp"
+#include "core/error/failed.hpp"
+#include "core/utils/parse_number.hpp"
 #include "core/chrono/date_time.hpp"
 #include "core/chrono/deadline_timer.hpp"
 #include "common/store/object.hpp"
 #include "core/utils/ascii.hpp"
 #include "core/utils/saturating.hpp"
 #include "detail/expire_time.hpp"
-#include "reply.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "common/store/database_fwd.hpp"
 #include "server/persistence/append_only_file.hpp"
@@ -23,8 +24,10 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 
 namespace redis {
+using resp::Value;
 
 namespace {
 using std::chrono::milliseconds;
@@ -90,57 +93,52 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 		} else if (expiry != EXPIRY_OPTIONS.end() && !has_expiry &&
 				   i + 1 < args.size()) {
 			has_expiry      = true;
-			const auto time = parse_int(args[++i]);
-			if (!time) return std::unexpected(SetError::NotInteger);
+			const auto time = parse_integer(args[++i]);
+			if (!time) FAILED(SetError::NotInteger);
 			const auto timer =
 				*time > 0 ? detail::expire_time(*time, expiry->unit, expiry->base)
 						  : std::nullopt;
-			if (!timer) return std::unexpected(SetError::InvalidExpire);
+			if (!timer) FAILED(SetError::InvalidExpire);
 			opts.deadline = timer->deadline();
 		} else {
-			return std::unexpected(SetError::Syntax);
+			FAILED(SetError::Syntax);
 		}
 	}
 	return opts;
 }
 
-void set(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value set(CommandContext &ctx, Args args) {
 	const auto opts = parse_set_options(args);
 	if (!opts) {
 		switch (opts.error()) {
-		case SetError::NotInteger: out.not_integer(); break;
-		case SetError::Syntax: out.syntax_error(); break;
+		case SetError::NotInteger: return reply::not_integer();
+		case SetError::Syntax: return reply::syntax_error();
 		case SetError::InvalidExpire:
-			out.error("ERR invalid expire time in 'set' command");
-			break;
+			return reply::error("ERR invalid expire time in 'set' command");
 		}
-		return;
+		std::unreachable();
 	}
 
 	const std::string_view key = args[1];
 
 	// A plain SET (no NX, XX or GET) overwrites whatever is there, so it does
 	// not need to look the key up first; the set() below does the one lookup.
+	Value previous = reply::nil(); // the reply of SET ... GET
 	if (opts->nx || opts->xx || opts->get) {
 		const auto current = ctx.db.find_string(key);
 		// SET ... GET must read a string first.
 		if (!current && opts->get) {
-			out.wrong_type();
-			return;
+			return reply::wrong_type();
 		}
 		const bool exists = !current || *current != nullptr;
 
 		// With GET, the reply is the previous value (or nil) instead of OK. It
-		// is written now, before the write below replaces what it views.
-		if (opts->get) {
-			if (exists) out.bulk((*current)->string());
-			else out.nil();
-		}
+		// is copied now, before the write below replaces what it views.
+		if (opts->get)
+			previous = exists ? reply::bulk((*current)->string()) : reply::nil();
 
-		if ((opts->nx && exists) || (opts->xx && !exists)) {
-			if (!opts->get) out.nil();
-			return;
-		}
+		if ((opts->nx && exists) || (opts->xx && !exists))
+			return opts->get ? std::move(previous) : reply::nil();
 	}
 
 	ctx.db.set(key, String(args[2]));
@@ -162,46 +160,40 @@ void set(CommandContext &ctx, Args args, ReplyWriter &out) {
 		}
 	}
 
-	if (!opts->get) out.ok();
+	return opts->get ? std::move(previous) : reply::ok();
 }
 
-void get(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value get(CommandContext &ctx, Args args) {
 	const auto value = ctx.db.find_string(args[1]);
 	if (!value) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 	if (*value == nullptr) {
-		out.nil();
-		return;
+		return reply::nil();
 	}
-	out.bulk((*value)->string());
+	return reply::bulk((*value)->string());
 }
 
 // INCR, DECR, INCRBY, DECRBY: the stored string must be an int64, and the
 // result must not overflow.
-void increment_by(CommandContext &ctx, std::string_view key, int64_t delta,
-				  ReplyWriter &out) {
+Value increment_by(CommandContext &ctx, std::string_view key, int64_t delta) {
 	const auto value = ctx.db.find_string(key);
 	if (!value) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 
 	int64_t current = 0;
 	if (*value != nullptr) {
-		const auto parsed = parse_int((*value)->string());
+		const auto parsed = parse_integer((*value)->string());
 		if (!parsed) {
-			out.not_integer();
-			return;
+			return reply::not_integer();
 		}
 		current = *parsed;
 	}
 
 	int64_t result = 0;
 	if (add_overflow(current, delta, &result)) {
-		out.error("ERR increment or decrement would overflow");
-		return;
+		return reply::error("ERR increment or decrement would overflow");
 	}
 
 	if (*value != nullptr) (*value)->assign_string(fmt::to_string(result));
@@ -209,76 +201,74 @@ void increment_by(CommandContext &ctx, std::string_view key, int64_t delta,
 		const fmt::format_int digits(result);
 		ctx.db.set(key, String(digits.data(), digits.size()));
 	}
-	out.integer(result);
+	return reply::integer(result);
 }
 
-void incr(CommandContext &ctx, Args args, ReplyWriter &out) {
-	increment_by(ctx, args[1], 1, out);
+Value incr(CommandContext &ctx, Args args) {
+	return increment_by(ctx, args[1], 1);
 }
 
-void decr(CommandContext &ctx, Args args, ReplyWriter &out) {
-	increment_by(ctx, args[1], -1, out);
+Value decr(CommandContext &ctx, Args args) {
+	return increment_by(ctx, args[1], -1);
 }
 
-void incrby(CommandContext &ctx, Args args, ReplyWriter &out) {
-	const auto delta = parse_int(args[2]);
+Value incrby(CommandContext &ctx, Args args) {
+	const auto delta = parse_integer(args[2]);
 	if (!delta) {
-		out.not_integer();
-		return;
+		return reply::not_integer();
 	}
-	increment_by(ctx, args[1], *delta, out);
+	return increment_by(ctx, args[1], *delta);
 }
 
-void decrby(CommandContext &ctx, Args args, ReplyWriter &out) {
-	const auto delta = parse_int(args[2]);
+Value decrby(CommandContext &ctx, Args args) {
+	const auto delta = parse_integer(args[2]);
 	// Negating INT64_MIN overflows, so it is out of range here.
 	if (!delta || *delta == std::numeric_limits<int64_t>::min()) {
-		out.not_integer();
-		return;
+		return reply::not_integer();
 	}
-	increment_by(ctx, args[1], -*delta, out);
+	return increment_by(ctx, args[1], -*delta);
 }
 
-void mset(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value mset(CommandContext &ctx, Args args) {
 	if (args.size() % 2 != 1) {
-		out.error("ERR wrong number of arguments for 'mset' command");
-		return;
+		return reply::error("ERR wrong number of arguments for 'mset' command");
 	}
 	for (size_t i = 1; i < args.size(); i += 2) {
 		ctx.db.set(args[i], String(args[i + 1]));
 		ctx.db.persist(args[i]);
 	}
-	out.ok();
+	return reply::ok();
 }
 
-void mget(CommandContext &ctx, Args args, ReplyWriter &out) {
-	out.array(args.size() - 1);
+Value mget(CommandContext &ctx, Args args) {
+	Value::Array values;
+	values.reserve(args.size() - 1);
 	for (const std::string_view key : args.subspan(1)) {
 		// MGET reports keys of other types as nil instead of failing.
 		const auto value = ctx.db.find_string(key);
-		if (value && *value != nullptr) out.bulk((*value)->string());
-		else out.nil();
+		values.push_back(value && *value != nullptr
+							 ? reply::bulk((*value)->string())
+							 : reply::nil());
 	}
+	return reply::array(std::move(values));
 }
 
-void append(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value append(CommandContext &ctx, Args args) {
 	const auto value = ctx.db.find_or_create_string(args[1]);
 	if (!value) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
 	String &string = (*value)->mutable_string();
 	string.append(args[2]);
-	out.integer(static_cast<int64_t>(string.size()));
+	return reply::integer(static_cast<int64_t>(string.size()));
 }
 
-void strlen(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value strlen(CommandContext &ctx, Args args) {
 	const auto value = ctx.db.find_string(args[1]);
 	if (!value) {
-		out.wrong_type();
-		return;
+		return reply::wrong_type();
 	}
-	out.integer(((*value) != nullptr)
+	return reply::integer(((*value) != nullptr)
 					? static_cast<int64_t>((*value)->string().size())
 					: 0);
 }

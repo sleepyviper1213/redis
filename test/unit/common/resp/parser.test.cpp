@@ -530,58 +530,6 @@ SCENARIO("Parser rejects or bounds client-declared lengths",
 	}
 }
 
-SCENARIO("Parsing decimal integers", "[resp][parser][integer]") {
-	THEN("valid decimals parse, including the int64 bounds") {
-		CHECK(Parser::parse_integer("0") == 0);
-		CHECK(Parser::parse_integer("42") == 42);
-		CHECK(Parser::parse_integer("-7") == -7);
-		CHECK(Parser::parse_integer("9223372036854775807") == INT64_MAX);
-		CHECK(Parser::parse_integer("-9223372036854775808") == INT64_MIN);
-	}
-
-	THEN("input with no digits is invalid") {
-		for (const std::string_view s : {"", "-", "abc"}) {
-			INFO("input " << s);
-			const auto result = Parser::parse_integer(s);
-			REQUIRE(!result);
-			CHECK(result.error() == std::errc::invalid_argument);
-		}
-	}
-
-	THEN("trailing characters after the digits are invalid") {
-		for (const std::string_view s : {"12abc", "1.5", "7 "}) {
-			INFO("input " << s);
-			const auto result = Parser::parse_integer(s);
-			REQUIRE(!result);
-			CHECK(result.error() == std::errc::invalid_argument);
-		}
-	}
-
-	THEN("values outside int64 are out of range") {
-		for (const std::string_view s :
-			 {"9223372036854775808", "-9223372036854775809",
-			  "99999999999999999999"}) {
-			INFO("input " << s);
-			const auto result = Parser::parse_integer(s);
-			REQUIRE(!result);
-			CHECK(result.error() == std::errc::result_out_of_range);
-		}
-	}
-
-	THEN("a RESP integer with trailing garbage is a protocol error") {
-		const auto result = Parser::parse(":12abc\r\n");
-		REQUIRE(!result);
-		CHECK(result.error() == Parser::RespError::PARSE_NUMBER);
-		CHECK(!Parser::is_incomplete(result.error()));
-	}
-
-	THEN("a negative RESP integer parses") {
-		const auto result = Parser::parse(":-5\r\n");
-		REQUIRE(result.has_value());
-		CHECK(result->as_integer() == -5);
-	}
-}
-
 SCENARIO("Parsing RESP double with trailing garbage", "[resp][parser]") {
 	THEN("a valid number followed by other characters is a protocol error") {
 		for (const std::string_view data : {",1.5abc\r\n", ",1.5 \r\n", ",2x\r\n"}) {
@@ -600,47 +548,6 @@ SCENARIO("Parsing RESP double with trailing garbage", "[resp][parser]") {
 	}
 }
 
-SCENARIO("encode_to produces the same bytes as the fmt 'e' presentation",
-		 "[resp][encode]") {
-	const std::vector<Value> values = {
-		Value::from_simple_string("OK"),
-		Value::from_simple_string(""),
-		Value::from_simple_error("ERR boom"),
-		Value::from_integer(0),
-		Value::from_integer(-1),
-		Value::from_integer(INT64_MAX),
-		Value::from_integer(INT64_MIN),
-		Value::from_bulk_string(""),
-		Value::from_bulk_string("hello"),
-		Value::from_bulk_string("a\r\nb"),
-		Value::from_bulk_string(std::string(300, 'x')),
-		Value::from_null(),
-		Value::from_double(3.5),
-		Value::from_double(-0.25),
-		Value::from_double(1e300),
-		Value::from_array({}),
-		Value::from_array({Value::from_bulk_string("GET"),
-						   Value::from_integer(7),
-						   Value::from_null(),
-						   Value::from_array({Value::from_simple_string("in"),
-											  Value::from_array({})})}),
-	};
-
-	for (const Value &value : values) {
-		const std::string expected = fmt::format("{:e}", value);
-
-		std::string out;
-		encode_to(out, value);
-		INFO("expected " << expected);
-		CHECK(out == expected);
-
-		// It appends: whatever is already in the buffer is left alone.
-		std::string buffer = "+earlier\r\n";
-		encode_to(buffer, value);
-		CHECK(buffer == fmt::format("+earlier\r\n{}", expected));
-	}
-}
-
 SCENARIO("Parser bounds array nesting", "[resp][parser][limits]") {
 	THEN("deeply nested arrays are rejected instead of overflowing the stack") {
 		std::string data;
@@ -648,5 +555,20 @@ SCENARIO("Parser bounds array nesting", "[resp][parser][limits]") {
 		const auto result = Parser::parse(data);
 		REQUIRE(!result);
 		REQUIRE(result.error() == Parser::RespError::NESTING_TOO_DEEP);
+	}
+}
+
+SCENARIO("Parsing RESP integers", "[resp][parser][integer]") {
+	THEN("a RESP integer with trailing garbage is a protocol error") {
+		const auto result = Parser::parse(":12abc\r\n");
+		REQUIRE(!result);
+		CHECK(result.error() == Parser::RespError::PARSE_NUMBER);
+		CHECK(!Parser::is_incomplete(result.error()));
+	}
+
+	THEN("a negative RESP integer parses") {
+		const auto result = Parser::parse(":-5\r\n");
+		REQUIRE(result.has_value());
+		CHECK(result->as_integer() == -5);
 	}
 }

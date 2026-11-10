@@ -174,15 +174,6 @@ private:
 		data_;
 };
 
-/**
- * \brief Append the RESP encoding of \p value to \p out.
- *
- * Produces exactly what `fmt::format("{:e}", value)` does, without the
- * temporary string or the format-string parsing; this is the reply path of
- * every command.
- */
-void encode_to(std::string &out, const Value &value);
-
 } // namespace redis::resp
 
 /**
@@ -190,7 +181,8 @@ void encode_to(std::string &out, const Value &value);
  *
  * Supported presentation types:
  * - '?' debug format
- * - 'e' RESP-encoded format
+ * - 'e' RESP-encoded format; a line break inside a simple string or error
+ *   becomes a space, so the text cannot end the reply early
  * - none: same as 'e'
  */
 template <>

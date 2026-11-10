@@ -1,12 +1,13 @@
 #include "append_only_file.hpp"
 
-#include "server/log_channels.hpp"
 #include "common/resp/parser.hpp"
 #include "common/resp/request.hpp"
-#include "server/commands/handler.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.drain_expired())
+#include "core/error/failed.hpp"
 #include "core/os/save_file.hpp"
 #include "detail/snapshot.hpp"
+#include "server/commands/handler.hpp"
+#include "server/log_channels.hpp"
 
 #include <fmt/format.h>
 #include <fmt/std.h>
@@ -49,16 +50,15 @@ lock_directory(const fs::path &dir) {
 	const fs::path path = dir / LOCK_NAME;
 	auto lock           = os::DurableFile::open_append(path);
 	if (!lock)
-		return std::unexpected(PersistError{.kind  = PersistKind::CannotOpen,
-											.cause = lock.error(),
-											.path  = path});
+		FAILED(PersistError{.kind  = PersistKind::CannotOpen,
+							.cause = lock.error(),
+							.path  = path});
 	if (const auto busy = lock->try_lock()) {
 		if (busy == std::errc::resource_unavailable_try_again)
-			return std::unexpected(
-				PersistError{.kind = PersistKind::InUse, .path = dir});
-		return std::unexpected(PersistError{.kind  = PersistKind::CannotLock,
-											.cause = busy,
-											.path  = path});
+			FAILED(PersistError{.kind = PersistKind::InUse, .path = dir});
+		FAILED(PersistError{.kind  = PersistKind::CannotLock,
+							.cause = busy,
+							.path  = path});
 	}
 	return std::move(*lock);
 }
@@ -67,9 +67,9 @@ lock_directory(const fs::path &dir) {
 std::expected<void, PersistError> create_empty(const fs::path &path) {
 	const auto created = os::DurableFile::open_append(path);
 	if (!created)
-		return std::unexpected(PersistError{.kind  = PersistKind::CannotCreate,
-											.cause = created.error(),
-											.path  = path});
+		FAILED(PersistError{.kind  = PersistKind::CannotCreate,
+							.cause = created.error(),
+							.path  = path});
 	return {};
 }
 
@@ -128,9 +128,9 @@ std::expected<AppendOnlyFile::Manifest, PersistError>
 AppendOnlyFile::read_manifest(const fs::path &file) {
 	// What is wrong with this manifest; quoted is the text that is.
 	const auto bad = [&file](PersistKind kind, std::string quoted = {}) {
-		return std::unexpected(PersistError{.kind   = kind,
-											.path   = file,
-											.quoted = std::move(quoted)});
+		FAILED(PersistError{.kind   = kind,
+							.path   = file,
+							.quoted = std::move(quoted)});
 	};
 
 	std::ifstream in(file);
@@ -152,7 +152,8 @@ AppendOnlyFile::read_manifest(const fs::path &file) {
 			const auto [ptr, ec] = std::from_chars(value.data(),
 												   value.data() + value.size(),
 												   manifest.seq);
-			if (ec != std::errc()) return bad(PersistKind::ManifestBadSeq, value);
+			if (ec != std::errc())
+				return bad(PersistKind::ManifestBadSeq, value);
 		} else {
 			return bad(PersistKind::ManifestUnknownEntry, key);
 		}
@@ -175,11 +176,11 @@ AppendOnlyFile::write_manifest(const Manifest &manifest) const {
 	fmt::format_to(into, "seq {}\n", manifest.seq);
 
 	auto save = os::SaveFile::open(file, fs::path(file).concat(".tmp"));
-	if (!save) return std::unexpected(persistence::to_persist_error(save.error()));
+	if (!save) FAILED(persistence::to_persist_error(save.error()));
 	if (auto wrote = save->write(text); !wrote)
-		return std::unexpected(persistence::to_persist_error(wrote.error()));
+		FAILED(persistence::to_persist_error(wrote.error()));
 	if (auto done = save->commit(); !done)
-		return std::unexpected(persistence::to_persist_error(done.error()));
+		FAILED(persistence::to_persist_error(done.error()));
 	return {};
 }
 
@@ -196,10 +197,15 @@ std::expected<void, PersistError>
 AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 					   const CommandHandler &handler, size_t &commands) {
 	// What is wrong with this file.
-	const auto bad = [&file](PersistKind kind, std::error_code cause = {},
-							 std::uint64_t at = 0, std::int64_t code = 0) {
-		return std::unexpected(PersistError{
-			.kind = kind, .cause = cause, .path = file, .at = at, .code = code});
+	const auto bad = [&file](PersistKind kind,
+							 std::error_code cause = {},
+							 std::uint64_t at      = 0,
+							 std::int64_t code     = 0) {
+		FAILED(PersistError{.kind  = kind,
+							.cause = cause,
+							.path  = file,
+							.at    = at,
+							.code  = code});
 	};
 
 	// Opened once: what is read, and what is cut below, is the same file
@@ -254,9 +260,9 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	std::error_code ec;
 	const bool created = fs::create_directories(config_.dir, ec);
 	if (ec)
-		return std::unexpected(PersistError{.kind  = PersistKind::CannotCreate,
-											.cause = ec,
-											.path  = config_.dir});
+		FAILED(PersistError{.kind  = PersistKind::CannotCreate,
+							.cause = ec,
+							.path  = config_.dir});
 	// A directory the server makes is the server's alone. One it was pointed at
 	// keeps the permissions its owner gave it.
 	if (created) {
@@ -273,7 +279,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	// there a manifest yet?) is still true when it acts on it.
 	if (!lock_.is_open()) {
 		auto lock = lock_directory(config_.dir);
-		if (!lock) return std::unexpected(lock.error());
+		if (!lock) FAILED(lock.error());
 		lock_ = std::move(*lock);
 	}
 
@@ -286,12 +292,14 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 		manifest_.seq  = 1;
 		manifest_.incr = {incr_name(1)};
 		if (fs::exists(snapshot_file_)) {
-			if (auto loaded = persistence::detail::load_snapshot(db, snapshot_file_);
+			if (auto loaded =
+					persistence::detail::load_snapshot(db, snapshot_file_);
 				!loaded)
 				return loaded;
 			manifest_.base = base_name(1);
-			if (auto saved =
-					persistence::detail::save_snapshot(db, path_of(*manifest_.base));
+			if (auto saved = persistence::detail::save_snapshot(
+					db,
+					path_of(*manifest_.base));
 				!saved)
 				return saved;
 			log().info("AOF started from snapshot {}: {} keys",
@@ -303,7 +311,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 		if (auto written = write_manifest(manifest_); !written) return written;
 	} else {
 		auto manifest = read_manifest(file);
-		if (!manifest) return std::unexpected(manifest.error());
+		if (!manifest) FAILED(manifest.error());
 		manifest_ = std::move(*manifest);
 
 		// What was replayed ran at an earlier time: nothing may expire until
@@ -312,8 +320,8 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 		if (manifest_.base) {
 			if (auto loaded =
 					persistence::detail::load_snapshot(db,
-											   path_of(*manifest_.base),
-											   /*keep_expired=*/true);
+													   path_of(*manifest_.base),
+													   /*keep_expired=*/true);
 				!loaded)
 				return loaded;
 		}
@@ -352,17 +360,16 @@ std::expected<void, PersistError> AppendOnlyFile::open_for_append() {
 	incr_path_  = path_of(manifest_.incr.back());
 	auto opened = os::DurableFile::open_append(incr_path_);
 	if (!opened)
-		return std::unexpected(
-			PersistError{.kind  = PersistKind::CannotOpenForAppend,
-						 .cause = opened.error(),
-						 .path  = incr_path_});
+		FAILED(PersistError{.kind  = PersistKind::CannotOpenForAppend,
+							.cause = opened.error(),
+							.path  = incr_path_});
 	// Asked of the open file, not of the name: it is this file's end that
 	// good_size_ stands for.
 	const auto size = opened->size();
 	if (!size)
-		return std::unexpected(PersistError{.kind  = PersistKind::CannotSize,
-											.cause = size.error(),
-											.path  = incr_path_});
+		FAILED(PersistError{.kind  = PersistKind::CannotSize,
+							.cause = size.error(),
+							.path  = incr_path_});
 	good_size_ = *size;
 	auto file  = std::make_shared<os::DurableFile>(std::move(*opened));
 	{
@@ -495,15 +502,13 @@ void AppendOnlyFile::close() {
 
 std::expected<void, PersistError>
 AppendOnlyFile::start_rewrite(const Database &db) {
-	if (child_)
-		return std::unexpected(
-			PersistError{.kind = PersistKind::RewriteInProgress});
+	if (child_) FAILED(PersistError{.kind = PersistKind::RewriteInProgress});
 
 	// Everything so far belongs to the old files: land it there, then log to a
 	// new file, which is what the new base will not contain.
 	write_out();
 	if (!buf_.empty())
-		return std::unexpected(PersistError{.kind = PersistKind::CannotWriteLog});
+		FAILED(PersistError{.kind = PersistKind::CannotWriteLog});
 	dirty_.store(true, std::memory_order_release);
 	sync_now();
 
@@ -518,14 +523,15 @@ AppendOnlyFile::start_rewrite(const Database &db) {
 
 	rewrite_base_      = base_name(manifest_.seq);
 	rewrite_base_path_ = path_of(rewrite_base_);
-	auto child         = os::fork_and_run(
-		[&] { return persistence::detail::save_snapshot(db, rewrite_base_path_); });
+	auto child         = os::fork_and_run([&] {
+		return persistence::detail::save_snapshot(db, rewrite_base_path_);
+	});
 	if (!child) {
 		// Harmless: the manifest lists both incremental files, which replay as
 		// one. The next rewrite will merge them.
 		log().error("Can't fork for AOF rewrite: {}", child.error().message());
-		return std::unexpected(PersistError{.kind  = PersistKind::CannotFork,
-											.cause = child.error()});
+		FAILED(PersistError{.kind  = PersistKind::CannotFork,
+							.cause = child.error()});
 	}
 	child_.emplace(std::move(*child));
 	log().info("Background AOF rewriting started by pid {}", child_->pid());
@@ -543,8 +549,9 @@ void AppendOnlyFile::finish_rewrite(const os::ChildResult &result) {
 	if (!result.success) {
 		log().error("Background AOF rewrite failed: {}", result.error);
 		std::error_code ignored;
-		fs::remove(persistence::detail::snapshot_temp_path(rewrite_base_path_, pid),
-				   ignored);
+		fs::remove(
+			persistence::detail::snapshot_temp_path(rewrite_base_path_, pid),
+			ignored);
 		return;
 	}
 

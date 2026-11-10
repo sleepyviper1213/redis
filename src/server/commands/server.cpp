@@ -6,7 +6,6 @@
 #include "server/log_channels.hpp"
 #include "core/utils/ascii.hpp"
 #include "core/utils/glob.hpp"
-#include "reply.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "server/net/guard.hpp"
 #include "server/persistence/append_only_file.hpp"
@@ -29,94 +28,85 @@
 #include <utility>
 
 namespace redis {
+using resp::Value;
 
 namespace {
-void ping(CommandContext & /*unused*/, Args args, ReplyWriter &out) {
+Value ping(CommandContext & /*unused*/, Args args) {
 	if (args.size() > 2) {
-		out.error("ERR wrong number of arguments for 'ping' command");
-		return;
+		return reply::error("ERR wrong number of arguments for 'ping' command");
 	}
 	if (args.size() == 1) {
-		out.simple("PONG");
-		return;
+		return reply::simple("PONG");
 	}
-	out.bulk(args[1]);
+	return reply::bulk(args[1]);
 }
 
-void echo(CommandContext & /*unused*/, Args args, ReplyWriter &out) {
-	out.bulk(args[1]);
+Value echo(CommandContext & /*unused*/, Args args) {
+	return reply::bulk(args[1]);
 }
 
 // The error reply for a persistence failure: the protocol's "ERR", then the
 // sentence. The wording belongs to PersistError; only the prefix is the command
 // layer's.
-void reply_failure(ReplyWriter &out, const persistence::PersistError &error) {
-	out.error(fmt::format("ERR {}", error));
+Value reply_failure(const persistence::PersistError &error) {
+	return reply::error("ERR {}", error);
 }
 
-void save(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
+Value save(CommandContext &ctx, Args /*unused*/) {
 	const auto result = ctx.persistence.save(ctx.db);
-	if (result) out.ok();
-	else reply_failure(out, result.error());
+	return result ? reply::ok() : reply_failure(result.error());
 }
 
-void bgsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
+Value bgsave(CommandContext &ctx, Args /*unused*/) {
 	const auto result = ctx.persistence.background_save(ctx.db);
-	if (result) out.simple("Background saving started");
-	else reply_failure(out, result.error());
+	return result ? reply::simple("Background saving started")
+				  : reply_failure(result.error());
 }
 
-void lastsave(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
+Value lastsave(CommandContext &ctx, Args /*unused*/) {
 	const auto unix_seconds =
 		ctx.persistence.last_snapshot().to_secs_since_epoch();
-	out.integer(unix_seconds);
+	return reply::integer(unix_seconds);
 }
 
-void bgrewriteaof(CommandContext &ctx, Args /*unused*/, ReplyWriter &out) {
+Value bgrewriteaof(CommandContext &ctx, Args /*unused*/) {
 	if (ctx.aof == nullptr) {
-		out.error("ERR Append only file is not enabled");
-		return;
+		return reply::error("ERR Append only file is not enabled");
 	}
 	const auto result = ctx.aof->start_rewrite(ctx.db);
-	if (result) out.simple("Background append only file rewriting started");
-	else reply_failure(out, result.error());
+	return result ? reply::simple("Background append only file rewriting started")
+				  : reply_failure(result.error());
 }
 
 // CONFIG SET loglevel <level>: the one setting worth changing without a
 // restart, to look closer at a running server without losing its state.
-void config_set(const CommandContext &ctx, Args args, ReplyWriter &out) {
+Value config_set(const CommandContext &ctx, Args args) {
 	if (!ctx.config_set_enabled) {
-		out.error("ERR CONFIG SET is disabled; start the server with "
+		return reply::error("ERR CONFIG SET is disabled; start the server with "
 				  "--enable-config-set to allow it");
-		return;
 	}
 	if (!iequals(args[2], "loglevel")) {
-		out.error(fmt::format("ERR Unsupported CONFIG parameter: {}", args[2]));
-		return;
+		return reply::error("ERR Unsupported CONFIG parameter: {}", args[2]);
 	}
 	if (!logging::set_level(args[3])) {
-		out.error(
-			fmt::format("ERR Invalid argument '{}' for CONFIG SET 'loglevel'",
-						args[3]));
-		return;
+		return reply::error("ERR Invalid argument '{}' for CONFIG SET 'loglevel'",
+						 args[3]);
 	}
 	// Warn, so the change is on record at any level short of error.
 	logging::logger_for(logging::channel::server)
 		.warn("Log level changed to {} by CONFIG SET", logging::level());
-	out.ok();
+	return reply::ok();
 }
 
 // CONFIG GET <pattern>: read-only view of the settings clients commonly probe
 // (redis-benchmark asks for "save" and "appendonly" on startup).
-void config(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value config(CommandContext &ctx, Args args) {
 	if (iequals(args[1], "SET") && args.size() == 4) {
-		config_set(ctx, args, out);
-		return;
+		return config_set(ctx, args);
 	}
 	if (!iequals(args[1], "GET") || args.size() != 3) {
-		out.error("ERR CONFIG supports only 'CONFIG GET <pattern>' and "
+		return reply::error("ERR CONFIG supports only 'CONFIG GET <pattern>' and "
 				  "'CONFIG SET loglevel <level>'");
-		return;
 	}
 
 	// Views, except for the two path parts, which have to live somewhere.
@@ -139,12 +129,14 @@ void config(CommandContext &ctx, Args args, ReplyWriter &out) {
 	for (const auto &[name, value] : parameters)
 		matches += glob_match(pattern, name) ? 1 : 0;
 
-	out.array(matches * 2);
+	Value::Array found;
+	found.reserve(matches * 2);
 	for (const auto &[name, value] : parameters) {
 		if (!glob_match(pattern, name)) continue;
-		out.bulk(name);
-		out.bulk(value);
+		found.push_back(reply::bulk(name));
+		found.push_back(reply::bulk(value));
 	}
+	return reply::array(std::move(found));
 }
 
 /// "1.50M" for 1572864, as Redis writes used_memory_human.
@@ -163,7 +155,7 @@ std::string human_bytes(size_t bytes) {
 // INFO [section ...]: "# Name" blocks of "field:value" lines, as Redis writes
 // them. Sections whose source is missing (no stats, no network) are left empty
 // of those fields. An unknown section yields an empty reply, as in Redis.
-void info(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value info(CommandContext &ctx, Args args) {
 	// "default" (and no argument at all) leaves out the sections that are long
 	// or costly, as Redis does; "all" and "everything" include them.
 	const auto wants = [&](std::string_view section, bool in_default = true) {
@@ -268,7 +260,7 @@ void info(CommandContext &ctx, Args args, ReplyWriter &out) {
 						   ctx.db.size(),
 						   ctx.db.expiring());
 	}
-	out.bulk(text);
+	return reply::bulk(text);
 }
 
 constexpr std::array COMMANDS{

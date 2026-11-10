@@ -1,4 +1,5 @@
 #include "guard.hpp"
+#include "core/error/failed.hpp"
 
 #include "server/log_channels.hpp"
 
@@ -42,7 +43,7 @@ std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 	if (clients_.fetch_add(1, std::memory_order_relaxed) >=
 		limits_.max_clients) {
 		clients_.fetch_sub(1, std::memory_order_relaxed);
-		return std::unexpected(Violation::TooManyClients);
+		FAILED(Violation::TooManyClients);
 	}
 	admitted_.fetch_add(1, std::memory_order_relaxed);
 	return Ticket(this);
@@ -51,14 +52,14 @@ std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 [[nodiscard]] std::expected<void, Violation>
 NetGuard::check_input(size_t pending) const noexcept {
 	if (pending > limits_.max_query_buffer)
-		return std::unexpected(Violation::QueryBufferFull);
+		FAILED(Violation::QueryBufferFull);
 	return {};
 }
 
 [[nodiscard]] std::expected<void, Violation>
 NetGuard::check_output(size_t replies) const noexcept {
 	if (replies > limits_.max_output_buffer)
-		return std::unexpected(Violation::OutputBufferFull);
+		FAILED(Violation::OutputBufferFull);
 	return {};
 }
 

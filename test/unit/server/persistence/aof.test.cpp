@@ -1,11 +1,11 @@
 #include "../commands/commands.fixture.hpp"
-#include "core/chrono/deadline_timer.hpp"
 #include "common/resp/value.hpp"
+#include "common/store/database.hpp"
+#include "core/chrono/deadline_timer.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "common/store/database.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
@@ -31,18 +31,22 @@ class TempDir {
 public:
 	TempDir() {
 		static std::atomic<int> counter{0};
-		path_ = fs::temp_directory_path() /
-				fmt::format(
-					"redis_aof_test_{}_{}",
-					counter++,
-					std::chrono::steady_clock::now().time_since_epoch().count());
+		path_ =
+			fs::temp_directory_path() /
+			fmt::format(
+				"redis_aof_test_{}_{}",
+				counter++,
+				std::chrono::steady_clock::now().time_since_epoch().count());
 	}
+
 	TempDir(const TempDir &)            = delete;
 	TempDir &operator=(const TempDir &) = delete;
+
 	~TempDir() {
 		std::error_code ignored;
 		fs::remove_all(path_, ignored);
 	}
+
 	[[nodiscard]] const fs::path &path() const { return path_; }
 
 private:
@@ -64,7 +68,7 @@ struct AofServer {
 	}
 
 	/// One batch of one command: its reply, with the log written out.
-	std::string run(std::vector<std::string> argv) {
+	std::string run(const std::vector<std::string> &argv) {
 		auto reply = handler.execute(ctx, resp::Value::from_raw_array(argv));
 		aof.after_batch();
 		return reply;
@@ -89,7 +93,10 @@ struct AofServer {
 std::string logged(const std::vector<std::string> &argv) {
 	std::string out = fmt::format("*{}\r\n", argv.size());
 	for (const auto &arg : argv)
-		fmt::format_to(std::back_inserter(out), "${}\r\n{}\r\n", arg.size(), arg);
+		fmt::format_to(std::back_inserter(out),
+					   "${}\r\n{}\r\n",
+					   arg.size(),
+					   arg);
 	return out;
 }
 
@@ -159,8 +166,8 @@ SCENARIO("Commands that cannot be replayed as received", "[aof]") {
 			server.run({"PEXPIREAT", "k", "1"});
 
 			THEN("the log has DEL") {
-				CHECK(server.log() == logged({"SET", "k", "v"}) +
-										  logged({"DEL", "k"}));
+				CHECK(server.log() ==
+					  logged({"SET", "k", "v"}) + logged({"DEL", "k"}));
 			}
 		}
 
@@ -218,9 +225,10 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 			}
 
 			AND_THEN("the deadline is the original, not one from the restart") {
-				const auto left = std::stoll(server.run({"PTTL", "ttl"}).substr(1));
-				CHECK(left > 90'000);
-				CHECK(left <= 100'000);
+				const auto left =
+					std::stoll(server.run({"PTTL", "ttl"}).substr(1));
+				CHECK(left > 90000);
+				CHECK(left <= 100000);
 			}
 
 			AND_THEN("it keeps logging after the old commands") {
@@ -355,15 +363,16 @@ SCENARIO("Rewriting the log", "[aof][rewrite][fork]") {
 	GIVEN("a server with a long log") {
 		TempDir dir;
 		test::TempFile snapshot;
-		{
-			AofServer server(dir.path(), snapshot.path());
-			REQUIRE(server.start().has_value());
-			for (int i = 0; i < 100; ++i) server.run({"INCR", "counter"});
-			server.run({"SET", "keep", "me"});
+		WHEN("it is rewritten while commands keep coming") {
+			{
+				AofServer server(dir.path(), snapshot.path());
+				REQUIRE(server.start().has_value());
+				for (int i = 0; i < 100; ++i) server.run({"INCR", "counter"});
+				server.run({"SET", "keep", "me"});
 
-			WHEN("it is rewritten while commands keep coming") {
 				REQUIRE(server.aof.start_rewrite(server.db).has_value());
-				server.run({"INCR", "counter"}); // after the fork: not in the base
+				server.run(
+					{"INCR", "counter"}); // after the fork: not in the base
 				for (int i = 0; i < 500 && server.aof.rewrite_in_progress();
 					 ++i) {
 					std::this_thread::sleep_for(10ms);
@@ -378,12 +387,9 @@ SCENARIO("Rewriting the log", "[aof][rewrite][fork]") {
 					CHECK(server.log() == logged({"INCR", "counter"}));
 				}
 			}
-		}
 
-		AND_WHEN("a server starts over the rewritten files") {
-			Restarted server(dir.path(), snapshot.path());
-
-			THEN("nothing was lost") {
+			THEN("a server starting over the rewritten files lost nothing") {
+				Restarted server(dir.path(), snapshot.path());
 				CHECK(server.run({"GET", "counter"}) == "$3\r\n101\r\n");
 				CHECK(server.run({"GET", "keep"}) == "$2\r\nme\r\n");
 			}
@@ -423,7 +429,8 @@ SCENARIO("A keyspace that tracks its expiry", "[aof][database]") {
 
 SCENARIO("A manifest cannot point outside the append-only directory",
 		 "[aof][security]") {
-	GIVEN("a directory with a manifest and a file beside it that must survive") {
+	GIVEN(
+		"a directory with a manifest and a file beside it that must survive") {
 		TempDir dir;
 		test::TempFile snapshot;
 		{
@@ -442,8 +449,7 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 		};
 
 		WHEN("an incremental file name climbs out of the directory") {
-			const auto started =
-				start_with("incr ../precious.txt\nseq 1\n");
+			const auto started = start_with("incr ../precious.txt\nseq 1\n");
 			THEN("the server refuses to start and leaves the file alone") {
 				REQUIRE_FALSE(started);
 				CHECK(started.error().kind ==
@@ -455,10 +461,12 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 			}
 		}
 		WHEN("a base file name is a path or not one of the server's names") {
-			for (const char *name :
-				 {"../x.snap", "/etc/passwd", "sub/appendonly.1.base.snap",
-				  "appendonly..base.snap", "appendonly.1x.base.snap",
-				  "other.snap"}) {
+			for (const char *name : {"../x.snap",
+									 "/etc/passwd",
+									 "sub/appendonly.1.base.snap",
+									 "appendonly..base.snap",
+									 "appendonly.1x.base.snap",
+									 "other.snap"}) {
 				const auto started = start_with(std::string("base ") + name +
 												"\nincr appendonly.1.incr.aof\n"
 												"seq 1\n");
@@ -473,7 +481,8 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 			}
 		}
 		WHEN("the names are the server's own") {
-			const auto started = start_with("incr appendonly.1.incr.aof\nseq 1\n");
+			const auto started =
+				start_with("incr appendonly.1.incr.aof\nseq 1\n");
 			THEN("it starts") { CHECK(started); }
 		}
 
@@ -519,7 +528,8 @@ SCENARIO("One server at a time uses the directory", "[aof][security]") {
 namespace {
 std::string contents_of(const fs::path &file) {
 	std::ifstream in(file, std::ios::binary);
-	return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+	return {std::istreambuf_iterator<char>(in),
+			std::istreambuf_iterator<char>()};
 }
 } // namespace
 #endif
@@ -541,7 +551,8 @@ SCENARIO("The server's files are private, and links are not followed",
 							   dir.path() / "appendonly.manifest.tmp");
 			AofServer server(dir.path(), snapshot.path());
 
-			THEN("the server starts and the file behind the link is untouched") {
+			THEN(
+				"the server starts and the file behind the link is untouched") {
 				REQUIRE(server.start().has_value());
 				CHECK(contents_of(precious.path()) == "keep me");
 				CHECK_FALSE(fs::is_symlink(dir.path() / "appendonly.manifest"));
@@ -577,11 +588,14 @@ SCENARIO("The server's files are private, and links are not followed",
 			AofServer again(dir.path(), snapshot.path());
 			const auto started = again.start();
 
-			THEN("it refuses to start, and the file behind the link is untouched") {
+			THEN("it refuses to start, and the file behind the link is "
+				 "untouched") {
 				REQUIRE_FALSE(started);
-				CHECK(started.error().kind == persistence::PersistKind::CannotOpen);
+				CHECK(started.error().kind ==
+					  persistence::PersistKind::CannotOpen);
 				CHECK(started.error().cause);
-				CHECK(fmt::format("{}", started.error()).contains("cannot open"));
+				CHECK(
+					fmt::format("{}", started.error()).contains("cannot open"));
 				CHECK(contents_of(precious.path()) == "keep me");
 			}
 		}

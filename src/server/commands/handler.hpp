@@ -8,10 +8,6 @@
 #include <unordered_map>
 
 namespace redis {
-namespace resp {
-class Value;
-} // namespace resp
-
 /**
  * \brief Dispatches client requests to command implementations.
  *
@@ -49,10 +45,14 @@ public:
 	void execute(CommandContext &ctx, Args args, std::string &out) const;
 
 private:
-	/// \return The command that ran, or null if the request was refused
-	///         (empty, unknown, wrong arity) before any command did.
-	const CommandInfo *dispatch(CommandContext &ctx, Args args,
-								ReplyWriter &out) const;
+	struct Dispatched {
+		resp::Value reply;
+		/// The command that ran; null if the request was refused (empty,
+		/// unknown, wrong arity) before any command did.
+		const CommandInfo *ran;
+	};
+
+	Dispatched dispatch(CommandContext &ctx, Args args) const;
 
 	// Plain std::string keys: the command table is not keyspace, so it stays
 	// out of used_memory (StringMap would take DefaultAllocator).

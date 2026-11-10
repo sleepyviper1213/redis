@@ -2,7 +2,6 @@
 #include "support/temp_file.hpp"
 #include "common/resp/value.hpp"
 #include "server/commands.hpp"
-#include "server/commands/reply.hpp"
 #include "server/persistence/snapshot_manager.hpp"
 #include "common/store/database.hpp"
 #include "server/stats.hpp"

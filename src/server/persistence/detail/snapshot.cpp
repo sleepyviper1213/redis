@@ -1,4 +1,5 @@
 #include "snapshot.hpp"
+#include "core/error/failed.hpp"
 
 #include "core/os/child_process.hpp"
 #include "core/chrono/deadline_timer.hpp"
@@ -132,7 +133,7 @@ std::expected<Object, UnknownValueType> read_object(InArchive &in) {
 		}
 		return make_object(std::move(hash));
 	}
-	default: return std::unexpected(UnknownValueType{type});
+	default: FAILED(UnknownValueType{type});
 	}
 }
 
@@ -149,7 +150,7 @@ std::expected<void, PersistError> write_snapshot(const Database &db,
 												 std::ostream &stream) {
 	// What a failed write looks like; quoted is empty for a plain stream failure.
 	const auto failed = [&file](std::string reason) {
-		return std::unexpected(PersistError{.kind   = PersistKind::SnapshotEncode,
+		FAILED(PersistError{.kind   = PersistKind::SnapshotEncode,
 											.path   = file,
 											.quoted = std::move(reason)});
 	};
@@ -196,11 +197,11 @@ std::expected<void, PersistError> save_snapshot(const Database &db,
 	// commit, so a failure at any step leaves nothing behind.
 	auto save =
 		os::SaveFile::open(file, snapshot_temp_path(file, os::current_pid()));
-	if (!save) return std::unexpected(to_persist_error(save.error()));
+	if (!save) FAILED(to_persist_error(save.error()));
 	if (auto written = write_snapshot(db, file, save->stream()); !written)
 		return written;
 	if (auto done = save->commit(); !done)
-		return std::unexpected(to_persist_error(done.error()));
+		FAILED(to_persist_error(done.error()));
 	return {};
 }
 
@@ -209,7 +210,7 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 	// What is wrong with this file, for the places below that find something.
 	const auto bad = [&file](PersistKind kind, std::uint64_t at = 0,
 							 std::int64_t code = 0, std::string quoted = {}) {
-		return std::unexpected(PersistError{.kind   = kind,
+		FAILED(PersistError{.kind   = kind,
 											.path   = file,
 											.at     = at,
 											.code   = code,

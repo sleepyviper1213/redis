@@ -1,9 +1,9 @@
 // Set commands: SADD, SREM, SCARD, SMEMBERS, SISMEMBER, SINTER, SPOP.
 #include "command.hpp"
-#include "reply.hpp"
-#include "server/persistence/append_only_file.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "common/store/object.hpp"
+#include "core/utils/parse_number.hpp"
+#include "server/persistence/append_only_file.hpp"
 
 #include <algorithm>
 #include <array>
@@ -15,35 +15,28 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 #include <version> // IWYU pragma: keep
 
 namespace redis {
+using resp::Value;
 
 namespace {
-void sadd(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value sadd(CommandContext &ctx, Args args) {
 	const auto set = ctx.db.find_or_create<Set>(args[1]);
-	if (!set) {
-		out.wrong_type();
-		return;
-	}
+	if (!set) return reply::wrong_type();
 	int64_t added = 0;
 	for (const std::string_view member : args.subspan(2))
 		added += (*set)->emplace(member).second ? 1 : 0;
-	out.integer(added);
+	return reply::integer(added);
 }
 
-void srem(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value srem(CommandContext &ctx, Args args) {
 	const std::string_view key = args[1];
 	const auto set             = ctx.db.find_as<Set>(key);
-	if (!set) {
-		out.wrong_type();
-		return;
-	}
-	if (*set == nullptr) {
-		out.integer(0);
-		return;
-	}
+	if (!set) return reply::wrong_type();
+	if (*set == nullptr) return reply::integer(0);
 
 	int64_t removed = 0;
 	for (const std::string_view member : args.subspan(2))
@@ -58,55 +51,41 @@ void srem(CommandContext &ctx, Args args, ReplyWriter &out) {
 		}
 #endif
 	ctx.db.erase_if_empty(key);
-	out.integer(removed);
+	return reply::integer(removed);
 }
 
-void scard(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value scard(CommandContext &ctx, Args args) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) {
-		out.wrong_type();
-		return;
-	}
-	out.integer(((*set) != nullptr) ? static_cast<int64_t>((*set)->size()) : 0);
+	if (!set) return reply::wrong_type();
+	return reply::integer(
+		((*set) != nullptr) ? static_cast<int64_t>((*set)->size()) : 0);
 }
 
-void smembers(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value smembers(CommandContext &ctx, Args args) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) {
-		out.wrong_type();
-		return;
-	}
-	if (*set == nullptr) {
-		out.array(0);
-		return;
-	}
-	out.array((*set)->size());
-	for (const auto &member : **set) out.bulk(member);
+	if (!set) return reply::wrong_type();
+	if (*set == nullptr) return reply::array({});
+	Value::Array members;
+	members.reserve((*set)->size());
+	for (const auto &member : **set) members.push_back(reply::bulk(member));
+	return reply::array(std::move(members));
 }
 
-void sismember(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value sismember(CommandContext &ctx, Args args) {
 	const auto set = ctx.db.find_as<Set>(args[1]);
-	if (!set) {
-		out.wrong_type();
-		return;
-	}
-	out.integer(((*set) != nullptr) && (*set)->contains(args[2]) ? 1 : 0);
+	if (!set) return reply::wrong_type();
+	return reply::integer(((*set) != nullptr) && (*set)->contains(args[2]) ? 1
+																		   : 0);
 }
 
-void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
+Value sinter(CommandContext &ctx, Args args) {
 	std::vector<const Set *> sets;
 	sets.reserve(args.size() - 1);
 	for (const std::string_view key : args.subspan(1)) {
 		const auto set = ctx.db.find_as<Set>(key);
-		if (!set) {
-			out.wrong_type();
-			return;
-		}
+		if (!set) return reply::wrong_type();
 		// A missing key is an empty set, so the intersection is empty.
-		if (*set == nullptr) {
-			out.array(0);
-			return;
-		}
+		if (*set == nullptr) return reply::array({});
 		sets.push_back(*set);
 	}
 
@@ -122,8 +101,11 @@ void sinter(CommandContext &ctx, Args args, ReplyWriter &out) {
 			});
 		if (in_all) result.emplace_back(member);
 	}
-	out.array(result.size());
-	for (const std::string_view member : result) out.bulk(member);
+	Value::Array members;
+	members.reserve(result.size());
+	for (const std::string_view member : result)
+		members.push_back(reply::bulk(member));
+	return reply::array(std::move(members));
 }
 
 // Picks a random member in O(buckets) worst case without copying the set:
@@ -145,49 +127,42 @@ Set::const_iterator random_member(const Set &set) {
 }
 
 // SPOP key [count]
-void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
-	if (args.size() > 3) {
-		out.error("ERR wrong number of arguments for 'spop' command");
-		return;
-	}
+Value spop(CommandContext &ctx, Args args) {
+	if (args.size() > 3)
+		return reply::error("ERR wrong number of arguments for 'spop' command");
 	std::optional<int64_t> count;
 	if (args.size() == 3) {
-		count = parse_int(args[2]);
-		if (!count || *count < 0) {
-			out.error("ERR value is out of range, must be positive");
-			return;
-		}
+		const auto parsed = parse_integer(args[2]);
+		if (!parsed || *parsed < 0)
+			return reply::error("ERR value is out of range, must be positive");
+		count = *parsed;
 	}
 
 	const std::string_view key = args[1];
 	const auto set             = ctx.db.find_as<Set>(key);
-	if (!set) {
-		out.wrong_type();
-		return;
-	}
-	if (*set == nullptr) {
-		if (count) out.array(0);
-		else out.nil();
-		return;
-	}
+	if (!set) return reply::wrong_type();
+	if (*set == nullptr) return count ? reply::array({}) : reply::nil();
 
 	// The choice is random, so a replay of SPOP would pop other members: the
 	// append-only file gets the members that were popped, as SREM.
 	std::vector<std::string> popped;
 	auto pop_one = [&] {
 		const auto node = (*set)->extract(random_member(**set));
-		out.bulk(node.value());
 		if (ctx.aof != nullptr)
 			popped.emplace_back(std::string_view(node.value()));
+		return reply::bulk(node.value());
 	};
 
+	Value result = reply::nil();
 	if (!count) {
-		pop_one();
+		result = pop_one();
 	} else {
 		const auto n =
 			std::min<size_t>(static_cast<size_t>(*count), (*set)->size());
-		out.array(n);
-		for (size_t i = 0; i < n; ++i) pop_one();
+		Value::Array members;
+		members.reserve(n);
+		for (size_t i = 0; i < n; ++i) members.push_back(pop_one());
+		result = reply::array(std::move(members));
 	}
 	ctx.db.erase_if_empty(key);
 
@@ -196,6 +171,7 @@ void spop(CommandContext &ctx, Args args, ReplyWriter &out) {
 		srem.insert(srem.end(), popped.begin(), popped.end());
 		ctx.aof->replace(srem);
 	}
+	return result;
 }
 
 constexpr std::array COMMANDS{

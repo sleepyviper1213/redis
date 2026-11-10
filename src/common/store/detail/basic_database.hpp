@@ -3,6 +3,7 @@
 #include "common/store/database_fwd.hpp"
 #include "core/chrono/date_time.hpp"
 #include "core/chrono/deadline_timer.hpp"
+#include "core/error/failed.hpp"
 #include "core/utils/attributes.hpp"
 #include "core/utils/thread_owner.hpp"
 
@@ -154,7 +155,7 @@ public:
 		Object *object = find(key);
 		if (object == nullptr) return nullptr;
 		if (T *value = object->template as<T>()) return value;
-		return std::unexpected(WrongType{});
+		FAILED(WrongType{});
 	}
 
 	/**
@@ -169,7 +170,7 @@ public:
 		Object *object = find(key);
 		if (object == nullptr || object->type() == ObjectType::String)
 			return object;
-		return std::unexpected(WrongType{});
+		FAILED(WrongType{});
 	}
 
 	/**

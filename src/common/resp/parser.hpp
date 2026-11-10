@@ -44,24 +44,6 @@ public:
 	 */
 	[[nodiscard]] static bool is_crlf(std::string_view s);
 
-	/**
-	 * \brief Parse a signed 64-bit integer from a decimal ASCII
-	 * representation.
-	 * \param s The ASCII slice containing the integer (no leading/trailing
-	 * CRLF).
-	 * \return The parsed integer on success; an error on malformed input or
-	 * out-of-range value.
-	 */
-	static std::expected<int64_t, std::errc> parse_integer(std::string_view s);
-
-	/**
-	 * \brief Parse a double-precision floating-point number from ASCII.
-	 * \param s The ASCII slice containing the number (no leading/trailing
-	 * CRLF).
-	 * \return The parsed double on success; an error on malformed input.
-	 */
-	static std::expected<double, std::errc> parse_double(std::string_view s);
-
 	static std::expected<Value, RespError>
 	parse_recursive(std::string_view data, size_t &pos, int depth = 0);
 

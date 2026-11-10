@@ -1,4 +1,5 @@
 #include "listener.hpp"
+#include "core/error/failed.hpp"
 
 #include "server/log_channels.hpp"
 #include "formatter.hpp" // IWYU pragma: keep (fmt formatters for endpoints and errors)
@@ -54,7 +55,7 @@ std::expected<void, ListenError> listen_on(net::ip::tcp::acceptor &acceptor,
 	boost::system::error_code error;
 	const auto address = net::ip::make_address_v4(host, error);
 	if (error)
-		return std::unexpected(ListenError{.kind   = ListenKind::InvalidHost,
+		FAILED(ListenError{.kind   = ListenKind::InvalidHost,
 										   .cause  = error,
 										   .quoted = std::string(host)});
 
@@ -68,7 +69,7 @@ std::expected<void, ListenError> listen_on(net::ip::tcp::acceptor &acceptor,
 	if (error) {
 		boost::system::error_code ignored;
 		acceptor.close(ignored);
-		return std::unexpected(ListenError{.kind   = ListenKind::CannotListen,
+		FAILED(ListenError{.kind   = ListenKind::CannotListen,
 										   .cause  = error,
 										   .at     = port,
 										   .quoted = std::string(host)});

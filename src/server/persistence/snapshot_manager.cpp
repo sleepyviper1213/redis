@@ -1,4 +1,5 @@
 #include "snapshot_manager.hpp"
+#include "core/error/failed.hpp"
 
 #include "core/chrono/date_time.hpp"
 #include "server/log_channels.hpp"
@@ -39,7 +40,7 @@ std::expected<void, persistence::PersistError>
 SnapshotManager::save(const Database &db) {
 	using persistence::PersistKind;
 	if (child_)
-		return std::unexpected(
+		FAILED(
 			persistence::PersistError{.kind = PersistKind::SaveInProgress});
 
 	auto result = persistence::detail::save_snapshot(db, file_);
@@ -56,7 +57,7 @@ std::expected<void, persistence::PersistError>
 SnapshotManager::background_save(const Database &db) {
 	using persistence::PersistKind;
 	if (child_)
-		return std::unexpected(
+		FAILED(
 			persistence::PersistError{.kind = PersistKind::SaveInProgress});
 
 	auto child = os::fork_and_run(
@@ -64,7 +65,7 @@ SnapshotManager::background_save(const Database &db) {
 	if (!child) {
 		log().error("Can't fork for background save: {}",
 					child.error().message());
-		return std::unexpected(persistence::PersistError{
+		FAILED(persistence::PersistError{
 			.kind = PersistKind::CannotFork, .cause = child.error()});
 	}
 
