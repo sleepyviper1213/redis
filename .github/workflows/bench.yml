@@ -24,7 +24,9 @@ on:
         default: "3"
 
 env:
-  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+  # Built dependencies are kept as plain files, restored and saved by
+  # actions/cache below. vcpkg removed its x-gha backend.
+  VCPKG_BINARY_SOURCES: clear;files,/root/vcpkg-cache,readwrite
   # Compiler objects are cached across runs: after a small edit only the
   # changed files recompile.
   CCACHE_DIR: /root/.ccache
@@ -56,16 +58,20 @@ jobs:
         # bench_server.sh starts its own reference instance.
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends cmake ninja-build git curl \
-            zip unzip tar pkg-config ccache redis-server redis-tools
+          apt-get install -y --no-install-recommends ninja-build git curl \
+            ca-certificates zip unzip tar pkg-config ccache redis-server redis-tools
           ${CXX} --version | head -n 1
           redis-server --version
+      - name: Install the latest CMake
+        # Debian's is too old for vcpkg's scripts (they use string(JSON
+        # STRING_ENCODE)), and VCPKG_FORCE_SYSTEM_BINARIES makes vcpkg use
+        # the system one rather than download its own.
+        run: |
+          v="$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Kitware/CMake/releases/latest | sed 's#.*/v##')"
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${v}/cmake-${v}-linux-x86_64.tar.gz" |
+            tar -xz --strip-components=1 -C /usr/local
+          cmake --version | head -n 1
       - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Use every core
         run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
       - name: Point vcpkg at the container's workspace
@@ -74,6 +80,12 @@ jobs:
         run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> "$GITHUB_ENV"
       - name: Bootstrap vcpkg
         run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: /root/vcpkg-cache
+          key: vcpkg-${{ matrix.compiler }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.compiler }}-
       - name: Restore the compiler cache
         uses: actions/cache@v4
         with:
