@@ -52,16 +52,31 @@ jobs:
           redis-server --version
       - name: Install the latest Clang
         if: matrix.compiler == 'clang'
-        # llvm.sh with no version installs the current stable release. The
-        # presets name plain clang/clang++: link them to it.
+        # apt.llvm.org's stable release, added by hand: its llvm.sh needs
+        # software-properties-common, which this image's Debian does not have.
+        # Falls back to Debian's own clang if the repository lacks the image's
+        # release. The presets name plain clang/clang++: link them to it.
         run: |
-          apt-get install -y --no-install-recommends lsb-release wget gnupg \
-            software-properties-common
+          apt-get install -y --no-install-recommends wget gnupg ca-certificates
+          . /etc/os-release
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          bash /tmp/llvm.sh
-          v="$(ls /usr/bin/clang++-* | sed 's/.*-//' | sort -n | tail -n 1)"
-          ln -sf "/usr/bin/clang-$v" /usr/local/bin/clang
-          ln -sf "/usr/bin/clang++-$v" /usr/local/bin/clang++
+          v="$(sed -n 's/^CURRENT_LLVM_STABLE=//p' /tmp/llvm.sh | head -n 1)"
+          install -d /etc/apt/keyrings
+          wget -qO /etc/apt/keyrings/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key
+          echo "deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] http://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-${v} main" \
+            > /etc/apt/sources.list.d/llvm.list
+          if apt-get update && apt-get install -y --no-install-recommends "clang-${v}"; then
+            ln -sf "/usr/bin/clang-$v" /usr/local/bin/clang
+            ln -sf "/usr/bin/clang++-$v" /usr/local/bin/clang++
+          else
+            echo "apt.llvm.org has no ${VERSION_CODENAME}: using Debian's clang"
+            rm -f /etc/apt/sources.list.d/llvm.list
+            apt-get update
+            apt-get install -y --no-install-recommends clang
+          fi
+          # clang looks for libstdc++ under /usr/lib/gcc and would not find this
+          # image's GCC 16 in /usr/local: the older one lacks std::expected.
+          echo "CXXFLAGS=--gcc-install-dir=$(dirname "$(g++ -print-libgcc-file-name)")" >> "$GITHUB_ENV"
       - name: Show the compiler
         run: |
           if [ "${{ matrix.compiler }}" = clang ]; then clang++ --version; else g++ --version; fi
