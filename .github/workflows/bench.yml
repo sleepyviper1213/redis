@@ -1,9 +1,9 @@
 name: Benchmark
 
 # Runs scripts/bench_server.sh on Linux against Debian's redis-server, on
-# demand, built with the latest GCC and the latest Clang. The runners are
-# shared VMs, so only the gap between the two servers in one job means
-# anything, not the absolute numbers.
+# demand, once per compiler. Each compiler has its own image, so neither
+# installs the other's toolchain. The runners are shared VMs, so only the gap
+# between the two servers in one job means anything, not the absolute numbers.
 
 on:
   # Push any commit to a bench/ branch to benchmark it with the defaults:
@@ -25,22 +25,31 @@ on:
 
 env:
   VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+  # Compiler objects are cached across runs: after a small edit only the
+  # changed files recompile.
+  CCACHE_DIR: /root/.ccache
+  CCACHE_MAXSIZE: 500M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
 jobs:
   bench:
     name: bench (${{ matrix.compiler }})
     runs-on: ubuntu-24.04
-    # GCC 16.2, and the base for both jobs: Ubuntu 24.04 ships at most GCC 14,
-    # which crashes (ICE) on Abseil lts_20260107's any_invocable.h. The image
-    # is Debian, with GCC in /usr/local/bin as plain gcc/g++, the names the
-    # presets use. Both jobs share it, so both benchmark the same redis-server.
-    container: gcc:16.2
+    # Both images are Debian, so the same packages (and the same redis-server)
+    # come from apt. Ubuntu 24.04's own GCC 14 crashes (ICE) on Abseil
+    # lts_20260107's any_invocable.h, hence gcc:16.2.
+    container: ${{ matrix.image }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { compiler: gcc,   preset: linux-gcc }
-          - { compiler: clang, preset: linux-clang }
+          - { compiler: gcc,   image: "gcc:16.2",         preset: linux-gcc,   cc: gcc,   cxx: g++ }
+          - { compiler: clang, image: "silkeh/clang:22",  preset: linux-clang, cc: clang, cxx: clang++ }
+    env:
+      # vcpkg builds the dependencies with the same compiler as the project.
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
     steps:
       - name: Install build tools and Redis
         # No systemd in a container, so the packaged Redis does not start;
@@ -48,38 +57,9 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends cmake ninja-build git curl \
-            zip unzip tar pkg-config redis-server redis-tools
+            zip unzip tar pkg-config ccache redis-server redis-tools
+          ${CXX} --version | head -n 1
           redis-server --version
-      - name: Install the latest Clang
-        if: matrix.compiler == 'clang'
-        # apt.llvm.org's stable release, added by hand: its llvm.sh needs
-        # software-properties-common, which this image's Debian does not have.
-        # Falls back to Debian's own clang if the repository lacks the image's
-        # release. The presets name plain clang/clang++: link them to it.
-        run: |
-          apt-get install -y --no-install-recommends wget gnupg ca-certificates
-          . /etc/os-release
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          v="$(sed -n 's/^CURRENT_LLVM_STABLE=//p' /tmp/llvm.sh | head -n 1)"
-          install -d /etc/apt/keyrings
-          wget -qO /etc/apt/keyrings/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key
-          echo "deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] http://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-${v} main" \
-            > /etc/apt/sources.list.d/llvm.list
-          if apt-get update && apt-get install -y --no-install-recommends "clang-${v}"; then
-            ln -sf "/usr/bin/clang-$v" /usr/local/bin/clang
-            ln -sf "/usr/bin/clang++-$v" /usr/local/bin/clang++
-          else
-            echo "apt.llvm.org has no ${VERSION_CODENAME}: using Debian's clang"
-            rm -f /etc/apt/sources.list.d/llvm.list
-            apt-get update
-            apt-get install -y --no-install-recommends clang
-          fi
-          # clang looks for libstdc++ under /usr/lib/gcc and would not find this
-          # image's GCC 16 in /usr/local: the older one lacks std::expected.
-          echo "CXXFLAGS=--gcc-install-dir=$(dirname "$(g++ -print-libgcc-file-name)")" >> "$GITHUB_ENV"
-      - name: Show the compiler
-        run: |
-          if [ "${{ matrix.compiler }}" = clang ]; then clang++ --version; else g++ --version; fi
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         with:
@@ -93,13 +73,18 @@ jobs:
         # checkout is at $GITHUB_WORKSPACE.
         run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> "$GITHUB_ENV"
       - name: Bootstrap vcpkg
-        run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+        run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: /root/.ccache
+          key: ccache-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.compiler }}-
       - name: Build
         run: |
           cmake --preset ${{ matrix.preset }}
           cmake --build --preset ${{ matrix.preset }}-release --target redis_server
+          ccache --show-stats
       - name: Benchmark
         env:
           REF_SERVER: redis-server
