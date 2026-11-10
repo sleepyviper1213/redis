@@ -14,8 +14,11 @@
 #   SERVER_ARGS="--sender-sessions --io-threads 4" scripts/bench_server.sh
 #
 # Other knobs: RUNS (repeats per scenario, default 3), REQUESTS (default
-# 200000), KEYSPACE (keys in the bigget scenario, default 2000000), and REF_PORT to also benchmark an already running reference server,
-# e.g. Homebrew's: REF_PORT=6379.
+# 200000), KEYSPACE (keys in the bigget scenario, default 2000000), and
+# REF_SERVER to also benchmark a reference redis-server binary, e.g.
+# REF_SERVER=redis-server (Homebrew's). The script starts its own instance on
+# REF_PORT (default 6382) with persistence off and a throwaway directory, so
+# it begins empty like redis_server and leaves nothing behind.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
@@ -26,6 +29,8 @@ PORT="${3:-6381}"
 RUNS="${RUNS:-3}"
 REQUESTS="${REQUESTS:-200000}"
 KEYSPACE="${KEYSPACE:-2000000}"
+REF_SERVER="${REF_SERVER:-}"
+REF_PORT="${REF_PORT:-6382}"
 
 command -v redis-benchmark >/dev/null ||
     { echo "error: redis-benchmark not found in PATH" >&2; exit 1; }
@@ -37,6 +42,16 @@ WORKDIR="$(mktemp -d)"
 "$SERVER" --port "$PORT" --log-level error --log-file "$WORKDIR/server.log" \
     --dump "$WORKDIR/dump.snap" ${SERVER_ARGS:-} >/dev/null 2>&1 &
 SERVER_PID=$!
+REF_PID=""
+if [[ -n "$REF_SERVER" ]]; then
+    command -v "$REF_SERVER" >/dev/null ||
+        { echo "error: $REF_SERVER not found in PATH" >&2; exit 1; }
+    mkdir "$WORKDIR/ref"
+    # No snapshots or AOF: a background save would disturb the measurement.
+    "$REF_SERVER" --port "$REF_PORT" --save "" --appendonly no \
+        --dir "$WORKDIR/ref" --logfile "$WORKDIR/ref.log" >/dev/null 2>&1 &
+    REF_PID=$!
+fi
 cleanup() {
     local status=$?
     if [[ $status -ne 0 ]]; then
@@ -50,8 +65,11 @@ cleanup() {
         echo "--- last server log lines ---" >&2
         tail -n 20 "$WORKDIR/server.log" >&2 2>/dev/null || true
     fi
-    kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
+    local pid
+    for pid in "$SERVER_PID" $REF_PID; do
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
     rm -rf "$WORKDIR"
 }
 trap cleanup EXIT
@@ -97,7 +115,7 @@ bench() {
 wait_for_port "$PORT"
 bench "redis_server ${SERVER_ARGS:-}" "$PORT"
 
-if [[ -n "${REF_PORT:-}" ]]; then
+if [[ -n "$REF_SERVER" ]]; then
     wait_for_port "$REF_PORT"
     bench "reference server" "$REF_PORT"
 fi
