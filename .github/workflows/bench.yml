@@ -106,5 +106,5 @@ jobs:
           RUNS: ${{ inputs.runs || '3' }}
         run: |
           echo "${{ matrix.compiler }}, runner: $(nproc) CPUs" | tee result.txt
-          scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a result.txt
+          bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a result.txt
           { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
