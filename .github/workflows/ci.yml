@@ -20,9 +20,10 @@ concurrency:
 
 env:
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  # Content-addressed by package ABI hash, so jobs share prebuilt dependencies
-  # without ever overwriting each other's.
-  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+  # Built dependencies live in this directory (vcpkg's default "files" binary
+  # cache), saved and restored by actions/cache below. vcpkg removed x-gha.
+  # Content-addressed by package ABI hash, so entries never clash.
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
 
 jobs:
   test:
@@ -40,11 +41,6 @@ jobs:
           - { preset: linux-gcc-tsan,    configure: linux-gcc,      config: ThreadSanitizer }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Use every core
         run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
       - name: Install toolchain
@@ -60,8 +56,25 @@ jobs:
         # memory and every instrumented binary aborts at startup.
         if: matrix.config == 'ThreadSanitizer'
         run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Install the latest CMake
+        # The pinned vcpkg's scripts need a newer CMake than the runner image
+        # has, and the presets make vcpkg use the system one
+        # (VCPKG_FORCE_SYSTEM_BINARIES).
+        run: |
+          v="$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Kitware/CMake/releases/latest | sed 's#.*/v##')"
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${v}/cmake-${v}-linux-x86_64.tar.gz" |
+            sudo tar -xz --strip-components=1 -C /usr/local
+          cmake --version | head -n 1
       - name: Bootstrap vcpkg
         run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-${{ matrix.configure }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.configure }}-
+      - name: Make the cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
       - name: Configure, build and unit test
         run: cmake --workflow --preset ${{ matrix.preset }}
       - name: Integration test
@@ -72,18 +85,21 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Use every core
         run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
       - name: Install toolchain
         # Homebrew LLVM, not AppleClang: see cmake/toolchains/homebrew-llvm.cmake.
-        run: brew install llvm ninja
+        run: brew install llvm ninja cmake
       - name: Bootstrap vcpkg
         run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-macos-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-macos-
+      - name: Make the cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
       - name: Configure, build and unit test
         run: cmake --workflow --preset macos-arm64-llvm-debug
       - name: Integration test
@@ -94,17 +110,29 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Install toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build g++-14 clang clang-tidy cppcheck
+      - name: Install the latest CMake
+        # The pinned vcpkg's scripts need a newer CMake than the runner image
+        # has, and the presets make vcpkg use the system one
+        # (VCPKG_FORCE_SYSTEM_BINARIES).
+        run: |
+          v="$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Kitware/CMake/releases/latest | sed 's#.*/v##')"
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${v}/cmake-${v}-linux-x86_64.tar.gz" |
+            sudo tar -xz --strip-components=1 -C /usr/local
+          cmake --version | head -n 1
       - name: Bootstrap vcpkg
         run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-analysis-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-analysis-
+      - name: Make the cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
       # Both analysers run as compiler launchers, so building is analysing.
       # Clang rather than GCC: clang-tidy re-parses the compiler's own command
       # line, which needs no reconciliation on a Clang tree.
