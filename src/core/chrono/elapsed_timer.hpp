@@ -5,7 +5,6 @@
 #include <cstdint>
 
 namespace redis {
-namespace {
 /// A clock that never goes back: what an elapsed time must be measured on.
 /// Spells out std::chrono::is_clock_v, which libc++ does not ship yet.
 template <class C>
@@ -16,7 +15,6 @@ concept MonotonicClock = requires {
 	typename C::time_point;
 	{ C::now() } -> std::same_as<typename C::time_point>;
 } && C::is_steady;
-} // namespace
 
 /**
  * \brief Measures time elapsed since a start point.
