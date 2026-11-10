@@ -3,6 +3,7 @@
 #include "core/utils/parse_number.hpp"
 
 #include <fmt/base.h>
+#include <fmt/compile.h>
 #include <fmt/ranges.h>
 
 #include <algorithm>
@@ -116,14 +117,17 @@ namespace {
 // A simple string or error ends at the first CRLF, so one inside the text (a
 // command name or argument echoed back, say) would end the reply early and let
 // the rest pass as a reply of its own. Like Redis, turn them into spaces.
+//
+// The wire format strings below are FMT_COMPILE: every reply goes through
+// them, and a runtime format string is parsed again on each call.
 fmt::format_context::iterator write_line(fmt::format_context::iterator it,
 										 char prefix, std::string_view text) {
 	if (text.find_first_of("\r\n") == std::string_view::npos)
-		return fmt::format_to(it, "{}{}\r\n", prefix, text);
+		return fmt::format_to(it, FMT_COMPILE("{}{}\r\n"), prefix, text);
 	std::string clean(text);
 	std::ranges::replace(clean, '\r', ' ');
 	std::ranges::replace(clean, '\n', ' ');
-	return fmt::format_to(it, "{}{}\r\n", prefix, clean);
+	return fmt::format_to(it, FMT_COMPILE("{}{}\r\n"), prefix, clean);
 }
 } // namespace
 
@@ -168,26 +172,26 @@ auto fmt::formatter<Value>::format(const Value &value,
 		case SimpleString: it = write_line(it, '+', value.as_string()); break;
 		case SimpleError: it = write_line(it, '-', value.as_string()); break;
 		case Integer:
-			it = fmt::format_to(it, ":{}\r\n", value.as_integer());
+			it = fmt::format_to(it, FMT_COMPILE(":{}\r\n"), value.as_integer());
 			break;
 		case BulkString: {
 			const auto &str = value.as_string();
-			it = fmt::format_to(it, "${}\r\n{}\r\n", str.size(), str);
+			it = fmt::format_to(it, FMT_COMPILE("${}\r\n{}\r\n"), str.size(), str);
 			break;
 		}
 		case Array: {
 			const auto &arr = value.as_array();
 			it              = fmt::format_to(it,
-											 "*{}\r\n{:e}",
+											 FMT_COMPILE("*{}\r\n{:e}"),
 											 arr.size(),
 											 fmt::join(arr, ""));
 			break;
 		}
 		// RESP2 null bulk string. RESP3's "_" is only legal after a client
 		// negotiates protocol 3 with HELLO, which this server does not offer.
-		case Null: it = fmt::format_to(it, "$-1\r\n"); break;
+		case Null: it = fmt::format_to(it, FMT_COMPILE("$-1\r\n")); break;
 		case Double:
-			it = fmt::format_to(it, ",{}\r\n", value.as_double());
+			it = fmt::format_to(it, FMT_COMPILE(",{}\r\n"), value.as_double());
 			break;
 		default: std::unreachable();
 		}
