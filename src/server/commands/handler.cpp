@@ -2,6 +2,8 @@
 
 #include "server/log_channels.hpp"
 #include "common/resp/value.hpp"
+#include "core/chrono/elapsed_timer.hpp"
+#include "core/chrono/tick_clock.hpp"
 #include "core/utils/ascii.hpp"
 #include "command.hpp"
 #include "server/diagnostics/current_command.hpp"
@@ -118,10 +120,11 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 	// For a crash report: which command was running when the process died.
 	const diagnostics::CommandScope running{info.name, args.size()};
 	if (ctx.stats == nullptr) return {info.fn(ctx, args), &info};
-	const ElapsedTimer timer;
+	// TickClock, not steady_clock: it is read twice per command, and on macOS
+	// steady_clock costs about a tenth of a pipelined SET.
+	const BasicElapsedTimer<TickClock> timer;
 	Value result = info.fn(ctx, args);
-	ctx.stats->command_ran(info.name,
-						   std::chrono::nanoseconds(timer.nsecs_elapsed()));
+	ctx.stats->command_ran(info.name, timer.duration_elapsed());
 	return {std::move(result), &info};
 }
 
