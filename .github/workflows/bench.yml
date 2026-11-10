@@ -1,0 +1,63 @@
+name: Benchmark
+
+# Runs scripts/bench_server.sh on Linux against Ubuntu's redis-server, on
+# demand. The runners are shared VMs, so only the gap between the two servers
+# in one run means anything, not the absolute numbers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      threads:
+        description: redis-benchmark threads (THREADS)
+        default: "1"
+      requests:
+        description: requests per scenario (REQUESTS)
+        default: "200000"
+      runs:
+        description: repeats per scenario (RUNS)
+        default: "3"
+
+env:
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
+      - name: Install toolchain and Redis
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-14 redis-server redis-tools
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
+          # The packaged service would sit idle on 6379; stop it so it takes
+          # no CPU. bench_server.sh starts its own reference instance.
+          sudo systemctl stop redis-server
+          redis-server --version
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Build
+        run: |
+          cmake --preset linux-gcc
+          cmake --build --preset linux-gcc-release --target redis_server
+      - name: Benchmark
+        env:
+          REF_SERVER: redis-server
+          THREADS: ${{ inputs.threads }}
+          REQUESTS: ${{ inputs.requests }}
+          RUNS: ${{ inputs.runs }}
+        run: |
+          echo "Runner: $(nproc) CPUs" | tee result.txt
+          scripts/bench_server.sh linux-gcc Release | tee -a result.txt
+          { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
