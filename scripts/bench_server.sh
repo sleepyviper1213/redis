@@ -19,6 +19,11 @@
 # REF_SERVER=redis-server (Homebrew's). The script starts its own instance on
 # REF_PORT (default 6382) with persistence off and a throwaway directory, so
 # it begins empty like redis_server and leaves nothing behind.
+#
+# THREADS (default 1) runs redis-benchmark with that many threads. A single
+# client thread tops out near 1.4M rps on an M-series Mac, which caps the
+# pipeline and bigget scenarios before the server does; e.g. THREADS=4. The
+# latency scenario stays single-threaded: it has one connection.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
@@ -31,6 +36,10 @@ REQUESTS="${REQUESTS:-200000}"
 KEYSPACE="${KEYSPACE:-2000000}"
 REF_SERVER="${REF_SERVER:-}"
 REF_PORT="${REF_PORT:-6382}"
+THREADS="${THREADS:-1}"
+# Empty for the default, so the runs are exactly what they were before.
+CLIENT_THREADS=()
+if [[ "$THREADS" -gt 1 ]]; then CLIENT_THREADS=(--threads "$THREADS"); fi
 
 command -v redis-benchmark >/dev/null ||
     { echo "error: redis-benchmark not found in PATH" >&2; exit 1; }
@@ -101,15 +110,19 @@ run_scenario() {
 
 bench() {
     local name="$1" port="$2"
-    echo "== $name (port $port, $REQUESTS requests, $RUNS runs) =="
-    run_scenario "$port" clients  -n "$REQUESTS"
+    echo "== $name (port $port, $REQUESTS requests, $RUNS runs, $THREADS client threads) =="
+    # "${CLIENT_THREADS[@]+...}": an empty array is "unbound" to bash 3.2
+    # (macOS's /bin/bash) under set -u.
+    run_scenario "$port" clients  -n "$REQUESTS" ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
     run_scenario "$port" latency  -n "$((REQUESTS / 2))" -c 1
-    run_scenario "$port" pipeline -n "$((REQUESTS * 2))" -P 16
+    run_scenario "$port" pipeline -n "$((REQUESTS * 2))" -P 16 \
+        ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
     # A keyspace too big for the CPU caches, where every lookup misses: fill it
     # (random keys, so about 86% of KEYSPACE are hit), then read it back.
     redis-benchmark -p "$port" -t set -q -n "$((KEYSPACE * 2))" -r "$KEYSPACE" \
-        -P 16 >/dev/null
-    TEST=get run_scenario "$port" bigget -n "$((REQUESTS * 2))" -r "$KEYSPACE" -P 16
+        -P 16 ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"} >/dev/null
+    TEST=get run_scenario "$port" bigget -n "$((REQUESTS * 2))" -r "$KEYSPACE" -P 16 \
+        ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
 }
 
 wait_for_port "$PORT"
