@@ -41,7 +41,7 @@ jobs:
       - name: Install toolchain and Redis
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build g++-14 redis-server redis-tools
+          sudo apt-get install -y ninja-build g++-14 clang redis-server redis-tools
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
           # The packaged service would sit idle on 6379; stop it so it takes
@@ -53,9 +53,11 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
       - name: Build
+        # Clang, not GCC: GCC 14 crashes (ICE) on Abseil lts_20260107's
+        # any_invocable.h, which every file including flat_hash_map pulls in.
         run: |
-          cmake --preset linux-gcc
-          cmake --build --preset linux-gcc-release --target redis_server
+          cmake --preset linux-clang
+          cmake --build --preset linux-clang-release --target redis_server
       - name: Benchmark
         env:
           REF_SERVER: redis-server
@@ -65,5 +67,5 @@ jobs:
           RUNS: ${{ inputs.runs || '3' }}
         run: |
           echo "Runner: $(nproc) CPUs" | tee result.txt
-          scripts/bench_server.sh linux-gcc Release | tee -a result.txt
+          scripts/bench_server.sh linux-clang Release | tee -a result.txt
           { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
