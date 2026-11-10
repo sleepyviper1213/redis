@@ -5,6 +5,11 @@ name: Benchmark
 # in one run means anything, not the absolute numbers.
 
 on:
+  # Push any commit to a bench/ branch to benchmark it with the defaults:
+  #   git push -f origin HEAD:bench/<name>
+  # workflow_dispatch only works once this file is on the default branch.
+  push:
+    branches: ["bench/**"]
   workflow_dispatch:
     inputs:
       threads:
@@ -54,9 +59,10 @@ jobs:
       - name: Benchmark
         env:
           REF_SERVER: redis-server
-          THREADS: ${{ inputs.threads }}
-          REQUESTS: ${{ inputs.requests }}
-          RUNS: ${{ inputs.runs }}
+          # A push has no inputs: fall back to the defaults above.
+          THREADS: ${{ inputs.threads || '1' }}
+          REQUESTS: ${{ inputs.requests || '200000' }}
+          RUNS: ${{ inputs.runs || '3' }}
         run: |
           echo "Runner: $(nproc) CPUs" | tee result.txt
           scripts/bench_server.sh linux-gcc Release | tee -a result.txt
