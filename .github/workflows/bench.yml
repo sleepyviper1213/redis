@@ -1,8 +1,9 @@
 name: Benchmark
 
-# Runs scripts/bench_server.sh on Linux against Ubuntu's redis-server, on
-# demand. The runners are shared VMs, so only the gap between the two servers
-# in one run means anything, not the absolute numbers.
+# Runs scripts/bench_server.sh on Linux against Debian's redis-server, on
+# demand, built with the latest GCC and the latest Clang. The runners are
+# shared VMs, so only the gap between the two servers in one job means
+# anything, not the absolute numbers.
 
 on:
   # Push any commit to a bench/ branch to benchmark it with the defaults:
@@ -23,13 +24,47 @@ on:
         default: "3"
 
 env:
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
 
 jobs:
   bench:
+    name: bench (${{ matrix.compiler }})
     runs-on: ubuntu-24.04
+    # GCC 16.2, and the base for both jobs: Ubuntu 24.04 ships at most GCC 14,
+    # which crashes (ICE) on Abseil lts_20260107's any_invocable.h. The image
+    # is Debian, with GCC in /usr/local/bin as plain gcc/g++, the names the
+    # presets use. Both jobs share it, so both benchmark the same redis-server.
+    container: gcc:16.2
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: gcc,   preset: linux-gcc }
+          - { compiler: clang, preset: linux-clang }
     steps:
+      - name: Install build tools and Redis
+        # No systemd in a container, so the packaged Redis does not start;
+        # bench_server.sh starts its own reference instance.
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake ninja-build git curl \
+            zip unzip tar pkg-config redis-server redis-tools
+          redis-server --version
+      - name: Install the latest Clang
+        if: matrix.compiler == 'clang'
+        # llvm.sh with no version installs the current stable release. The
+        # presets name plain clang/clang++: link them to it.
+        run: |
+          apt-get install -y --no-install-recommends lsb-release wget gnupg \
+            software-properties-common
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          bash /tmp/llvm.sh
+          v="$(ls /usr/bin/clang++-* | sed 's/.*-//' | sort -n | tail -n 1)"
+          ln -sf "/usr/bin/clang-$v" /usr/local/bin/clang
+          ln -sf "/usr/bin/clang++-$v" /usr/local/bin/clang++
+      - name: Show the compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = clang ]; then clang++ --version; else g++ --version; fi
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         with:
@@ -38,26 +73,18 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Use every core
         run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
-      - name: Install toolchain and Redis
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build g++-14 clang redis-server redis-tools
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
-          # The packaged service would sit idle on 6379; stop it so it takes
-          # no CPU. bench_server.sh starts its own reference instance.
-          sudo systemctl stop redis-server
-          redis-server --version
+      - name: Point vcpkg at the container's workspace
+        # github.workspace is the host's path; inside the container the
+        # checkout is at $GITHUB_WORKSPACE.
+        run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> "$GITHUB_ENV"
       - name: Bootstrap vcpkg
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
       - name: Build
-        # Clang, not GCC: GCC 14 crashes (ICE) on Abseil lts_20260107's
-        # any_invocable.h, which every file including flat_hash_map pulls in.
         run: |
-          cmake --preset linux-clang
-          cmake --build --preset linux-clang-release --target redis_server
+          cmake --preset ${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }}-release --target redis_server
       - name: Benchmark
         env:
           REF_SERVER: redis-server
@@ -66,6 +93,6 @@ jobs:
           REQUESTS: ${{ inputs.requests || '200000' }}
           RUNS: ${{ inputs.runs || '3' }}
         run: |
-          echo "Runner: $(nproc) CPUs" | tee result.txt
-          scripts/bench_server.sh linux-clang Release | tee -a result.txt
+          echo "${{ matrix.compiler }}, runner: $(nproc) CPUs" | tee result.txt
+          scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a result.txt
           { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
