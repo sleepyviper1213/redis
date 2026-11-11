@@ -14,8 +14,8 @@
 # Knobs: PORT (default 6381), DURATION (seconds sampled, default 10), WARMUP
 # (seconds of load before sampling, default 3), TOP (lines of the report,
 # default 40), KEYSPACE (default 2000000), VERSIONS (default "v1 v2") and
-# ANNOTATE (a substring of the symbol whose hot instructions are listed, default
-# "operator=="; empty for none). Compare a KEYSPACE that fits the CPU caches
+# ANNOTATE (an awk regex for the symbol whose hot instructions are listed;
+# default: the keyspace lookup; empty for none). Compare a KEYSPACE that fits the CPU caches
 # (10000) with one that does not to tell cache misses from compute: a symbol
 # whose share collapses on the small one was waiting on memory.
 #
@@ -38,7 +38,7 @@ TOP="${TOP:-40}"
 INCLUSIVE_TOP="${INCLUSIVE_TOP:-120}"
 KEYSPACE="${KEYSPACE:-2000000}"
 VERSIONS="${VERSIONS:-v1 v2}"
-ANNOTATE="${ANNOTATE-operator==}"
+ANNOTATE="${ANNOTATE-raw_hash_set|operator==\(redis::detail::BasicSimpleDynamicString}"
 
 case "$SCENARIO" in
     clients | pipeline | bigget) ;;
@@ -114,18 +114,26 @@ report_counters() {
 # annotate <perf.data>: the instructions of the hottest symbol matching
 # ANNOTATE, with the share of that symbol's samples on each, to see where in it
 # the time goes. A load that misses the cache shows as a hot instruction just
-# after it (or on it). Lines under 1% are dropped.
+# after it (or on it). Lines under 1% are dropped. ANNOTATE is an awk regex.
+# When no line survives (perf's output format differs between versions), the
+# start of perf's own output is shown instead, with its errors.
 annotate() {
-    local symbol
+    local symbol raw="$1.annotate"
+    # perf pads the symbol column with spaces: trim them, or the name will not
+    # match when handed back to perf annotate.
     symbol="$(perf report -i "$1" --stdio --no-children --sort symbol -g none 2>/dev/null |
-        awk -v pat="$ANNOTATE" '!done && !/^#/ && index($0, pat) { sub(/^[^[]*\[[.k]\] /, ""); print; done = 1 }')"
+        awk -v pat="$ANNOTATE" '!done && !/^#/ && $0 ~ pat {
+            sub(/^[^[]*\[[.k]\] /, ""); sub(/ +$/, ""); print; done = 1 }')"
     if [[ -z "$symbol" ]]; then
         echo "   no symbol matching '$ANNOTATE'"
         return 0
     fi
     echo "-- annotate: ${symbol:0:200} --"
-    perf annotate -i "$1" --stdio -s "$symbol" 2>/dev/null |
-        awk '$1 + 0 >= 1.0 && $2 == ":" { print substr($0, 1, 200) }' || true
+    perf annotate -i "$1" --stdio -s "$symbol" >"$raw" 2>&1 || true
+    awk '$1 ~ /^[0-9.]+$/ && $1 + 0 >= 1.0 { print substr($0, 1, 200); n++ }
+         END { exit n == 0 }' "$raw" ||
+        { echo "   (no instruction at 1% or more; perf said:)"
+          awk 'NR <= 25 { print substr($0, 1, 200) }' "$raw"; }
 }
 
 # profile <version> <server args...>
