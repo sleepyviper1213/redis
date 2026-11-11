@@ -20,6 +20,15 @@
 # REF_PORT (default 6382) with persistence off and a throwaway directory, so
 # it begins empty like redis_server and leaves nothing behind.
 #
+# The servers take turns: every scenario alternates between them run by run
+# (the order flips on each round), so a noisy VM disturbs both alike. Each line
+# gives every run, the best (the least disturbed by other processes) and the
+# median (the steadier figure to compare).
+#
+# SERVER_CPUS and CLIENT_CPUS (taskset CPU lists, e.g. 0 and 1-3) pin the
+# servers and redis-benchmark to separate CPUs, so the client cannot take the
+# server's; unset by default.
+#
 # THREADS (default 1) runs redis-benchmark with that many threads. A single
 # client thread tops out near 1.4M rps on an M-series Mac, which caps the
 # pipeline and bigget scenarios before the server does; e.g. THREADS=4. The
@@ -41,6 +50,17 @@ THREADS="${THREADS:-1}"
 CLIENT_THREADS=()
 if [[ "$THREADS" -gt 1 ]]; then CLIENT_THREADS=(--threads "$THREADS"); fi
 
+# Empty when unpinned. The "${array[@]+...}" expansions keep bash 3.2 (macOS's
+# /bin/bash) from calling an empty array "unbound" under set -u.
+SERVER_PIN=()
+CLIENT_PIN=()
+if [[ -n "${SERVER_CPUS:-}${CLIENT_CPUS:-}" ]]; then
+    command -v taskset >/dev/null ||
+        { echo "error: SERVER_CPUS/CLIENT_CPUS need taskset" >&2; exit 1; }
+    if [[ -n "${SERVER_CPUS:-}" ]]; then SERVER_PIN=(taskset -c "$SERVER_CPUS"); fi
+    if [[ -n "${CLIENT_CPUS:-}" ]]; then CLIENT_PIN=(taskset -c "$CLIENT_CPUS"); fi
+fi
+
 command -v redis-benchmark >/dev/null ||
     { echo "error: redis-benchmark not found in PATH" >&2; exit 1; }
 
@@ -48,7 +68,8 @@ SERVER="$(locate_binary "$PRESET" "$CONFIG" redis_server)"
 WORKDIR="$(mktemp -d)"
 
 # Cap the server at error level: logging would skew the numbers.
-"$SERVER" --port "$PORT" --log-level error --log-file "$WORKDIR/server.log" \
+${SERVER_PIN[@]+"${SERVER_PIN[@]}"} "$SERVER" --port "$PORT" \
+    --log-level error --log-file "$WORKDIR/server.log" \
     --dump "$WORKDIR/dump.snap" ${SERVER_ARGS:-} >/dev/null 2>&1 &
 SERVER_PID=$!
 REF_PID=""
@@ -57,7 +78,8 @@ if [[ -n "$REF_SERVER" ]]; then
         { echo "error: $REF_SERVER not found in PATH" >&2; exit 1; }
     mkdir "$WORKDIR/ref"
     # No snapshots or AOF: a background save would disturb the measurement.
-    "$REF_SERVER" --port "$REF_PORT" --save "" --appendonly no \
+    ${SERVER_PIN[@]+"${SERVER_PIN[@]}"} "$REF_SERVER" --port "$REF_PORT" \
+        --save "" --appendonly no \
         --dir "$WORKDIR/ref" --logfile "$WORKDIR/ref.log" >/dev/null 2>&1 &
     REF_PID=$!
 fi
@@ -93,42 +115,70 @@ wait_for_port() {
     return 1
 }
 
-# run_scenario <port> <label> <redis-benchmark args...>: prints requests/second
-# for each run, then the best one (the least disturbed by other processes).
-run_scenario() {
-    local port="$1" label="$2"
-    shift 2
-    local best=0 rps results=()
-    for _ in $(seq 1 "$RUNS"); do
-        rps="$(redis-benchmark -p "$port" -t "${TEST:-set}" -q "$@" |
-               tr '\r' '\n' | awk '/requests per second/ { v = $2 } END { print v }')"
-        results+=("$rps")
-        best="$(awk -v a="$best" -v b="$rps" 'BEGIN { print (b > a) ? b : a }')"
-    done
-    printf '  %-9s %s   best %s rps\n' "$label" "${results[*]}" "$best"
-}
-
-bench() {
-    local name="$1" port="$2"
-    echo "== $name (port $port, $REQUESTS requests, $RUNS runs, $THREADS client threads) =="
-    # "${CLIENT_THREADS[@]+...}": an empty array is "unbound" to bash 3.2
-    # (macOS's /bin/bash) under set -u.
-    run_scenario "$port" clients  -n "$REQUESTS" ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
-    run_scenario "$port" latency  -n "$((REQUESTS / 2))" -c 1
-    run_scenario "$port" pipeline -n "$((REQUESTS * 2))" -P 16 \
-        ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
-    # A keyspace too big for the CPU caches, where every lookup misses: fill it
-    # (random keys, so about 86% of KEYSPACE are hit), then read it back.
-    redis-benchmark -p "$port" -t set -q -n "$((KEYSPACE * 2))" -r "$KEYSPACE" \
-        -P 16 ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"} >/dev/null
-    TEST=get run_scenario "$port" bigget -n "$((REQUESTS * 2))" -r "$KEYSPACE" -P 16 \
-        ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
-}
-
-wait_for_port "$PORT"
-bench "redis_server ${SERVER_ARGS:-}" "$PORT"
-
+SERVER_NAMES=("redis_server ${SERVER_ARGS:-}")
+SERVER_PORTS=("$PORT")
 if [[ -n "$REF_SERVER" ]]; then
-    wait_for_port "$REF_PORT"
-    bench "reference server" "$REF_PORT"
+    SERVER_NAMES+=("reference server: $("$REF_SERVER" --version)")
+    SERVER_PORTS+=("$REF_PORT")
 fi
+REPORT=() # per server, its result lines
+
+# one_run <port> <redis-benchmark args...>: requests/second of one run.
+one_run() {
+    local port="$1"
+    shift
+    ${CLIENT_PIN[@]+"${CLIENT_PIN[@]}"} \
+        redis-benchmark -p "$port" -t "${TEST:-set}" -q "$@" |
+        tr '\r' '\n' | awk '/requests per second/ { v = $2 } END { print v }'
+}
+
+# scenario <label> <redis-benchmark args...>: RUNS rounds, each running every
+# server once, in the opposite order to the round before.
+scenario() {
+    local label="$1"
+    shift
+    local results=() order i round best median
+    for i in "${!SERVER_PORTS[@]}"; do results[i]=""; done
+    for round in $(seq 1 "$RUNS"); do
+        order=()
+        if (( round % 2 == 0 )); then
+            for ((i = ${#SERVER_PORTS[@]} - 1; i >= 0; i--)); do order+=("$i"); done
+        else
+            for i in "${!SERVER_PORTS[@]}"; do order+=("$i"); done
+        fi
+        for i in "${order[@]}"; do
+            results[i]+="$(one_run "${SERVER_PORTS[i]}" "$@") "
+        done
+    done
+    for i in "${!SERVER_PORTS[@]}"; do
+        read -r best median < <(printf '%s\n' ${results[i]} | sort -n |
+            awk '{ a[NR] = $1 } END {
+                m = (NR % 2) ? a[(NR + 1) / 2] : (a[NR / 2] + a[NR / 2 + 1]) / 2
+                print a[NR], m }')
+        REPORT[i]+="$(printf '  %-9s %s best %s  median %s rps' \
+            "$label" "${results[i]}" "$best" "$median")"$'\n'
+    done
+}
+
+# Wait for every server first: the scenarios start straight away.
+for port in "${SERVER_PORTS[@]}"; do wait_for_port "$port"; done
+
+scenario clients  -n "$REQUESTS" ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
+scenario latency  -n "$((REQUESTS / 2))" -c 1
+scenario pipeline -n "$((REQUESTS * 2))" -P 16 \
+    ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
+# A keyspace too big for the CPU caches, where every lookup misses: fill each
+# server (random keys, so about 86% of KEYSPACE are hit), then read it back.
+for port in "${SERVER_PORTS[@]}"; do
+    ${CLIENT_PIN[@]+"${CLIENT_PIN[@]}"} \
+        redis-benchmark -p "$port" -t set -q -n "$((KEYSPACE * 2))" \
+        -r "$KEYSPACE" -P 16 \
+        ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"} >/dev/null
+done
+TEST=get scenario bigget -n "$((REQUESTS * 2))" -r "$KEYSPACE" -P 16 \
+    ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
+
+for i in "${!SERVER_PORTS[@]}"; do
+    echo "== ${SERVER_NAMES[i]} (port ${SERVER_PORTS[i]}, $REQUESTS requests, $RUNS runs, $THREADS client threads) =="
+    printf '%s' "${REPORT[i]}"
+done
