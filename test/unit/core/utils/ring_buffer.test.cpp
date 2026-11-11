@@ -100,7 +100,7 @@ SCENARIO("Copying and moving", "[ring_buffer]") {
 		}
 
 		WHEN("it is moved") {
-			RingBuffer<std::string> moved(std::move(original));
+			RingBuffer<std::string> const moved(std::move(original));
 
 			THEN("the elements move and the source is left empty") {
 				CHECK(contents(moved) == std::vector<std::string>{"b", "a"});
@@ -188,7 +188,7 @@ SCENARIO("Using a custom allocator", "[ring_buffer]") {
 		}
 
 		WHEN("it is moved into a buffer with an unequal allocator") {
-			RingBuffer<int, Alloc> other(std::move(buffer),
+			RingBuffer<int, Alloc> const other(std::move(buffer),
 										 Alloc{2, &allocations});
 
 			THEN("the elements are moved into storage from the new one") {
@@ -200,7 +200,7 @@ SCENARIO("Using a custom allocator", "[ring_buffer]") {
 		}
 
 		WHEN("it is moved into a buffer with an equal allocator") {
-			RingBuffer<int, Alloc> other(std::move(buffer),
+			RingBuffer<int, Alloc> const other(std::move(buffer),
 										 Alloc{1, &allocations});
 
 			THEN("the array is taken over without allocating") {

@@ -33,9 +33,12 @@ namespace v2 {
  */
 class [[nodiscard]] Listener {
 public:
-	/// \p services is shared with every session. Call listen() before start().
-	Listener(boost::asio::any_io_executor ex,
-			  std::shared_ptr<Services> services);
+	/// \p services is shared with every session. With \p concurrent false only
+	/// one thread runs \p ex, so the per-client strands that serialize
+	/// handlers are left out: a strand costs a lock and a queue hop on every
+	/// completion. Call listen() before start().
+	Listener(boost::asio::any_io_executor ex, std::shared_ptr<Services> services,
+			 bool concurrent = true);
 
 	/// Bind and listen on \p host:\p port (IPv4). Fails when the port is in use
 	/// or \p host is not an address.
@@ -51,7 +54,7 @@ public:
 
 	/// Completes once the accept loop and all sessions have finished. Only
 	/// meaningful after stop().
-	[[nodiscard]] auto drained() noexcept {
+	[[nodiscard]] stdexec::sender auto drained() noexcept {
 		return stdexec::starts_on(drain_context_.get_scheduler(),
 								  scope_.join());
 	}
@@ -60,6 +63,8 @@ private:
 	boost::asio::any_io_executor ex_;
 	boost::asio::ip::tcp::acceptor acceptor_;
 	std::shared_ptr<Services> services_;
+	/// Whether several threads run ex_, and so each client needs a strand.
+	bool concurrent_;
 	/// Paces the accept loop after a failed accept, so it cannot spin.
 	boost::asio::steady_timer retry_timer_;
 	/// Where drained() completes: join needs a scheduler to complete on.

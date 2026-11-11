@@ -147,7 +147,7 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 
 			WHEN("it is copied and moved") {
 				Object copy(object);
-				Object moved(std::move(copy));
+				Object const moved(std::move(copy));
 
 				THEN("the bytes come along, still with no allocation") {
 					CHECK(moved.string() == "value:12345");

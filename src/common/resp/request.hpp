@@ -17,7 +17,7 @@ namespace redis::resp {
  * PROTO_INLINE_MAX_SIZE). Without one, a client that never sends a newline
  * could make the server buffer forever while looking for the end of a line.
  */
-inline constexpr size_t MAX_INLINE_LENGTH = 64 * 1024;
+inline constexpr size_t MAX_INLINE_LENGTH = 64z * 1024;
 
 /// What parse_request() cut out of the input.
 enum class RequestKind : uint8_t {

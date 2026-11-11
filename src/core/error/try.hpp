@@ -1,6 +1,7 @@
 #pragma once
 
-#define TRY(expression)                                                        \
+#ifndef REDIS_TRY
+#define REDIS_TRY(expression)                                                        \
 	({                                                                         \
 		auto &&_res = (expression);                                            \
 		if (!_res.has_value()) [[unlikely]]                                    \
@@ -8,8 +9,10 @@
 				std::forward<decltype(_res)>(_res).error());                   \
 		std::forward<decltype(_res)>(_res).value();                            \
 	})
+#endif
 
-#define TRY_FROM(expr, E2)                                                      \
+#ifndef REDIS_TRY_FROM
+#define REDIS_TRY_FROM(expr, E2)                                                      \
 	({                                                                          \
 		auto &&_res = (expr);                                                   \
 		using _E1   = typename std::remove_cvref_t<decltype(_res)>::error_type; \
@@ -22,4 +25,4 @@
 		}                                                                       \
 		std::move(_res).value();                                                \
 	})
-
+#endif

@@ -43,7 +43,7 @@ std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 	if (clients_.fetch_add(1, std::memory_order_relaxed) >=
 		limits_.max_clients) {
 		clients_.fetch_sub(1, std::memory_order_relaxed);
-		FAILED(Violation::TooManyClients);
+		REDIS_FAILED(Violation::TooManyClients);
 	}
 	admitted_.fetch_add(1, std::memory_order_relaxed);
 	return Ticket(this);
@@ -52,14 +52,14 @@ std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 [[nodiscard]] std::expected<void, Violation>
 NetGuard::check_input(size_t pending) const noexcept {
 	if (pending > limits_.max_query_buffer)
-		FAILED(Violation::QueryBufferFull);
+		REDIS_FAILED(Violation::QueryBufferFull);
 	return {};
 }
 
 [[nodiscard]] std::expected<void, Violation>
 NetGuard::check_output(size_t replies) const noexcept {
 	if (replies > limits_.max_output_buffer)
-		FAILED(Violation::OutputBufferFull);
+		REDIS_FAILED(Violation::OutputBufferFull);
 	return {};
 }
 

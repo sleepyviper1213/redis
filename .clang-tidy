@@ -18,7 +18,14 @@ Checks: >
   readability-*,
   -readability-braces-around-statements,
   -readability-identifier-naming,
+  -readability-identifier-length,
   -readability-uppercase-literal-suffix,
+  -llvm-prefer-static-over-anonymous-namespace,
+  -llvm-qualified-auto,
+  -cppcoreguidelines-avoid-c-arrays,
+  -modernize-avoid-c-arrays,
+  -misc-non-private-member-variables-in-classes,
+  -readability-math-missing-parentheses,
 
 CheckOptions:
   readability-identifier-naming.ClassCase: 'CamelCase'

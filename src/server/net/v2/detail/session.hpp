@@ -3,9 +3,11 @@
 
 #include "asio_context.hpp"
 #include "server/net/guard.hpp"
+#include "server/net/net_error.hpp"
 #include "server/net/detail/pipeline.hpp"
 
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <exec/any_sender_of.hpp>
 #include <stdexec/execution.hpp>
 
@@ -61,12 +63,16 @@ private:
 
 	// The stages of one round, each a sender. Defined in session.cpp, their
 	// only user, which is why their types can be deduced.
-	auto read();
-	auto execute();
-	auto write();
+	/// Waits for the client's next bytes, or for the idle limit. Completes with
+	/// the byte count, or with nothing once the session is over.
+	stdexec::sender auto read();
+	/// Runs the ingested requests, on the keyspace thread when there is one.
+	stdexec::sender auto execute();
+	/// Sends replies_ to the client, then clears it.
+	stdexec::sender auto write();
 	/// One round: read, execute, write. Completes with true once the session
 	/// is over.
-	auto round();
+	stdexec::sender auto round();
 
 	// What the stages decide with, as plain code.
 	/// Take in \p bytes just read. Returns whether there is anything to
@@ -74,14 +80,19 @@ private:
 	bool ingest(size_t bytes);
 	/// Run everything ingested; the replies end up in replies_.
 	void run_batch();
-	/// An error ended the round: log it and end the session.
+	/// An error no stage claimed ended the round: log it and end the session.
 	void fail(const std::exception_ptr &error);
+	/// The stage \p kind failed with \p error: log it under that kind and end
+	/// the session. A client leaving (end of file) is not a failure.
+	void fail_io(ConnectionKind kind, const std::exception_ptr &error);
 
 	static constexpr size_t READ_CHUNK_SIZE = 16uz * 1024;
 
 	boost::asio::ip::tcp::socket socket_;
 	/// The socket's strand as a scheduler, to come back to after executing.
 	std::unique_ptr<AsioContext> strand_;
+	/// Races each read when the guard has an idle limit; the loser is cancelled.
+	boost::asio::steady_timer idle_timer_;
 	std::shared_ptr<Services> services_;
 	/// Holds this client's slot under Services::guard until the session ends.
 	NetGuard::Ticket ticket_;
@@ -91,6 +102,8 @@ private:
 	std::string chunk_;
 	std::string pending_;
 	std::string replies_;
+	/// How much of replies_ the socket took at once; see write().
+	size_t sent_ = 0;
 	ParsedBatch batch_;
 	AfterReplies after_ = AfterReplies::KeepOpen;
 	bool done_          = false;

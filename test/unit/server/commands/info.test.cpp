@@ -1,3 +1,4 @@
+#include "absl/strings/match.h"
 #include "commands.fixture.hpp"
 #include "server/net/guard.hpp"
 
@@ -29,15 +30,14 @@ SCENARIO("INFO reports the server's state", "[commands][info]") {
 			THEN("every section is present") {
 				for (const char *title : {"# Server", "# Clients", "# Stats",
 										  "# Persistence", "# Keyspace"})
-					CHECK(text.find(title) != std::string::npos);
+					CHECK(absl::StrContains(text, title));
 			}
 			AND_THEN("it counts the commands that ran, not the unknown one") {
 				// SET, SET, EXPIRE; INFO itself is counted after it replies.
-				CHECK(text.find("total_commands_processed:3\r\n") !=
-					  std::string::npos);
+				CHECK(absl::StrContains(text, "total_commands_processed:3\r\n"));
 			}
 			AND_THEN("the keyspace line has the key and expiry counts") {
-				CHECK(text.find("db0:keys=2,expires=1\r\n") != std::string::npos);
+				CHECK(absl::StrContains(text, "db0:keys=2,expires=1\r\n"));
 			}
 		}
 
@@ -46,7 +46,7 @@ SCENARIO("INFO reports the server's state", "[commands][info]") {
 
 			THEN("only that section is returned") {
 				CHECK(text.starts_with("# Keyspace\r\n"));
-				CHECK(text.find("# Stats") == std::string::npos);
+				CHECK(!absl::StrContains(text, "# Stats"));
 			}
 		}
 
@@ -77,7 +77,7 @@ SCENARIO("INFO counts lookups and times each command", "[commands][info]") {
 				CHECK(text.find("keyspace_hits:" +
 								std::to_string(hits + 2) + "\r\n") !=
 					  std::string::npos);
-				CHECK(text.find("expired_keys:0\r\n") != std::string::npos);
+				CHECK(absl::StrContains(text, "expired_keys:0\r\n"));
 			}
 		}
 
@@ -88,14 +88,12 @@ SCENARIO("INFO counts lookups and times each command", "[commands][info]") {
 			THEN("each command has its calls and time") {
 				const auto text = payload(server.run({"INFO", "commandstats"}));
 				CHECK(text.starts_with("# Commandstats\r\n"));
-				CHECK(text.find("cmdstat_get:calls=2,usec=") != std::string::npos);
-				CHECK(text.find("cmdstat_set:calls=1,usec=") != std::string::npos);
+				CHECK(absl::StrContains(text, "cmdstat_get:calls=2,usec="));
+				CHECK(absl::StrContains(text, "cmdstat_set:calls=1,usec="));
 			}
 			AND_THEN("the default sections leave it out") {
-				CHECK(payload(server.run({"INFO"})).find("# Commandstats") ==
-					  std::string::npos);
-				CHECK(payload(server.run({"INFO", "all"})).find("# Commandstats") !=
-					  std::string::npos);
+				CHECK(!absl::StrContains(payload(server.run({"INFO"})), "# Commandstats"));
+				CHECK(absl::StrContains(payload(server.run({"INFO", "all"})), "# Commandstats"));
 			}
 		}
 	}
@@ -123,7 +121,7 @@ SCENARIO("INFO reports the memory the keyspace holds", "[commands][info]") {
 				const auto text = payload(server.run({"INFO", "memory"}));
 				CHECK(text.starts_with("# Memory\r\nused_memory:" +
 									   std::to_string(after) + "\r\n"));
-				CHECK(text.find("used_memory_human:") != std::string::npos);
+				CHECK(absl::StrContains(text, "used_memory_human:"));
 			}
 		}
 	}
@@ -143,12 +141,10 @@ SCENARIO("INFO reports connections when there is a network", "[commands][info]")
 			const auto text = payload(server.run({"INFO", "clients", "stats"}));
 
 			THEN("clients and connection totals are reported") {
-				CHECK(text.find("connected_clients:1\r\n") != std::string::npos);
-				CHECK(text.find("maxclients:1\r\n") != std::string::npos);
-				CHECK(text.find("rejected_connections:1\r\n") !=
-					  std::string::npos);
-				CHECK(text.find("total_connections_received:2\r\n") !=
-					  std::string::npos);
+				CHECK(absl::StrContains(text, "connected_clients:1\r\n"));
+				CHECK(absl::StrContains(text, "maxclients:1\r\n"));
+				CHECK(absl::StrContains(text, "rejected_connections:1\r\n"));
+				CHECK(absl::StrContains(text, "total_connections_received:2\r\n"));
 			}
 		}
 	}

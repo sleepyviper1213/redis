@@ -15,7 +15,7 @@ redis/
 ├── src/
 │   ├── core/              redis_core: no networking, no server state
 │   │   ├── resp/          RESP parser/encoder; request framing (RESP + inline)
-│   │   ├── error/         std::expected helpers (TRY, FAILED)
+│   │   ├── error/         std::expected helpers (REDIS_TRY, FAILED)
 │   │   ├── logging/       Channels, async spdlog setup, RAII shutdown guard
 │   │   └── utils/         Glob matching (KEYS), small helpers
 │   └── server/            redis_server_lib + the redis_server executable

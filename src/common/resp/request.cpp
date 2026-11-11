@@ -23,11 +23,11 @@ parse_inline(std::string_view data, size_t &pos,
 	const auto newline = data.find('\n', pos);
 	if (newline == std::string_view::npos) {
 		if (data.size() - pos > MAX_INLINE_LENGTH)
-			FAILED(RespError::INLINE_TOO_LONG);
-		FAILED(RespError::UNEXPECTED_EOF);
+			REDIS_FAILED(RespError::INLINE_TOO_LONG);
+		REDIS_FAILED(RespError::UNEXPECTED_EOF);
 	}
 	if (newline - pos > MAX_INLINE_LENGTH)
-		FAILED(RespError::INLINE_TOO_LONG);
+		REDIS_FAILED(RespError::INLINE_TOO_LONG);
 
 	std::string_view line = data.substr(pos, newline - pos);
 	pos                   = newline + 1;
@@ -112,7 +112,7 @@ std::expected<RequestKind, Parser::RespError>
 parse_request(std::string_view data, size_t &pos,
 			  std::vector<std::string_view> &args,
 			  std::deque<std::string> &owned) {
-	if (pos >= data.size()) FAILED(RespError::UNEXPECTED_EOF);
+	if (pos >= data.size()) REDIS_FAILED(RespError::UNEXPECTED_EOF);
 	if (data[pos] != '*') return parse_inline(data, pos, args);
 
 	if (parse_bulk_array(data, pos, args)) return RequestKind::Command;
@@ -123,7 +123,7 @@ parse_request(std::string_view data, size_t &pos,
 	auto value         = Parser::parse_recursive(data, pos);
 	if (!value) {
 		pos = start;
-		FAILED(value.error());
+		REDIS_FAILED(value.error());
 	}
 
 	// Not Value::is_string(): a null Value holds an empty string too.

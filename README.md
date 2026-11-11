@@ -70,6 +70,17 @@ Measured with `scripts/bench_server.sh` against real Redis on Apple Silicon
 | Pipelined (`-P 16`) | 1,377,411 rps | 1,422,475 rps | 97 % |
 | Large-value `GET` | **1,060,445 rps** | 823,045 rps | **+29 %** |
 
+The same benchmark on the Linux CI runners (4 CPUs, `RUNS=3 REQUESTS=200000`,
+1 client thread, best of 3 runs). Shared runners are noisy, so read these as
+rough ratios, not absolute numbers:
+
+| Scenario | GCC | Redis | | Clang | Redis | |
+|----------|----:|------:|-|------:|------:|-|
+| 50 clients, `SET` | 115,340 rps | 120,700 rps | 96 % | 84,818 rps | 86,281 rps | 98 % |
+| 1 client, serial | 30,883 rps | 29,958 rps | 103 % | 34,495 rps | 32,031 rps | 108 % |
+| Pipelined (`-P 16`) | **1,724,138 rps** | 1,328,904 rps | **+30 %** | 1,307,190 rps | 1,351,351 rps | 97 % |
+| Large-value `GET` | **1,089,918 rps** | 907,029 rps | **+20 %** | **1,307,190 rps** | 909,091 rps | **+44 %** |
+
 The large-value `GET` lead comes from zero-copy argument parsing (args are
 `string_view`s into the read buffer) and writing replies straight into the
 output buffer without an intermediate copy. The keyspace is backed by

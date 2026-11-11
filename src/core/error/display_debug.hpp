@@ -77,7 +77,7 @@ struct DisplayDebugFormatter : fmt::formatter<std::string_view> {
 
 	constexpr auto parse(fmt::format_parse_context &ctx)
 		-> fmt::format_parse_context::iterator {
-		const auto it = ctx.begin();
+		const auto *const it = ctx.begin();
 		if (it == ctx.end() || (*it != '?' && *it != '#')) {
 			// Display: whatever a string accepts.
 			return fmt::formatter<std::string_view>::parse(ctx);

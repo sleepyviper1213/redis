@@ -1,9 +1,9 @@
 #pragma once
 
-#if defined(REDIS_KEYSPACE_MAP_ABSL)
+#ifdef REDIS_KEYSPACE_MAP_ABSL
 #include <absl/container/flat_hash_map.h>
 #include <absl/hash/hash.h>
-#elif !defined(REDIS_KEYSPACE_MAP_STD)
+#elifndef REDIS_KEYSPACE_MAP_STD
 #include <boost/unordered/unordered_flat_map.hpp>
 #endif
 
@@ -20,7 +20,7 @@
 
 namespace redis::detail {
 
-#if defined(REDIS_KEYSPACE_MAP_ABSL)
+#ifdef REDIS_KEYSPACE_MAP_ABSL
 struct AbslStringHash {
 	using is_transparent = void;
 
@@ -42,7 +42,7 @@ template <typename Allocator>
 struct BasicValueTypes {
 	template <typename T>
 	using rebound =
-		typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
+		std::allocator_traits<Allocator>::template rebind_alloc<T>;
 
 	using String =
 		std::basic_string<char, std::char_traits<char>, rebound<char>>;
@@ -71,11 +71,11 @@ struct BasicValueTypes {
 	 * stability and serves as the baseline. Set and Hash values always use the
 	 * node-based containers because SPOP relies on the bucket interface.
 	 */
-#if defined(REDIS_KEYSPACE_MAP_ABSL)
+#ifdef REDIS_KEYSPACE_MAP_ABSL
 	template <typename V>
 	using KeyMap = absl::flat_hash_map<Key, V, AbslStringHash, std::equal_to<>,
 									   rebound<std::pair<const Key, V>>>;
-#elif defined(REDIS_KEYSPACE_MAP_STD)
+#elifdef REDIS_KEYSPACE_MAP_STD
 	template <typename V>
 	using KeyMap =
 		std::unordered_map<Key, V, TransparentStringHash, std::equal_to<>,

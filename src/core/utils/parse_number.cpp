@@ -18,7 +18,7 @@ std::expected<T, std::errc> parse_whole(std::string_view s) {
 	// Trailing garbage after a valid prefix ("12abc") reports no error code.
 	if (ec == std::errc() && ptr != s.data() + s.size())
 		ec = std::errc::invalid_argument;
-	if (ec != std::errc()) FAILED(ec);
+	if (ec != std::errc()) REDIS_FAILED(ec);
 	return value;
 }
 } // namespace

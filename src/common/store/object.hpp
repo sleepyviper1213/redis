@@ -12,8 +12,8 @@ namespace redis {
 
 /// An object holding the collection \p value, using \p value's allocator.
 template <typename T>
-[[nodiscard]] auto make_object(T value) {
-	using Allocator = typename std::allocator_traits<
+[[nodiscard]] auto make_object(T value) { // NOLINT(performance-unnecessary-value-param)
+	using Allocator = std::allocator_traits<
 		typename T::allocator_type>::template rebind_alloc<char>;
 	return detail::BasicObject<Allocator>::template make<T>(
 		Allocator(value.get_allocator()),

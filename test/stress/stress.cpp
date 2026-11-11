@@ -96,16 +96,16 @@ struct Reply {
 	std::string text;
 
 	static Reply status(std::string s) {
-		return {Kind::Status, 0, std::move(s)};
+		return {.kind=Kind::Status, .integer=0, .text=std::move(s)};
 	}
 
-	static Reply error(std::string s) { return {Kind::Error, 0, std::move(s)}; }
+	static Reply error(std::string s) { return {.kind=Kind::Error, .integer=0, .text=std::move(s)}; }
 
-	static Reply integer_of(long long n) { return {Kind::Integer, n, {}}; }
+	static Reply integer_of(long long n) { return {.kind=Kind::Integer, .integer=n, .text={}}; }
 
-	static Reply bulk(std::string s) { return {Kind::Bulk, 0, std::move(s)}; }
+	static Reply bulk(std::string s) { return {.kind=Kind::Bulk, .integer=0, .text=std::move(s)}; }
 
-	static Reply nil() { return {Kind::Nil, 0, {}}; }
+	static Reply nil() { return {.kind=Kind::Nil, .integer=0, .text={}}; }
 
 	bool operator==(const Reply &) const = default;
 };
@@ -144,7 +144,7 @@ Reply to_reply(const redisReply &r) {
 	case REDIS_REPLY_INTEGER: return Reply::integer_of(r.integer);
 	case REDIS_REPLY_STRING: return Reply::bulk({r.str, r.len});
 	case REDIS_REPLY_NIL: return Reply::nil();
-	default: return {Reply::Kind::Other, 0, fmt::format("type {}", r.type)};
+	default: return {.kind=Reply::Kind::Other, .integer=0, .text=fmt::format("type {}", r.type)};
 	}
 }
 
@@ -334,20 +334,20 @@ public:
 			const auto key = str_key(k);
 			const auto it  = strs_.find(key);
 			check_one(
-				{encode({"GET", key}),
-				 it == strs_.end() ? Reply::nil() : Reply::bulk(it->second),
-				 Check::Exact,
-				 fmt::format("sweep GET {}", key)});
+				{.wire=encode({"GET", key}),
+				 .expected=it == strs_.end() ? Reply::nil() : Reply::bulk(it->second),
+				 .check=Check::Exact,
+				 .what=fmt::format("sweep GET {}", key)});
 		}
 		for (unsigned k = 0; k < COUNTERS; ++k) {
 			const auto key = counter_key(k);
 			const auto it  = counters_.find(key);
-			check_one({encode({"GET", key}),
-					   it == counters_.end()
+			check_one({.wire=encode({"GET", key}),
+					   .expected=it == counters_.end()
 						   ? Reply::nil()
 						   : Reply::bulk(fmt::to_string(it->second)),
-					   Check::Exact,
-					   fmt::format("sweep GET {}", key)});
+					   .check=Check::Exact,
+					   .what=fmt::format("sweep GET {}", key)});
 		}
 	}
 
@@ -404,8 +404,8 @@ private:
 		const auto roll = rng_() % 100;
 		size_t len;
 		bool binary = false;
-		if (roll < 90) len = rng_() % 65;
-		else if (roll < 98) {
+		if (roll < 90) { len = rng_() % 65;
+		} else if (roll < 98) {
 			len    = 64 + rng_() % 4000;
 			binary = rng_() % 3 == 0;
 		} else {
@@ -598,28 +598,28 @@ void fragmentation(const Options &opt, std::mt19937_64 &rng) {
 
 	const std::string big(3000, 'x');
 	const std::array<Case, 8> cases = {{
-		{"RESP SET", encode({"SET", "frag:k", "hello"}), {Reply::status("OK")}},
-		{"RESP GET", encode({"GET", "frag:k"}), {Reply::bulk("hello")}},
-		{"RESP PING", encode({"PING"}), {Reply::status("PONG")}},
-		{"inline PING", "PING\r\n", {Reply::status("PONG")}},
-		{"two inline",
-		 "PING\r\nPING\r\n",
-		 {Reply::status("PONG"), Reply::status("PONG")}},
-		{"RESP then inline",
-		 fmt::format("{}PING\r\n", encode({"PING"})),
-		 {Reply::status("PONG"), Reply::status("PONG")}},
-		{"binary value",
-		 fmt::format(
+		{.name="RESP SET", .wire=encode({"SET", "frag:k", "hello"}), .replies={Reply::status("OK")}},
+		{.name="RESP GET", .wire=encode({"GET", "frag:k"}), .replies={Reply::bulk("hello")}},
+		{.name="RESP PING", .wire=encode({"PING"}), .replies={Reply::status("PONG")}},
+		{.name="inline PING", .wire="PING\r\n", .replies={Reply::status("PONG")}},
+		{.name="two inline",
+		 .wire="PING\r\nPING\r\n",
+		 .replies={Reply::status("PONG"), Reply::status("PONG")}},
+		{.name="RESP then inline",
+		 .wire=fmt::format("{}PING\r\n", encode({"PING"})),
+		 .replies={Reply::status("PONG"), Reply::status("PONG")}},
+		{.name="binary value",
+		 .wire=fmt::format(
 			 "{}{}",
 			 encode({"SET", "frag:b", std::string("a\r\n$3\r\nb*1\r\n", 12)}),
 			 encode({"GET", "frag:b"})),
-		 {Reply::status("OK"),
+		 .replies={Reply::status("OK"),
 		  Reply::bulk(std::string("a\r\n$3\r\nb*1\r\n", 12))}},
-		{"3000-byte value",
-		 fmt::format("{}{}",
+		{.name="3000-byte value",
+		 .wire=fmt::format("{}{}",
 					 encode({"SET", "frag:l", big}),
 					 encode({"GET", "frag:l"})),
-		 {Reply::status("OK"), Reply::bulk(big)}},
+		 .replies={Reply::status("OK"), Reply::bulk(big)}},
 	}};
 
 	Connection conn(opt);
@@ -802,8 +802,8 @@ int main(int argc, char **argv) {
 		malformed(opt, rng);
 
 		std::printf("phase 2: load\n");
-		const Shared shared{fmt::format("r{}:shared:counter", opt.run_id),
-							fmt::format("r{}:shared:set", opt.run_id)};
+		const Shared shared{.counter_key=fmt::format("r{}:shared:counter", opt.run_id),
+							.set_key=fmt::format("r{}:shared:set", opt.run_id)};
 		for (unsigned i = 0; i < opt.clients; ++i)
 			run.workers.push_back(std::make_unique<Worker>(i, opt, shared));
 

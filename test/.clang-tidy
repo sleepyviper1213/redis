@@ -1,0 +1,8 @@
+InheritParentConfig: true
+Checks: >
+  -readability-function-size,
+  -readability-function-cognitive-complexity,
+  -bugprone-use-after-move,
+  -cppcoreguidelines-special-member-functions,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cert-err33-c,

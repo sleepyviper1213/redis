@@ -41,7 +41,7 @@ int64_t Value::as_integer() const {
 
 std::expected<int64_t, std::errc> Value::try_as_integer() const {
 	if (is_integer()) return std::get<int64_t>(data_);
-	return TRY(parse_integer(as_string()));
+	return REDIS_TRY(parse_integer(as_string()));
 }
 
 const Value::Array &Value::as_array() const {

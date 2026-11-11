@@ -43,7 +43,7 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# GNU extensions stay on: the TRY/TRY_VALUE error-propagation macros in
+# GNU extensions stay on: the REDIS_TRY/REDIS_TRY_VALUE error-propagation macros in
 # core/error/try.hpp are built on statement-expressions ({ ... }).
 set(CMAKE_CXX_EXTENSIONS ON)
 

@@ -49,7 +49,7 @@ public:
 	from_std_time_point(std::chrono::sys_time<Duration> tp) noexcept {
 		static_assert(std::is_integral_v<typename Duration::rep>,
 					  "a floating-point time point cannot be converted safely");
-		using Period = typename Duration::period;
+		using Period = Duration::period;
 		if constexpr (std::ratio_greater_equal_v<Period, std::milli>) {
 			// A whole number of milliseconds per tick: scale with saturation,
 			// since the standard's own conversion would overflow near the

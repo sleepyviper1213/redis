@@ -9,7 +9,7 @@ project(
 # The server forks for background saves and fsyncs snapshots: it targets
 # Linux and macOS. On Windows, MinGW and clang-cl build for development only
 # (unit tests; clang-cl's PDBs for Visual Studio's profilers); BGSAVE fails there. MSVC's cl.exe cannot build the code: the
-# TRY macros need GNU statement expressions. Otherwise use WSL.
+# REDIS_TRY macros need GNU statement expressions. Otherwise use WSL.
 if(NOT UNIX
    AND NOT MINGW
    AND NOT (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))

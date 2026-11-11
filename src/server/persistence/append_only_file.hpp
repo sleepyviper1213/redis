@@ -145,7 +145,7 @@ private:
 		uint64_t seq = 0; ///< the highest number used in a file name
 	};
 
-	[[nodiscard]] std::expected<void, persistence::PersistError>
+	[[nodiscard]] static std::expected<void, persistence::PersistError>
 	replay(const std::filesystem::path &file, bool last, CommandContext &ctx,
 		   const CommandHandler &handler, size_t &commands);
 
@@ -154,7 +154,7 @@ private:
 
 	void write_out();
 	void sync_now();
-	void sync_loop(std::stop_token stop);
+	void sync_loop(const std::stop_token &stop);
 	void finish_rewrite(const os::ChildResult &result);
 
 	[[nodiscard]] std::filesystem::path path_of(std::string_view name) const {

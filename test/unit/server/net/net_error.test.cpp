@@ -49,6 +49,8 @@ SCENARIO("A connection failure says what failed", "[net_error]") {
 				  "Read: " + REFUSED.message());
 			CHECK(text({.kind = ConnectionKind::WriteFailed, .cause = REFUSED}) ==
 				  "Write: " + REFUSED.message());
+			CHECK(text({.kind = ConnectionKind::ExecuteFailed, .cause = REFUSED}) ==
+				  "Execute: " + REFUSED.message());
 			CHECK(text({.kind = ConnectionKind::AcceptFailed, .cause = REFUSED}) ==
 				  "Accept failed: " + REFUSED.message());
 		}
@@ -57,6 +59,10 @@ SCENARIO("A connection failure says what failed", "[net_error]") {
 		THEN("the text stands in for the reason") {
 			CHECK(text({.kind   = ConnectionKind::ConnectionFailed,
 						.quoted = "boom"}) == "Connection: boom");
+			CHECK(text({.kind = ConnectionKind::ReadFailed, .quoted = "boom"}) ==
+				  "Read: boom");
+			CHECK(text({.kind = ConnectionKind::ExecuteFailed, .quoted = "boom"}) ==
+				  "Execute: boom");
 			CHECK(text({.kind = ConnectionKind::AcceptFailed, .quoted = "boom"}) ==
 				  "Accept failed: boom");
 			CHECK(text({.kind   = ConnectionKind::AcceptLoopFailed,

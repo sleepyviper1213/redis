@@ -128,7 +128,7 @@ TEST_CASE("every tagged constructor is explicit", "[indirect]") {
 
 TEST_CASE("constraints make the constructors sfinae friendly", "[indirect]") {
 	struct needs_int {
-		explicit needs_int(int) {}
+		explicit needs_int(int /*unused*/) {}
 	};
 
 	// Answers false rather than hard-erroring inside the allocation helper,

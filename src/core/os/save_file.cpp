@@ -106,7 +106,7 @@ std::expected<SaveFile, SaveError> SaveFile::open(const fs::path &target,
 	fs::remove(temp, ignored);
 	auto created = DurableFile::create_new(temp);
 	if (!created)
-		FAILED(SaveError{.kind  = SaveKind::Create,
+		REDIS_FAILED(SaveError{.kind  = SaveKind::Create,
 											.cause = created.error(),
 											.path  = target});
 	return SaveFile(std::move(*created), target, temp);
@@ -117,7 +117,7 @@ std::ostream &SaveFile::stream() noexcept { return impl_->stream; }
 std::expected<void, SaveError> SaveFile::write(std::string_view data) {
 	impl_->stream.write(data.data(), static_cast<std::streamsize>(data.size()));
 	if (!impl_->stream)
-		FAILED(SaveError{.kind  = SaveKind::Write,
+		REDIS_FAILED(SaveError{.kind  = SaveKind::Write,
 											.cause = impl_->buf.error(),
 											.path  = impl_->target});
 	return {};
@@ -127,7 +127,7 @@ std::expected<void, SaveError> SaveFile::commit() {
 	Impl &self = *impl_;
 	// What failed, for the step that did.
 	const auto failed = [&self](SaveKind kind, std::error_code why) {
-		FAILED(
+		REDIS_FAILED(
 			SaveError{.kind = kind, .cause = why, .path = self.target});
 	};
 

@@ -55,7 +55,7 @@ std::expected<void, ListenError> listen_on(net::ip::tcp::acceptor &acceptor,
 	boost::system::error_code error;
 	const auto address = net::ip::make_address_v4(host, error);
 	if (error)
-		FAILED(ListenError{.kind   = ListenKind::InvalidHost,
+		REDIS_FAILED(ListenError{.kind   = ListenKind::InvalidHost,
 										   .cause  = error,
 										   .quoted = std::string(host)});
 
@@ -69,7 +69,7 @@ std::expected<void, ListenError> listen_on(net::ip::tcp::acceptor &acceptor,
 	if (error) {
 		boost::system::error_code ignored;
 		acceptor.close(ignored);
-		FAILED(ListenError{.kind   = ListenKind::CannotListen,
+		REDIS_FAILED(ListenError{.kind   = ListenKind::CannotListen,
 										   .cause  = error,
 										   .at     = port,
 										   .quoted = std::string(host)});

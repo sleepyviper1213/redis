@@ -21,7 +21,7 @@ SCENARIO("The guard admits clients up to its limit", "[net][guard]") {
 			REQUIRE(admitted_first);
 			REQUIRE(admitted_second);
 			std::optional<NetGuard::Ticket> first(std::move(*admitted_first));
-			std::optional<NetGuard::Ticket> second(std::move(*admitted_second));
+			std::optional<NetGuard::Ticket> const second(std::move(*admitted_second));
 			CHECK(guard.clients() == 2);
 
 			THEN("a third is refused and does not take a slot") {

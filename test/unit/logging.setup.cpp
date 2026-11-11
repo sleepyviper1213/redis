@@ -11,7 +11,7 @@ class LoggingSetup : public Catch::EventListenerBase {
 public:
 	using Catch::EventListenerBase::EventListenerBase;
 
-	void testRunStarting(const Catch::TestRunInfo &) override {
+	void testRunStarting(const Catch::TestRunInfo & /*testRunInfo*/) override {
 		redis::logging::init(
 			{.level    = "off",
 			 .log_file = "",
@@ -19,7 +19,7 @@ public:
 			 .async    = false});
 	}
 
-	void testRunEnded(const Catch::TestRunStats &) override {
+	void testRunEnded(const Catch::TestRunStats & /*testRunStats*/) override {
 		redis::logging::shutdown();
 	}
 };

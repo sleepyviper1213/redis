@@ -39,7 +39,7 @@ template <typename Char, typename Allocator = std::allocator<Char>>
 class BasicSimpleDynamicString {
 	using allocator_traits = std::allocator_traits<Allocator>;
 	using char_allocator =
-		typename allocator_traits::template rebind_alloc<Char>;
+		allocator_traits::template rebind_alloc<Char>;
 	using char_traits = std::allocator_traits<char_allocator>;
 
 	static_assert(std::is_same_v<typename char_traits::pointer, Char *>,

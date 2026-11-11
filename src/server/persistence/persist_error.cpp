@@ -23,22 +23,22 @@ struct SaveStep {
 	os::SaveKind save;
 };
 constexpr std::array SAVE_STEPS{
-	SaveStep{SaveCreate, os::SaveKind::Create},
-	SaveStep{SaveWrite, os::SaveKind::Write},
-	SaveStep{SaveSync, os::SaveKind::Sync},
-	SaveStep{SaveRename, os::SaveKind::Rename},
-	SaveStep{SaveSyncDirectory, os::SaveKind::SyncDirectory},
+	SaveStep{.persist=SaveCreate, .save=os::SaveKind::Create},
+	SaveStep{.persist=SaveWrite, .save=os::SaveKind::Write},
+	SaveStep{.persist=SaveSync, .save=os::SaveKind::Sync},
+	SaveStep{.persist=SaveRename, .save=os::SaveKind::Rename},
+	SaveStep{.persist=SaveSyncDirectory, .save=os::SaveKind::SyncDirectory},
 };
 
 /// A step of replacing a file, as the message names it.
 std::string_view save_step(PersistKind kind) {
-	const auto step = std::ranges::find(SAVE_STEPS, kind, &SaveStep::persist);
+	const auto *const step = std::ranges::find(SAVE_STEPS, kind, &SaveStep::persist);
 	return step == SAVE_STEPS.end() ? "save" : os::step_name(step->save);
 }
 } // namespace
 
 PersistError to_persist_error(const os::SaveError &error) {
-	const auto step = std::ranges::find(SAVE_STEPS, error.kind, &SaveStep::save);
+	const auto *const step = std::ranges::find(SAVE_STEPS, error.kind, &SaveStep::save);
 	return PersistError{.kind   = step == SAVE_STEPS.end() ? SaveWrite
 															: step->persist,
 						.cause  = error.cause,

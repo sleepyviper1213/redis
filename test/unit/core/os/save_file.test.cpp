@@ -26,7 +26,7 @@ fs::path temp_beside(const fs::path &target) {
 
 SCENARIO("A file is replaced as a whole", "[save_file]") {
 	GIVEN("a file with content, and a new version being written") {
-		test::TempFile target;
+		test::TempFile const target;
 		const fs::path temp = temp_beside(target.path());
 		std::ofstream(target.path(), std::ios::binary) << "old";
 
@@ -67,7 +67,7 @@ SCENARIO("A file is replaced as a whole", "[save_file]") {
 
 SCENARIO("A file is created if there was none", "[save_file]") {
 	GIVEN("a target that does not exist") {
-		test::TempFile target;
+		test::TempFile const target;
 		auto save = os::SaveFile::open(target.path(),
 												temp_beside(target.path()));
 		REQUIRE(save.has_value());
@@ -85,7 +85,7 @@ SCENARIO("A file is created if there was none", "[save_file]") {
 
 SCENARIO("More than the buffer holds is written whole", "[save_file]") {
 	GIVEN("a few times the stream buffer's worth of data") {
-		test::TempFile target;
+		test::TempFile const target;
 		std::string big;
 		for (int i = 0; i < 300'000; ++i) big += static_cast<char>('a' + i % 26);
 
@@ -110,7 +110,7 @@ SCENARIO("More than the buffer holds is written whole", "[save_file]") {
 
 SCENARIO("A leftover under the temporary's name is replaced", "[save_file]") {
 	GIVEN("a stale temporary file from an earlier crash") {
-		test::TempFile target;
+		test::TempFile const target;
 		const fs::path temp = temp_beside(target.path());
 		std::ofstream(temp, std::ios::binary) << "stale and much longer content";
 
@@ -130,7 +130,7 @@ SCENARIO("A leftover under the temporary's name is replaced", "[save_file]") {
 
 SCENARIO("A save that cannot start says which step failed", "[save_file]") {
 	GIVEN("a temporary file in a directory that does not exist") {
-		test::TempFile target;
+		test::TempFile const target;
 		const fs::path temp = target.path().parent_path() / "no_such_dir_here" /
 							  "temp";
 

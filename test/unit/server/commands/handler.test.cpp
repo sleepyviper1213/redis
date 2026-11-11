@@ -15,7 +15,7 @@ resp::Value runs_out_of_memory(CommandContext & /*ctx*/, Args /*args*/) {
 	throw std::bad_alloc();
 }
 
-constexpr std::array EXTRA{CommandInfo{"OOMTEST", runs_out_of_memory, 1}};
+constexpr std::array EXTRA{CommandInfo{.name="OOMTEST", .fn=runs_out_of_memory, .arity=1}};
 } // namespace
 
 SCENARIO("A command that runs out of memory", "[commands][handler]") {

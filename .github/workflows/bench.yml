@@ -81,23 +81,39 @@ jobs:
       - name: Bootstrap vcpkg
         run: scripts/bootstrap_vcpkg.sh
       - name: Restore the built dependencies
-        uses: actions/cache@v4
+        # Named like ci.yml's cache (the configure preset), so what CI saved on
+        # main is found here: a branch can read only its own caches and the
+        # default branch's, so a new bench/ or profile/ branch starts cold
+        # unless main has one.
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: /root/vcpkg-cache
-          key: vcpkg-${{ matrix.compiler }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-${{ matrix.compiler }}-
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.preset }}-
       - name: Restore the compiler cache
         uses: actions/cache@v4
         with:
           path: /root/.ccache
           key: ccache-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.compiler }}-
+      - name: Configure (builds the dependencies)
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Save the built dependencies
+        # Right after the configure that built them, so a failure later (or a
+        # cancelled run) does not throw away the slow part. Skipped on an exact
+        # hit, and when the configure failed: a half-built cache saved under
+        # the exact key would be restored, and never completed, from then on.
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /root/vcpkg-cache
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
       - name: Build
         run: |
-          cmake --preset ${{ matrix.preset }}
           cmake --build --preset ${{ matrix.preset }}-release --target redis_server
           ccache --show-stats
-      - name: Benchmark
+      - name: Benchmark (v1, coroutine sessions)
         env:
           REF_SERVER: redis-server
           # A push has no inputs: fall back to the defaults above.
@@ -105,6 +121,48 @@ jobs:
           REQUESTS: ${{ inputs.requests || '200000' }}
           RUNS: ${{ inputs.runs || '3' }}
         run: |
-          echo "${{ matrix.compiler }}, runner: $(nproc) CPUs" | tee result.txt
-          bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a result.txt
-          { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p bench
+          report="bench/${{ matrix.compiler }}-v1.txt"
+          echo "${{ matrix.compiler }}, v1, runner: $(nproc) CPUs" | tee "$report"
+          bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a "$report"
+          { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Benchmark (v2, sender sessions)
+        # The same run with --sender-sessions, in the same job: compare the
+        # gap to redis-server here with the one above.
+        env:
+          REF_SERVER: redis-server
+          SERVER_ARGS: --sender-sessions
+          THREADS: ${{ inputs.threads || '1' }}
+          REQUESTS: ${{ inputs.requests || '200000' }}
+          RUNS: ${{ inputs.runs || '3' }}
+        run: |
+          mkdir -p bench
+          report="bench/${{ matrix.compiler }}-v2.txt"
+          echo "${{ matrix.compiler }}, v2, runner: $(nproc) CPUs" | tee "$report"
+          bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a "$report"
+          { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the results
+        # Even when a later step fails. One artifact per job here (jobs cannot
+        # share one); the merge job below combines them.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.compiler }}
+          path: bench/${{ matrix.compiler }}-*.txt
+          if-no-files-found: warn
+
+  merge:
+    name: One artifact
+    needs: bench
+    # Even if one compiler's job failed: take whatever the other produced.
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Merge the results into one artifact
+        # Download "bench", unzip: gcc-v1.txt, gcc-v2.txt, clang-v1.txt,
+        # clang-v2.txt.
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: bench
+          pattern: bench-*
+          delete-merged: true

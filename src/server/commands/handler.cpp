@@ -93,17 +93,17 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 													Args args) const {
 	if (args.empty()) {
-		return {reply::error("ERR Protocol error: expected a non-empty array of "
+		return {.reply=reply::error("ERR Protocol error: expected a non-empty array of "
 							 "bulk strings"),
-				nullptr};
+				.ran=nullptr};
 	}
 
 	std::array<char, MAX_COMMAND_NAME> name_buf{};
 
 	const auto it = commands_.find(upper_name(args[0], name_buf));
 	if (it == commands_.end()) {
-		return {reply::error("ERR unknown command '{}'", args[0]),
-				nullptr};
+		return {.reply=reply::error("ERR unknown command '{}'", args[0]),
+				.ran=nullptr};
 	}
 
 	const CommandInfo &info = it->second;
@@ -111,21 +111,21 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 	const bool arity_ok =
 		info.arity >= 0 ? argc == info.arity : argc >= -info.arity;
 	if (!arity_ok) {
-		return {reply::error("ERR wrong number of arguments for '{}' command",
+		return {.reply=reply::error("ERR wrong number of arguments for '{}' command",
 							 ascii_lowered(info.name)),
-				nullptr};
+				.ran=nullptr};
 	}
 	// Debug builds: the thread that runs commands owns the keyspace.
 	ctx.db.claim_owner();
 	// For a crash report: which command was running when the process died.
 	const diagnostics::CommandScope running{info.name, args.size()};
-	if (ctx.stats == nullptr) return {info.fn(ctx, args), &info};
+	if (ctx.stats == nullptr) return {.reply=info.fn(ctx, args), .ran=&info};
 	// TickClock, not steady_clock: it is read twice per command, and on macOS
 	// steady_clock costs about a tenth of a pipelined SET.
 	const BasicElapsedTimer<TickClock> timer;
 	Value result = info.fn(ctx, args);
 	ctx.stats->command_ran(info.name, timer.duration_elapsed());
-	return {std::move(result), &info};
+	return {.reply=std::move(result), .ran=&info};
 }
 
 void CommandHandler::execute(CommandContext &ctx, Args args,

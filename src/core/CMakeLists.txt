@@ -19,6 +19,9 @@ add_library(redis::core ALIAS redis_core)
 # The only platform-specific code: processes, file descriptors and fsync.
 if(WIN32)
     target_sources(redis_core PRIVATE os/windows.cpp)
+    # <windows.h> defines min() and max() macros that break std::min and
+    # std::max; every consumer includes it, directly or through Asio.
+    target_compile_definitions(redis_core PUBLIC NOMINMAX)
 else()
     target_sources(redis_core PRIVATE os/posix.cpp)
 endif()

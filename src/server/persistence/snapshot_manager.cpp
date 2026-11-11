@@ -40,7 +40,7 @@ std::expected<void, persistence::PersistError>
 SnapshotManager::save(const Database &db) {
 	using persistence::PersistKind;
 	if (child_)
-		FAILED(
+		REDIS_FAILED(
 			persistence::PersistError{.kind = PersistKind::SaveInProgress});
 
 	auto result = persistence::detail::save_snapshot(db, file_);
@@ -57,7 +57,7 @@ std::expected<void, persistence::PersistError>
 SnapshotManager::background_save(const Database &db) {
 	using persistence::PersistKind;
 	if (child_)
-		FAILED(
+		REDIS_FAILED(
 			persistence::PersistError{.kind = PersistKind::SaveInProgress});
 
 	auto child = os::fork_and_run(
@@ -65,7 +65,7 @@ SnapshotManager::background_save(const Database &db) {
 	if (!child) {
 		log().error("Can't fork for background save: {}",
 					child.error().message());
-		FAILED(persistence::PersistError{
+		REDIS_FAILED(persistence::PersistError{
 			.kind = PersistKind::CannotFork, .cause = child.error()});
 	}
 
@@ -131,6 +131,7 @@ void SnapshotManager::finish_background_save(
 		// its temporary file itself.
 		std::error_code ignored;
 		std::filesystem::remove(
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access): child_ is set while saving
 			persistence::detail::snapshot_temp_path(file_, child_->pid()),
 			ignored);
 	}

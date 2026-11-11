@@ -28,7 +28,7 @@ public:
 	explicit AsioContext(net::any_io_executor executor)
 		: executor_(std::move(executor)) {}
 
-	[[nodiscard]] std::uint32_t available_parallelism() const noexcept {
+	[[nodiscard]] static std::uint32_t available_parallelism() noexcept {
 		return 1;
 	}
 

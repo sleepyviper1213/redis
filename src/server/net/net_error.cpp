@@ -32,9 +32,11 @@ std::string display(const ListenError &error) {
 std::string display(const ConnectionError &error) {
 	switch (error.kind) {
 	case ConnectionKind::ReadFailed:
-		return fmt::format("Read: {}", error.cause.message());
+		return fmt::format("Read: {}", reason(error));
 	case ConnectionKind::WriteFailed:
-		return fmt::format("Write: {}", error.cause.message());
+		return fmt::format("Write: {}", reason(error));
+	case ConnectionKind::ExecuteFailed:
+		return fmt::format("Execute: {}", reason(error));
 	case ConnectionKind::ConnectionFailed:
 		return fmt::format("Connection: {}", reason(error));
 	case ConnectionKind::SessionFailed:

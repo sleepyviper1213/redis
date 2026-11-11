@@ -26,10 +26,11 @@ namespace redis {
  */
 constexpr char parse_presentation(fmt::format_parse_context &ctx,
 								  std::string_view allowed) {
-	auto it        = ctx.begin();
-	const auto end = ctx.end();
+	const auto *it        = ctx.begin();
+	const auto *const end = ctx.end();
 
 	char presentation = 0;
+	// NOLINTNEXTLINE(abseil-string-find-str-contains,readability-container-contains): constexpr
 	if (it != end && *it != '}' && allowed.find(*it) != std::string_view::npos) {
 		presentation = *it;
 		++it;

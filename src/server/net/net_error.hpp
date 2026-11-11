@@ -22,8 +22,9 @@ using ListenError = Failure<ListenKind>;
 /// them. [cause] is what the system said; [quoted] stands in for it when all
 /// that is known is the text of an exception.
 enum class ConnectionKind : std::uint8_t {
-	ReadFailed,       ///< [cause]
-	WriteFailed,      ///< [cause]
+	ReadFailed,       ///< [cause or quoted]
+	WriteFailed,      ///< [cause or quoted]
+	ExecuteFailed,    ///< [cause or quoted]
 	ConnectionFailed, ///< [cause or quoted]
 	SessionFailed,    ///< [quoted, may be empty]
 	AcceptFailed,     ///< [cause or quoted]

@@ -21,7 +21,7 @@ namespace redis {
  *   enum class PersistKind { CannotOpen, Locked, ... };
  *   using PersistError = Failure<PersistKind>;
  *
- *   FAILED(PersistError{.kind = PersistKind::CannotOpen, .cause = ec, .path = p});
+ *   REDIS_FAILED(PersistError{.kind = PersistKind::CannotOpen, .cause = ec, .path = p});
  *   ...
  *   log.error("{}", error);   // "cannot open /data/x: Permission denied"
  * @endcode

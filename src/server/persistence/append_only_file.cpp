@@ -50,13 +50,13 @@ lock_directory(const fs::path &dir) {
 	const fs::path path = dir / LOCK_NAME;
 	auto lock           = os::DurableFile::open_append(path);
 	if (!lock)
-		FAILED(PersistError{.kind  = PersistKind::CannotOpen,
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotOpen,
 							.cause = lock.error(),
 							.path  = path});
 	if (const auto busy = lock->try_lock()) {
 		if (busy == std::errc::resource_unavailable_try_again)
-			FAILED(PersistError{.kind = PersistKind::InUse, .path = dir});
-		FAILED(PersistError{.kind  = PersistKind::CannotLock,
+			REDIS_FAILED(PersistError{.kind = PersistKind::InUse, .path = dir});
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotLock,
 							.cause = busy,
 							.path  = path});
 	}
@@ -67,7 +67,7 @@ lock_directory(const fs::path &dir) {
 std::expected<void, PersistError> create_empty(const fs::path &path) {
 	const auto created = os::DurableFile::open_append(path);
 	if (!created)
-		FAILED(PersistError{.kind  = PersistKind::CannotCreate,
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotCreate,
 							.cause = created.error(),
 							.path  = path});
 	return {};
@@ -128,7 +128,7 @@ std::expected<AppendOnlyFile::Manifest, PersistError>
 AppendOnlyFile::read_manifest(const fs::path &file) {
 	// What is wrong with this manifest; quoted is the text that is.
 	const auto bad = [&file](PersistKind kind, std::string quoted = {}) {
-		FAILED(PersistError{.kind   = kind,
+		REDIS_FAILED(PersistError{.kind   = kind,
 							.path   = file,
 							.quoted = std::move(quoted)});
 	};
@@ -176,11 +176,11 @@ AppendOnlyFile::write_manifest(const Manifest &manifest) const {
 	fmt::format_to(into, "seq {}\n", manifest.seq);
 
 	auto save = os::SaveFile::open(file, fs::path(file).concat(".tmp"));
-	if (!save) FAILED(persistence::to_persist_error(save.error()));
+	if (!save) REDIS_FAILED(persistence::to_persist_error(save.error()));
 	if (auto wrote = save->write(text); !wrote)
-		FAILED(persistence::to_persist_error(wrote.error()));
+		REDIS_FAILED(persistence::to_persist_error(wrote.error()));
 	if (auto done = save->commit(); !done)
-		FAILED(persistence::to_persist_error(done.error()));
+		REDIS_FAILED(persistence::to_persist_error(done.error()));
 	return {};
 }
 
@@ -201,7 +201,7 @@ AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 							 std::error_code cause = {},
 							 std::uint64_t at      = 0,
 							 std::int64_t code     = 0) {
-		FAILED(PersistError{.kind  = kind,
+		REDIS_FAILED(PersistError{.kind  = kind,
 							.cause = cause,
 							.path  = file,
 							.at    = at,
@@ -260,7 +260,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	std::error_code ec;
 	const bool created = fs::create_directories(config_.dir, ec);
 	if (ec)
-		FAILED(PersistError{.kind  = PersistKind::CannotCreate,
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotCreate,
 							.cause = ec,
 							.path  = config_.dir});
 	// A directory the server makes is the server's alone. One it was pointed at
@@ -279,7 +279,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	// there a manifest yet?) is still true when it acts on it.
 	if (!lock_.is_open()) {
 		auto lock = lock_directory(config_.dir);
-		if (!lock) FAILED(lock.error());
+		if (!lock) REDIS_FAILED(lock.error());
 		lock_ = std::move(*lock);
 	}
 
@@ -311,7 +311,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 		if (auto written = write_manifest(manifest_); !written) return written;
 	} else {
 		auto manifest = read_manifest(file);
-		if (!manifest) FAILED(manifest.error());
+		if (!manifest) REDIS_FAILED(manifest.error());
 		manifest_ = std::move(*manifest);
 
 		// What was replayed ran at an earlier time: nothing may expire until
@@ -329,7 +329,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 		// included.
 		db.set_expiry_enabled(false);
 		size_t commands = 0;
-		CommandContext replaying{ctx.db, ctx.persistence};
+		CommandContext replaying{.db=ctx.db, .persistence=ctx.persistence};
 		for (size_t i = 0; i < manifest_.incr.size(); ++i) {
 			// No exists() first: replay() opens the file and says why when it
 			// cannot, which is the only check that cannot go stale.
@@ -360,14 +360,14 @@ std::expected<void, PersistError> AppendOnlyFile::open_for_append() {
 	incr_path_  = path_of(manifest_.incr.back());
 	auto opened = os::DurableFile::open_append(incr_path_);
 	if (!opened)
-		FAILED(PersistError{.kind  = PersistKind::CannotOpenForAppend,
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotOpenForAppend,
 							.cause = opened.error(),
 							.path  = incr_path_});
 	// Asked of the open file, not of the name: it is this file's end that
 	// good_size_ stands for.
 	const auto size = opened->size();
 	if (!size)
-		FAILED(PersistError{.kind  = PersistKind::CannotSize,
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotSize,
 							.cause = size.error(),
 							.path  = incr_path_});
 	good_size_ = *size;
@@ -378,7 +378,7 @@ std::expected<void, PersistError> AppendOnlyFile::open_for_append() {
 	}
 	if (config_.fsync == FsyncPolicy::everysec && !syncer_.joinable())
 		syncer_ =
-			std::jthread([this](std::stop_token stop) { sync_loop(stop); });
+			std::jthread([this](const std::stop_token &stop) { sync_loop(stop); });
 	return {};
 }
 
@@ -424,7 +424,7 @@ void AppendOnlyFile::write_out() {
 						cut.message());
 		// Cap the pending buffer so a sustained disk error cannot exhaust
 		// memory.
-		constexpr size_t MAX_PENDING = 64 * 1024 * 1024;
+		constexpr size_t MAX_PENDING = size_t{64} * 1024 * 1024;
 		if (buf_.size() > MAX_PENDING) {
 			log().critical(
 				"AOF pending buffer exceeded {}MB; discarding {} bytes",
@@ -461,7 +461,7 @@ void AppendOnlyFile::after_batch() {
 	}
 }
 
-void AppendOnlyFile::sync_loop(std::stop_token stop) {
+void AppendOnlyFile::sync_loop(const std::stop_token &stop) {
 	std::unique_lock lock(mutex_);
 	while (!stop.stop_requested()) {
 		wake_.wait_for(lock, stop, 1s, [] { return false; });
@@ -502,13 +502,13 @@ void AppendOnlyFile::close() {
 
 std::expected<void, PersistError>
 AppendOnlyFile::start_rewrite(const Database &db) {
-	if (child_) FAILED(PersistError{.kind = PersistKind::RewriteInProgress});
+	if (child_) REDIS_FAILED(PersistError{.kind = PersistKind::RewriteInProgress});
 
 	// Everything so far belongs to the old files: land it there, then log to a
 	// new file, which is what the new base will not contain.
 	write_out();
 	if (!buf_.empty())
-		FAILED(PersistError{.kind = PersistKind::CannotWriteLog});
+		REDIS_FAILED(PersistError{.kind = PersistKind::CannotWriteLog});
 	dirty_.store(true, std::memory_order_release);
 	sync_now();
 
@@ -530,7 +530,7 @@ AppendOnlyFile::start_rewrite(const Database &db) {
 		// Harmless: the manifest lists both incremental files, which replay as
 		// one. The next rewrite will merge them.
 		log().error("Can't fork for AOF rewrite: {}", child.error().message());
-		FAILED(PersistError{.kind  = PersistKind::CannotFork,
+		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotFork,
 							.cause = child.error()});
 	}
 	child_.emplace(std::move(*child));
@@ -544,6 +544,7 @@ void AppendOnlyFile::poll() {
 }
 
 void AppendOnlyFile::finish_rewrite(const os::ChildResult &result) {
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access): only called while a child runs
 	const os::pid_type pid = child_->pid();
 	child_.reset();
 	if (!result.success) {
@@ -575,6 +576,7 @@ void AppendOnlyFile::finish_rewrite(const os::ChildResult &result) {
 
 void AppendOnlyFile::cancel_rewrite() {
 	if (!child_) return;
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access): only called while a child runs
 	const os::pid_type pid = child_->pid();
 	log().warn("Killing the AOF rewrite child {}", pid);
 	os::kill_child(pid);

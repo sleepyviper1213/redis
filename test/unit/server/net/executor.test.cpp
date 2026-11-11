@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 using namespace redis;
 
@@ -162,7 +163,7 @@ SCENARIO("Running work on the keyspace thread as a sender", "[net][executor]") {
 					| stdexec::then([&](int) { guard.reset(); })
 					| stdexec::upon_error([&](std::exception_ptr e) {
 						  try {
-							  std::rethrow_exception(e);
+							  std::rethrow_exception(std::move(e));
 						  } catch (const std::runtime_error &ex) {
 							  caught = ex.what();
 						  }

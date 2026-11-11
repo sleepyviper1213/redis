@@ -339,7 +339,7 @@ SCENARIO("[UT-2002] Decode RESP wire format into values", "[Decode][RESP]") {
 
 SCENARIO("Parsing RESP data with invalid prefix", "[resp][parser]") {
 	GIVEN("A data string starting with an unknown prefix '!'") {
-		std::string_view data = "!\r\n";
+		std::string_view const data = "!\r\n";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -355,7 +355,7 @@ SCENARIO("Parsing RESP data with invalid prefix", "[resp][parser]") {
 SCENARIO("Parsing RESP array with invalid negative length less than -1",
 		 "[resp][parser]") {
 	GIVEN("An array prefix with length -2") {
-		std::string_view data = "*-2\r\n";
+		std::string_view const data = "*-2\r\n";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -371,7 +371,7 @@ SCENARIO("Parsing RESP array with invalid negative length less than -1",
 
 SCENARIO("Parsing RESP bulk string with truncated data", "[resp][parser]") {
 	GIVEN("A bulk string declaring length 5 but only 3 characters provided") {
-		std::string_view data = "$5\r\nabc";
+		std::string_view const data = "$5\r\nabc";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -387,7 +387,7 @@ SCENARIO("Parsing RESP bulk string with truncated data", "[resp][parser]") {
 
 SCENARIO("Parsing RESP bulk string missing CRLF after data", "[resp][parser]") {
 	GIVEN("A bulk string with data but no terminating CRLF") {
-		std::string_view data = "$3\r\nabc";
+		std::string_view const data = "$3\r\nabc";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -406,7 +406,7 @@ SCENARIO("Parsing RESP bulk string missing CRLF after data", "[resp][parser]") {
 SCENARIO("Parsing RESP array with missing elements leading to unexpected EOF",
 		 "[resp][parser]") {
 	GIVEN("An array of length 2 with only one element provided") {
-		std::string_view data = "*2\r\n+OK\r\n";
+		std::string_view const data = "*2\r\n+OK\r\n";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -421,7 +421,7 @@ SCENARIO("Parsing RESP array with missing elements leading to unexpected EOF",
 
 SCENARIO("Parsing RESP double with invalid payload", "[resp][parser]") {
 	GIVEN("A double prefix with non-numeric payload 'abc'") {
-		std::string_view data = ",abc\r\n";
+		std::string_view const data = ",abc\r\n";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -436,7 +436,7 @@ SCENARIO("Parsing RESP double with invalid payload", "[resp][parser]") {
 
 SCENARIO("Parsing RESP null with unexpected payload", "[resp][parser]") {
 	GIVEN("A null prefix '_' followed by non-empty payload") {
-		std::string_view data = "_abc\r\n";
+		std::string_view const data = "_abc\r\n";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -452,7 +452,7 @@ SCENARIO("Parsing RESP null with unexpected payload", "[resp][parser]") {
 SCENARIO("Parsing RESP data with unexpected empty line in invalid position",
 		 "[resp][parser]") {
 	GIVEN("An array with an extra empty line between elements") {
-		std::string_view data = "*2\r\n+OK\r\n\r\n+OK\r\n";
+		std::string_view const data = "*2\r\n+OK\r\n\r\n+OK\r\n";
 
 		WHEN("The parser is called") {
 			auto result = Parser::parse(data);
@@ -469,7 +469,7 @@ SCENARIO("Parsing complex nested RESP array with mixed types and nulls",
 		 "[resp][parser]") {
 	GIVEN("A nested array including bulk string, integer, empty array, null, "
 		  "and double") {
-		std::string_view data =
+		std::string_view const data =
 			"*5\r\n$5\r\nHello\r\n:42\r\n*0\r\n_-1\r\n,3.14\r\n"; // Note: _-1
 																  // is invalid
 																  // syntax for

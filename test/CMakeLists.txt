@@ -14,6 +14,7 @@ add_executable(redis_unit_test
 
     unit/core/chrono/date_time.test.cpp
     unit/core/chrono/deadline_timer.test.cpp
+    unit/core/stdexec_ext/retry.test.cpp
     unit/common/store/simple_dynamic_string.test.cpp
     unit/core/utils/glob.test.cpp
     unit/core/utils/indirect.test.cpp
@@ -42,6 +43,7 @@ add_executable(redis_unit_test
     unit/server/net/net_error.test.cpp
     unit/server/net/net_error_debug.test.cpp
     unit/server/net/pipeline.test.cpp
+    unit/server/net/v2_session.test.cpp
     unit/server/persistence/persist_error.test.cpp
     unit/server/persistence/persist_error_debug.test.cpp
     unit/core/os/save_file.test.cpp

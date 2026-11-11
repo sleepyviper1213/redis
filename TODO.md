@@ -127,7 +127,46 @@ One command thread means one slow command stalls every client.
   option so the test does not depend on a fixed port.
 - [ ] **Move cron and signal handling to senders** (`steady_timer` and
   `signal_set` through `use_sender`), so the whole v2 path is sender-based.
+- [ ] **Try `exec::task` for the accept loop (and `retry`).** Both are loops
+  with branches, which is where a coroutine reads best, and they run per
+  accept or failure, not per request. Keep the per-request round as a sender
+  chain: a `task` allocates a frame per call, and `co_await` turns `set_error`
+  into an exception. **Thorough tests come first**, so the rewrite can be
+  checked against the current behaviour:
+  - accept: a client is served; many clients at once; each on its own strand;
+  - a failed accept is logged, waits `ACCEPT_RETRY_DELAY`, and tries again
+    (inject a failure: an exhausted descriptor limit, or a fake acceptor);
+  - `stop()` ends the loop while accepting, and while waiting after a failure;
+  - closing the acceptor ends the loop without a second error;
+  - `drained()` completes after `stop()` with live clients (needs the
+    ephemeral-port option above);
+  - `retry`: every case in `core/stdexec_ext/retry.test.cpp`, plus stop during
+    an attempt, attempts that complete on another thread, and a policy that
+    waits on a real timer;
+  - no coroutine-frame allocation on the request path (count allocations in the
+    session test), and `redis-benchmark` before/after.
+- [ ] **Replace `asio_thread_pool` as the keyspace thread.** `Executor` uses
+  `exec::asio::asio_thread_pool(1)` only because v1's `run()` needs its Asio
+  face (`co_spawn(pool_->get_executor(), ...)`); v2's `run_on()` needs just a
+  scheduler. Once v1 is gone, try `exec::static_thread_pool(1)` or a
+  single-thread context (`exec/single_thread_context.hpp`, if it is in the
+  pinned stdexec). Before switching, check: tasks from all sessions run strictly
+  in the order queued (add a test), `Executor::stop()` still drains
+  (`sync_wait(schedule(...))`), and the debug-only worker-id probe still works.
+  Benchmark with `redis-benchmark` before and after. Note that the snapshot /
+  cron path (`redis_server.cpp`, `co_await services->keyspace.run(...)`) also
+  uses the Asio-facing `run()`; it needs a sender form first.
 - [ ] **Decide the future of v1.** Neither version is deprecated yet.
+- [ ] **Make `stdexec_ext::retry`'s final step easier to read.** The
+  `Failed` / `Done` / `Outcome` aliases exist because a `let_value` cannot
+  return `just_error(e)` in one branch and `just(values...)` in the other.
+  First try: give that step a named, commented helper (as `with_idle_limit`
+  does) so the aliases sit in one place. Only then consider `exec::create`,
+  which builds one sender that completes either way, but its callback must
+  complete exactly once on every path and wire up stop by hand: a mistake is a
+  hang at run time, where a wrong `variant_sender` alias fails to compile.
+  Background: <https://github.com/NVIDIA/stdexec/discussions/1940> (no
+  maintainer answer on which is idiomatic).
 
 ## Performance (SET)
 

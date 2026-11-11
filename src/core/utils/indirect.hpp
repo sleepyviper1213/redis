@@ -56,8 +56,8 @@ class indirect {
 public:
 	using value_type     = T;
 	using allocator_type = Allocator;
-	using pointer        = typename traits::pointer;
-	using const_pointer  = typename traits::const_pointer;
+	using pointer        = traits::pointer;
+	using const_pointer  = traits::const_pointer;
 
 	// --- construction ------------------------------------------------------
 	//

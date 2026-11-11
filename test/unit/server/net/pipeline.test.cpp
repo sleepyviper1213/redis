@@ -46,7 +46,7 @@ SCENARIO("Splitting the hot path into stages", "[net][pipeline]") {
 		}
 
 		WHEN("a malformed request follows a valid one") {
-			std::string pending = "PING\r\n*1\r\n$3\r\nabcXY";
+			std::string const pending = "PING\r\n*1\r\n$3\r\nabcXY";
 			detail::parse_pending(pending, batch);
 
 			THEN("the valid request is kept and the error is recorded") {

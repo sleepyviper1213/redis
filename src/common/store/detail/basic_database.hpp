@@ -45,17 +45,17 @@ class BasicDatabase {
 	using Types = BasicValueTypes<Allocator>;
 
 	template <typename V>
-	using KeyMap = typename Types::template KeyMap<V>;
+	using KeyMap = Types::template KeyMap<V>;
 
 	template <typename T>
 	using rebound =
-		typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
+		std::allocator_traits<Allocator>::template rebind_alloc<T>;
 
 public:
 	using allocator_type = Allocator;
 	using time_point     = DateTime;
-	using String         = typename Types::String;
-	using Key            = typename Types::Key;
+	using String         = Types::String;
+	using Key            = Types::Key;
 	using Object         = BasicObject<Allocator>;
 
 	BasicDatabase()
@@ -155,7 +155,7 @@ public:
 		Object *object = find(key);
 		if (object == nullptr) return nullptr;
 		if (T *value = object->template as<T>()) return value;
-		FAILED(WrongType{});
+		REDIS_FAILED(WrongType{});
 	}
 
 	/**
@@ -170,7 +170,7 @@ public:
 		Object *object = find(key);
 		if (object == nullptr || object->type() == ObjectType::String)
 			return object;
-		FAILED(WrongType{});
+		REDIS_FAILED(WrongType{});
 	}
 
 	/**
@@ -258,7 +258,7 @@ public:
 	 * observable; a no-op for the maps without such an operation.
 	 */
 	void prefetch([[maybe_unused]] std::string_view key) const noexcept {
-#if defined(REDIS_KEYSPACE_MAP_ABSL)
+#ifdef REDIS_KEYSPACE_MAP_ABSL
 		dict_.prefetch(key);
 #endif
 	}
@@ -378,7 +378,7 @@ private:
 		if (track_expired_) expired_.push_back(make_key(key));
 	}
 
-	void erase_deadline(typename KeyMap<time_point>::iterator it) {
+	void erase_deadline(KeyMap<time_point>::iterator it) {
 		by_deadline_.erase({it->second, it->first});
 		expires_.erase(it);
 	}

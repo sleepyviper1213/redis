@@ -77,7 +77,7 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 	for (size_t i = 3; i < args.size(); ++i) {
 		// Looked up before the loop variable moves on to the option's value.
 		const std::string_view arg = args[i];
-		const auto expiry =
+		const auto *const expiry =
 			std::ranges::find_if(EXPIRY_OPTIONS,
 								 [arg](const ExpiryOption &option) {
 									 return iequals(arg, option.name);
@@ -94,14 +94,14 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 				   i + 1 < args.size()) {
 			has_expiry      = true;
 			const auto time = parse_integer(args[++i]);
-			if (!time) FAILED(SetError::NotInteger);
+			if (!time) REDIS_FAILED(SetError::NotInteger);
 			const auto timer =
 				*time > 0 ? detail::expire_time(*time, expiry->unit, expiry->base)
 						  : std::nullopt;
-			if (!timer) FAILED(SetError::InvalidExpire);
+			if (!timer) REDIS_FAILED(SetError::InvalidExpire);
 			opts.deadline = timer->deadline();
 		} else {
-			FAILED(SetError::Syntax);
+			REDIS_FAILED(SetError::Syntax);
 		}
 	}
 	return opts;
@@ -196,8 +196,8 @@ Value increment_by(CommandContext &ctx, std::string_view key, int64_t delta) {
 		return reply::error("ERR increment or decrement would overflow");
 	}
 
-	if (*value != nullptr) (*value)->assign_string(fmt::to_string(result));
-	else {
+	if (*value != nullptr) { (*value)->assign_string(fmt::to_string(result));
+	} else {
 		const fmt::format_int digits(result);
 		ctx.db.set(key, String(digits.data(), digits.size()));
 	}

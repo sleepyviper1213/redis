@@ -75,6 +75,7 @@ public:
 		// completes on this coroutine's executor, so the coroutine is never
 		// resumed on the keyspace thread. The pool is stdexec's; only its Asio
 		// face is used here.
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access): is_threaded() above
 		co_return co_await net::co_spawn(pool_->get_executor(),
 										 call(std::move(fn)),
 										 net::use_awaitable);
@@ -90,7 +91,7 @@ public:
 	 * and nothing is handed off.
 	 */
 	template <std::invocable F, stdexec::scheduler Back>
-	auto run_on(F fn, Back back) {
+	stdexec::sender auto run_on(F fn, Back back) {
 		using namespace stdexec;
 		using Hop    = decltype(schedule(pool_->get_scheduler()) | then(fn) |
 								continues_on(back));

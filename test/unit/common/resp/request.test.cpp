@@ -21,7 +21,7 @@ Parsed parse(std::string_view data, size_t &pos) {
 	std::vector<std::string_view> views;
 	std::deque<std::string> owned;
 	auto result = parse_request(data, pos, views, owned);
-	return {result, {views.begin(), views.end()}};
+	return {.result=result, .args={views.begin(), views.end()}};
 }
 
 using Args = std::vector<std::string>;

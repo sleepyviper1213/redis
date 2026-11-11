@@ -76,7 +76,7 @@ struct AofServer {
 
 	/// What the newest incremental file holds.
 	[[nodiscard]] std::string log() const {
-		std::ifstream in(aof.files().back(), std::ios::binary);
+		std::ifstream const in(aof.files().back(), std::ios::binary);
 		std::ostringstream content;
 		content << in.rdbuf();
 		return content.str();
@@ -85,7 +85,7 @@ struct AofServer {
 	Database db;
 	SnapshotManager persistence;
 	CommandHandler handler;
-	CommandContext ctx{db, persistence};
+	CommandContext ctx{.db=db, .persistence=persistence};
 	AppendOnlyFile aof;
 };
 
@@ -112,8 +112,8 @@ struct Restarted : AofServer {
 
 SCENARIO("Write commands are logged", "[aof]") {
 	GIVEN("a server with an append-only file") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		AofServer server(dir.path(), snapshot.path());
 		REQUIRE(server.start().has_value());
 
@@ -135,8 +135,8 @@ SCENARIO("Write commands are logged", "[aof]") {
 
 SCENARIO("Commands that cannot be replayed as received", "[aof]") {
 	GIVEN("a server with an append-only file") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		AofServer server(dir.path(), snapshot.path());
 		REQUIRE(server.start().has_value());
 
@@ -192,8 +192,8 @@ SCENARIO("Commands that cannot be replayed as received", "[aof]") {
 
 SCENARIO("A restart gets back what was logged", "[aof]") {
 	GIVEN("a server that logged every kind of value") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		std::string ttl;
 		{
 			AofServer server(dir.path(), snapshot.path());
@@ -244,8 +244,8 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 
 SCENARIO("A replay does not depend on when it runs", "[aof]") {
 	GIVEN("a key that expired before the restart, and one that was persisted") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		{
 			AofServer server(dir.path(), snapshot.path());
 			REQUIRE(server.start().has_value());
@@ -276,8 +276,8 @@ SCENARIO("A replay does not depend on when it runs", "[aof]") {
 
 SCENARIO("A log that ends in the middle of a command", "[aof]") {
 	GIVEN("a log with a torn last command") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		fs::path incr;
 		std::string whole;
 		{
@@ -304,8 +304,8 @@ SCENARIO("A log that ends in the middle of a command", "[aof]") {
 	}
 
 	GIVEN("a log with a command that cannot be parsed") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		fs::path incr;
 		{
 			AofServer server(dir.path(), snapshot.path());
@@ -328,8 +328,8 @@ SCENARIO("A log that ends in the middle of a command", "[aof]") {
 
 SCENARIO("Turning the append-only file on keeps the snapshot", "[aof]") {
 	GIVEN("a snapshot written by a server without AOF") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		{
 			test::Server plain;
 			plain.run({"SET", "old", "1"});
@@ -493,8 +493,8 @@ SCENARIO("A manifest cannot point outside the append-only directory",
 
 SCENARIO("One server at a time uses the directory", "[aof][security]") {
 	GIVEN("a server that has started over a directory") {
-		TempDir dir;
-		test::TempFile snapshot;
+		TempDir const dir;
+		test::TempFile const snapshot;
 		AofServer first(dir.path(), snapshot.path());
 		REQUIRE(first.start().has_value());
 

@@ -1,0 +1,146 @@
+name: Profile
+
+# Profiles redis_server with `perf` under redis-benchmark load, v1 and v2 one
+# after the other, once per compiler. Push any commit to a profile/ branch:
+#
+#   git push -f origin HEAD:profile/<name>
+#
+# The report is a flat list of where the CPU was (no call trees), in the job
+# summary. Shared VMs are noisy: compare the two lists in one job, not numbers
+# across jobs. See scripts/profile_server_linux.sh for the knobs.
+
+on:
+  push:
+    branches: ["profile/**"]
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: clients, pipeline or bigget
+        default: "bigget"
+      duration:
+        description: seconds sampled (DURATION)
+        default: "10"
+
+env:
+  VCPKG_BINARY_SOURCES: clear;files,/root/vcpkg-cache,readwrite
+  CCACHE_DIR: /root/.ccache
+  CCACHE_MAXSIZE: 500M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  profile:
+    name: profile (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    # Privileged, like the ThreadSanitizer job: perf needs perf_event_open.
+    container:
+      image: ${{ matrix.image }}
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: gcc,   image: "gcc:16.2",        preset: linux-gcc,   cc: gcc,   cxx: g++ }
+          - { compiler: clang, image: "silkeh/clang:22", preset: linux-clang, cc: clang, cxx: clang++ }
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - name: Install build tools, Redis and perf
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ninja-build git curl \
+            ca-certificates zip unzip tar pkg-config ccache redis-tools linux-perf \
+            libc6-dbg
+          ${CXX} --version | head -n 1
+          perf --version
+      - name: Allow perf to sample
+        run: sysctl kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
+      - name: Install the latest CMake
+        run: |
+          v="$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Kitware/CMake/releases/latest | sed 's#.*/v##')"
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${v}/cmake-${v}-linux-x86_64.tar.gz" |
+            tar -xz --strip-components=1 -C /usr/local
+          cmake --version | head -n 1
+      - uses: actions/checkout@v4
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
+      - name: Point vcpkg at the container's workspace
+        run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> "$GITHUB_ENV"
+      - name: Bootstrap vcpkg
+        run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        # Named like ci.yml's cache (the configure preset), so what CI saved on
+        # main is found here: a branch can read only its own caches and the
+        # default branch's, so a new bench/ or profile/ branch starts cold
+        # unless main has one.
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /root/vcpkg-cache
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.preset }}-
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: /root/.ccache
+          key: ccache-profile-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: ccache-profile-${{ matrix.compiler }}-
+      - name: Configure (builds the dependencies)
+        # Frame pointers, for the call-graph samples. Passed as a project flag,
+        # not through CXXFLAGS, so vcpkg's dependency builds (and their cache)
+        # are unchanged.
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_FLAGS=-fno-omit-frame-pointer
+      - name: Save the built dependencies
+        # Right after the configure that built them, so a failure later (or a
+        # cancelled run) does not throw away the slow part. Skipped on an exact
+        # hit, and when the configure failed: a half-built cache saved under
+        # the exact key would be restored, and never completed, from then on.
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /root/vcpkg-cache
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+      - name: Build with symbols
+        run: |
+          cmake --build --preset ${{ matrix.preset }}-relwithdebinfo --target redis_server
+          ccache --show-stats
+      - name: Profile
+        env:
+          DURATION: ${{ inputs.duration || '10' }}
+          CALLGRAPH: "1"
+        # The report goes to profile/<compiler>.txt, the file the repo keeps
+        # its profiles in, and is uploaded below: download the artifact into
+        # profile/ rather than copying text out of the log.
+        run: |
+          mkdir -p profile
+          report="profile/${{ matrix.compiler }}.txt"
+          echo "${{ matrix.compiler }}, runner: $(nproc) CPUs" | tee "$report"
+          bash scripts/profile_server_linux.sh ${{ matrix.preset }} RelWithDebInfo \
+            "${{ inputs.scenario || 'bigget' }}" | tee -a "$report"
+          { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the profile
+        # Even when a later step fails, or the profile is partial. One artifact
+        # per job here (jobs cannot share one); the merge job below combines
+        # them.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-${{ matrix.compiler }}
+          path: profile/${{ matrix.compiler }}.txt
+          if-no-files-found: warn
+
+  merge:
+    name: One artifact
+    needs: profile
+    # Even if one compiler's job failed: take whatever the other produced.
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Merge the profiles into one artifact
+        # Download "profile", unzip into profile/: gcc.txt and clang.txt.
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: profile
+          pattern: profile-*
+          delete-merged: true

@@ -46,14 +46,14 @@ class BasicObject {
 	using traits = std::allocator_traits<Allocator>;
 
 	template <typename T>
-	using rebound = typename traits::template rebind_alloc<T>;
+	using rebound = traits::template rebind_alloc<T>;
 
 public:
 	using allocator_type = Allocator;
-	using String         = typename Types::String;
-	using List           = typename Types::List;
-	using Set            = typename Types::Set;
-	using Hash           = typename Types::Hash;
+	using String         = Types::String;
+	using List           = Types::List;
+	using Set            = Types::Set;
+	using Hash           = Types::Hash;
 
 	/// The longest string stored inside the object rather than on the heap.
 	static constexpr std::size_t EMBEDDED_CAPACITY = 14;
@@ -61,10 +61,10 @@ public:
 	/// The tag of value type \p T.
 	template <typename T>
 	[[nodiscard]] static constexpr ObjectType type_of() noexcept {
-		if constexpr (std::is_same_v<T, String>) return ObjectType::String;
-		else if constexpr (std::is_same_v<T, List>) return ObjectType::List;
-		else if constexpr (std::is_same_v<T, Set>) return ObjectType::Set;
-		else {
+		if constexpr (std::is_same_v<T, String>) { { return ObjectType::String;
+		} } else if constexpr (std::is_same_v<T, List>) { { return ObjectType::List;
+		} } else if constexpr (std::is_same_v<T, Set>) { { return ObjectType::Set;
+		} } else {
 			static_assert(std::is_same_v<T, Hash>, "not a value type");
 			return ObjectType::Hash;
 		}
@@ -92,7 +92,7 @@ public:
 
 	/// Implicit, so a string can be passed wherever an object is expected. The
 	/// object uses the string's allocator.
-	BasicObject(String value) // NOLINT(google-explicit-constructor)
+	BasicObject(String value) // NOLINT(google-explicit-constructor,performance-unnecessary-value-param)
 		: alloc_(value.get_allocator()) {
 		if (value.size() <= EMBEDDED_CAPACITY) set_embedded(value);
 		else set_heap(ObjectType::String, create<String>(std::move(value)));
@@ -229,7 +229,7 @@ public:
 			static_cast<String *>(repr_.heap.ptr)->assign(text);
 			return;
 		}
-		String *fresh = create<String>(text);
+		auto *fresh = create<String>(text);
 		destroy();
 		set_heap(ObjectType::String, fresh);
 	}
@@ -239,7 +239,7 @@ public:
 	[[nodiscard]] String &mutable_string() {
 		assert(type() == ObjectType::String);
 		if (!on_heap() || repr_.heap.ptr == nullptr) {
-			String *heap = create<String>(string());
+			auto *heap = create<String>(string());
 			set_heap(ObjectType::String, heap);
 		}
 		return *static_cast<String *>(repr_.heap.ptr);

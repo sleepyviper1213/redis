@@ -30,7 +30,7 @@ template <MonotonicClock Clock = std::chrono::steady_clock>
 class BasicElapsedTimer {
 public:
 	using clock    = Clock;
-	using Duration = typename Clock::duration;
+	using Duration = Clock::duration;
 
 	/// Starts the timer now.
 	BasicElapsedTimer() noexcept : start_(Clock::now()) {}
@@ -70,7 +70,7 @@ public:
 	}
 
 private:
-	typename Clock::time_point start_;
+	Clock::time_point start_;
 };
 
 using ElapsedTimer = BasicElapsedTimer<>;
