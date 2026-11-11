@@ -117,8 +117,8 @@ report_counters() {
 # after it (or on it). Lines under 1% are dropped.
 annotate() {
     local symbol
-    symbol="$(perf report -i "$1" --stdio --no-children --sort symbol 2>/dev/null |
-        awk -v pat="$ANNOTATE" '!/^#/ && index($0, pat) { sub(/^[^[]*\[[.k]\] /, ""); print; exit }')"
+    symbol="$(perf report -i "$1" --stdio --no-children --sort symbol -g none 2>/dev/null |
+        awk -v pat="$ANNOTATE" '!done && !/^#/ && index($0, pat) { sub(/^[^[]*\[[.k]\] /, ""); print; done = 1 }')"
     if [[ -z "$symbol" ]]; then
         echo "   no symbol matching '$ANNOTATE'"
         return 0
@@ -194,7 +194,9 @@ profile() {
     # Symbol names of stdexec chains run to thousands of characters: keep the
     # first 240 so each line stays readable (the numbers come first).
     echo "-- self time: where the CPU was --"
-    perf report -i "$data" --stdio --no-children --sort symbol \
+    # -g none: with CALLGRAPH the samples carry stacks, and perf would print a
+    # call chain under every symbol, using up TOP lines on two entries.
+    perf report -i "$data" --stdio --no-children --sort symbol -g none \
         --percent-limit 0.5 2>/dev/null |
         awk -v top="$TOP" '!/^#/ && NF && count++ < top { print substr($0, 1, 240) }'
     if [[ -n "$ANNOTATE" ]]; then
