@@ -20,6 +20,12 @@ on:
       duration:
         description: seconds sampled (DURATION)
         default: "10"
+      keyspace:
+        description: keys in the bigget scenario (KEYSPACE); 10000 fits the caches
+        default: "2000000"
+      annotate:
+        description: symbol substring to annotate (ANNOTATE); empty for none
+        default: "operator=="
 
 env:
   VCPKG_BINARY_SOURCES: clear;files,/root/vcpkg-cache,readwrite
@@ -108,6 +114,9 @@ jobs:
       - name: Profile
         env:
           DURATION: ${{ inputs.duration || '10' }}
+          KEYSPACE: ${{ inputs.keyspace || '2000000' }}
+          # Not `|| 'operator=='`: an empty input must stay empty (no annotate).
+          ANNOTATE: ${{ github.event_name == 'workflow_dispatch' && inputs.annotate || (github.event_name != 'workflow_dispatch' && 'operator==') || '' }}
           CALLGRAPH: "1"
         # The report goes to profile/<compiler>.txt, the file the repo keeps
         # its profiles in, and is uploaded below: download the artifact into

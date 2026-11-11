@@ -13,7 +13,11 @@
 #
 # Knobs: PORT (default 6381), DURATION (seconds sampled, default 10), WARMUP
 # (seconds of load before sampling, default 3), TOP (lines of the report,
-# default 40), KEYSPACE (default 2000000) and VERSIONS (default "v1 v2").
+# default 40), KEYSPACE (default 2000000), VERSIONS (default "v1 v2") and
+# ANNOTATE (a substring of the symbol whose hot instructions are listed, default
+# "operator=="; empty for none). Compare a KEYSPACE that fits the CPU caches
+# (10000) with one that does not to tell cache misses from compute: a symbol
+# whose share collapses on the small one was waiting on memory.
 #
 # Needs `perf` and permission to use it: a privileged container with
 # `sysctl kernel.perf_event_paranoid=-1`, or root on a VM. The report is the
@@ -34,6 +38,7 @@ TOP="${TOP:-40}"
 INCLUSIVE_TOP="${INCLUSIVE_TOP:-120}"
 KEYSPACE="${KEYSPACE:-2000000}"
 VERSIONS="${VERSIONS:-v1 v2}"
+ANNOTATE="${ANNOTATE-operator==}"
 
 case "$SCENARIO" in
     clients | pipeline | bigget) ;;
@@ -78,19 +83,49 @@ commands_processed() {
 }
 
 # report_counters <perf stat -x, file> <commands handled during the window>
+# The hardware counters (cycles, instructions, cache misses) are missing on VMs
+# that do not expose a PMU; perf then writes "<not supported>", and they are
+# left out.
 report_counters() {
     awk -F, -v n="$2" -v secs="$DURATION" '
+        function num(v) { return v ~ /^[0-9.]+$/ }
         $3 ~ /context-switches/ { cs = $1 }
         $3 ~ /cpu-migrations/   { mg = $1 }
         $3 ~ /task-clock/       { tc = $1 }
+        $3 ~ /^cycles/          { if (num($1)) cy = $1 }
+        $3 ~ /^instructions/    { if (num($1)) ins = $1 }
+        $3 ~ /^cache-misses/    { if (num($1)) cm = $1 }
+        $3 ~ /^LLC-load-misses/ { if (num($1)) llc = $1 }
         END {
             printf "   %d commands in %ds (%.0f/s)\n", n, secs, n / secs
             if (n > 0) {
                 printf "   context-switches %d (%.2f per 1000 commands)\n", cs, cs * 1000 / n
                 printf "   cpu-migrations   %d (%.2f per 1000 commands)\n", mg, mg * 1000 / n
                 printf "   task-clock       %.0f ms (%.2f us per command)\n", tc, tc * 1000 / n
+                if (cy != "")  printf "   cycles           %.0f per command\n", cy / n
+                if (ins != "") printf "   instructions     %.0f per command\n", ins / n
+                if (cy != "" && ins != "") printf "   IPC              %.2f\n", ins / cy
+                if (cm != "")  printf "   cache-misses     %.2f per command\n", cm / n
+                if (llc != "") printf "   LLC-load-misses  %.2f per command\n", llc / n
             }
         }' "$1"
+}
+
+# annotate <perf.data>: the instructions of the hottest symbol matching
+# ANNOTATE, with the share of that symbol's samples on each, to see where in it
+# the time goes. A load that misses the cache shows as a hot instruction just
+# after it (or on it). Lines under 1% are dropped.
+annotate() {
+    local symbol
+    symbol="$(perf report -i "$1" --stdio --no-children --sort symbol 2>/dev/null |
+        awk -v pat="$ANNOTATE" '!/^#/ && index($0, pat) { sub(/^[^[]*\[[.k]\] /, ""); print; exit }')"
+    if [[ -z "$symbol" ]]; then
+        echo "   no symbol matching '$ANNOTATE'"
+        return 0
+    fi
+    echo "-- annotate: ${symbol:0:200} --"
+    perf annotate -i "$1" --stdio -s "$symbol" 2>/dev/null |
+        awk '$1 + 0 >= 1.0 && $2 == ":" { print substr($0, 1, 200) }' || true
 }
 
 # profile <version> <server args...>
@@ -135,6 +170,7 @@ profile() {
     local before after stat_pid
     before="$(commands_processed)"
     perf stat -x, -e context-switches,cpu-migrations,task-clock \
+        -e cycles,instructions,cache-misses,LLC-load-misses \
         -p "$SERVER_PID" -o "$OUT/$version.stat" -- sleep "$DURATION" \
         >/dev/null 2>&1 &
     stat_pid=$!
@@ -161,6 +197,10 @@ profile() {
     perf report -i "$data" --stdio --no-children --sort symbol \
         --percent-limit 0.5 2>/dev/null |
         awk -v top="$TOP" '!/^#/ && NF && count++ < top { print substr($0, 1, 240) }'
+    if [[ -n "$ANNOTATE" ]]; then
+        echo
+        annotate "$data"
+    fi
     if [[ -n "${CALLGRAPH:-}" ]]; then
         # Needs frame pointers (-fno-omit-frame-pointer): each function's time
         # includes everything it called, so the cost of a whole stage of the
