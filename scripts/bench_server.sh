@@ -14,7 +14,8 @@
 #   SERVER_ARGS="--sender-sessions --io-threads 4" scripts/bench_server.sh
 #
 # Other knobs: RUNS (repeats per scenario, default 3), REQUESTS (default
-# 200000), KEYSPACE (keys in the bigget scenario, default 2000000), and
+# 200000), PIPE_REQUESTS (the pipeline and bigget scenarios, default 8000000),
+# KEYSPACE (keys in the bigget scenario, default 2000000), and
 # REF_SERVER to also benchmark a reference redis-server binary, e.g.
 # REF_SERVER=redis-server (Homebrew's). The script starts its own instance on
 # REF_PORT (default 6382) with persistence off and a throwaway directory, so
@@ -32,7 +33,13 @@
 # THREADS (default 1) runs redis-benchmark with that many threads. A single
 # client thread tops out near 1.4M rps on an M-series Mac, which caps the
 # pipeline and bigget scenarios before the server does; e.g. THREADS=4. The
-# latency scenario stays single-threaded: it has one connection.
+# latency scenario stays single-threaded: it has one connection, and so does
+# the clients scenario, which a server finishes far below the client's limit.
+#
+# With --threads redis-benchmark seems to time a run in 250 ms ticks, so a run
+# must last seconds for the rate to mean anything: that is why pipeline and
+# bigget have their own, larger, request count. Identical rates across runs
+# and servers mean the runs were too short.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
@@ -42,6 +49,7 @@ CONFIG="${2:-Release}"
 PORT="${3:-6381}"
 RUNS="${RUNS:-3}"
 REQUESTS="${REQUESTS:-200000}"
+PIPE_REQUESTS="${PIPE_REQUESTS:-8000000}"
 KEYSPACE="${KEYSPACE:-2000000}"
 REF_SERVER="${REF_SERVER:-}"
 REF_PORT="${REF_PORT:-6382}"
@@ -163,9 +171,9 @@ scenario() {
 # Wait for every server first: the scenarios start straight away.
 for port in "${SERVER_PORTS[@]}"; do wait_for_port "$port"; done
 
-scenario clients  -n "$REQUESTS" ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
+scenario clients  -n "$REQUESTS"
 scenario latency  -n "$((REQUESTS / 2))" -c 1
-scenario pipeline -n "$((REQUESTS * 2))" -P 16 \
+scenario pipeline -n "$PIPE_REQUESTS" -P 16 \
     ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
 # A keyspace too big for the CPU caches, where every lookup misses: fill each
 # server (random keys, so about 86% of KEYSPACE are hit), then read it back.
@@ -175,10 +183,10 @@ for port in "${SERVER_PORTS[@]}"; do
         -r "$KEYSPACE" -P 16 \
         ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"} >/dev/null
 done
-TEST=get scenario bigget -n "$((REQUESTS * 2))" -r "$KEYSPACE" -P 16 \
+TEST=get scenario bigget -n "$PIPE_REQUESTS" -r "$KEYSPACE" -P 16 \
     ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
 
 for i in "${!SERVER_PORTS[@]}"; do
-    echo "== ${SERVER_NAMES[i]} (port ${SERVER_PORTS[i]}, $REQUESTS requests, $RUNS runs, $THREADS client threads) =="
+    echo "== ${SERVER_NAMES[i]} (port ${SERVER_PORTS[i]}, $REQUESTS requests ($PIPE_REQUESTS pipelined), $RUNS runs, $THREADS client threads) =="
     printf '%s' "${REPORT[i]}"
 done
