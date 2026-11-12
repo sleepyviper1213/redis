@@ -17,6 +17,7 @@ add_executable(redis_unit_test
     unit/core/chrono/deadline_timer.test.cpp
     unit/core/stdexec_ext/retry.test.cpp
     unit/core/stdexec_ext/supervise.test.cpp
+    unit/core/stdexec_ext/task.test.cpp
     unit/common/store/simple_dynamic_string.test.cpp
     unit/core/utils/glob.test.cpp
     unit/core/utils/indirect.test.cpp

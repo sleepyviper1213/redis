@@ -1,27 +1,37 @@
 #pragma once
 
-#include <exec/task.hpp>
+#include <stdexec/execution.hpp>
 
 namespace redis::stdexec_ext {
 
 /**
- * \brief A coroutine that can be started as a sender, e.g. by stdexec::spawn.
+ * \brief The environment of an InlineTask: what makes it start and resume
+ * inline.
  *
- * exec::task's default context pins it to the scheduler of whoever awaits it,
- * so it is only awaitable from another coroutine, and spawn() has no such
- * scheduler. The inline context drops that affinity: the coroutine resumes
- * wherever the sender it awaited completed (for an Asio operation, on its
- * executor), and with it the requirement.
- *
- * stdexec::task (P3552) would be the standard choice, but in the pinned
- * stdexec it is awaitable only, not yet a sender. The one reference to
- * exec::__task, an internal namespace, is here: revisit on upgrade.
+ * stdexec::task is scheduler-affine by default: it starts on the scheduler of
+ * whoever starts it, and after every co_await hops back there. That costs a
+ * scheduling operation per co_await, and stdexec::spawn has no scheduler to
+ * offer in the first place. With inline_scheduler as the start scheduler
+ * both go away: the task needs nothing from the environment, and since an
+ * inline scheduler completes where it starts, the task resumes wherever the
+ * awaited sender completed (for an Asio operation, on its executor) with no
+ * hop. Errors and stop tokens keep stdexec::task's defaults.
+ */
+struct InlineTaskEnv {
+	using start_scheduler_type = stdexec::inline_scheduler;
+};
+
+/**
+ * \brief A coroutine that can be started as a sender, e.g. by stdexec::spawn,
+ * and resumes inline (see InlineTaskEnv).
  *
  * A failure (an exception, or an awaited sender's error) completes the sender
- * with set_error(exception_ptr); a stop request reaching a suspended co_await
- * completes it with set_stopped, unwinding the coroutine without an error.
+ * with set_error(exception_ptr). A stop request reaching a suspended co_await
+ * completes it with set_stopped, destroying the frame without resuming it.
+ *
+ * \tparam T What the coroutine co_returns.
  */
 template <class T = void>
-using InlineTask = exec::basic_task<T, exec::__task::inline_task_context<T>>;
+using InlineTask = stdexec::task<T, InlineTaskEnv>;
 
 } // namespace redis::stdexec_ext
