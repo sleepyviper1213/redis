@@ -3,3 +3,8 @@
 # worker thread frees the exception after the caller has read what(): a false
 # positive.
 race:std::runtime_error::~runtime_error
+# The same false positive when the destructor is inlined into the code that
+# drops the last reference (GCC 16): the free is then reported from stdexec's
+# completion (__set_value_from) and ~runtime_error is not on either stack.
+# Both stacks pass the error along as a std::exception_ptr, so match that.
+race:std::__exception_ptr::exception_ptr
