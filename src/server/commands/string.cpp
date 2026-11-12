@@ -79,6 +79,7 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 		const std::string_view arg = args[i];
 		// An iterator, not a pointer: only libstdc++'s std::array iterator is
 		// a raw pointer, and MSVC's STL rejects `const auto *` here.
+		// NOLINTNEXTLINE(readability-qualified-auto): see above.
 		const auto expiry =
 			std::ranges::find_if(EXPIRY_OPTIONS,
 								 [arg](const ExpiryOption &option) {

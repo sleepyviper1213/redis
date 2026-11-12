@@ -44,8 +44,13 @@ private:
 		return stdexec::forward_progress_guarantee::parallel;
 	}
 
-	/// Runs \p task on executor_. The pool checks a stop request only when the
-	/// task runs, so a queued task is never abandoned early.
+	/**
+	 * Runs \p task on executor_. The pool checks a stop request only when the
+	 * task runs, so a queued task is never abandoned early. Posting can only
+	 * fail by running out of memory, which ends the process (this is
+	 * noexcept, as the pool requires).
+	 */
+	// NOLINTNEXTLINE(bugprone-exception-escape): out of memory, see above.
 	void enqueue(exec::_pool::_task_base *task,
 				 std::uint32_t tid = 0) noexcept {
 		net::post(executor_, [task, tid] { task->execute_(task, tid); });

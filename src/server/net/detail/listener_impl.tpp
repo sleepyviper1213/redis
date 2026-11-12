@@ -117,6 +117,7 @@ stdexec_ext::InlineTask<void> BasicListener<A>::run() {
 }
 
 template <Acceptor A>
+// NOLINTNEXTLINE(bugprone-exception-escape): out of memory only; see below.
 void BasicListener<A>::stop() noexcept {
 	// The acceptor is not thread-safe: close it on its own strand, where the
 	// accept loop also runs. Posting can only fail by running out of memory,

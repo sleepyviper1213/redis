@@ -31,6 +31,8 @@ public:
 
 	Executor(const Executor &)            = delete;
 	Executor &operator=(const Executor &) = delete;
+	Executor(Executor &&)                 = delete;
+	Executor &operator=(Executor &&)      = delete;
 
 	~Executor();
 

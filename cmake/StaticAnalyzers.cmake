@@ -50,9 +50,12 @@ if(REDIS_ENABLE_CPPCHECK)
 
     if(CPPCHECK)
         # cppcheck has no coroutine support: co_return does not read as a
-        # return, so every awaitable looks like a path that falls off the end.
-        # Not scoped to a path: the network layer is all coroutines. Nothing is lost: falling off the end of a
-        # non-void function is already a compiler diagnostic.
+        # return, so every coroutine looks like a path that falls off the end.
+        # The coroutines are the accept loop and the housekeeping timer
+        # (stdexec_ext::InlineTask); the rest of the network layer is sender
+        # chains. Suppressed everywhere rather than per file, since any new
+        # coroutine would trip it too. Nothing is lost: falling off the end of
+        # a non-void function is already a compiler diagnostic.
         set(CMAKE_CXX_CPPCHECK
             "${CPPCHECK}"
             "--inline-suppr"

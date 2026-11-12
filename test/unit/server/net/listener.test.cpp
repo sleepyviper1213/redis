@@ -240,6 +240,7 @@ SCENARIO("A listener accepts clients", "[net][listener]") {
 
 		WHEN("many clients connect at once") {
 			std::vector<tcp::socket> clients;
+			clients.reserve(32);
 			for (int i = 0; i < 32; ++i) clients.push_back(fixture.connect());
 
 			THEN("every one is served") {
@@ -253,6 +254,7 @@ SCENARIO("A listener accepts clients", "[net][listener]") {
 
 		WHEN("many clients connect at once") {
 			std::vector<tcp::socket> clients;
+			clients.reserve(32);
 			for (int i = 0; i < 32; ++i) clients.push_back(fixture.connect());
 
 			THEN("every one is served, each on its own strand") {

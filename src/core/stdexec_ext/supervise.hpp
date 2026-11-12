@@ -2,6 +2,7 @@
 
 #include <stdexec/execution.hpp>
 
+#include <cstdint>
 #include <exception>
 #include <type_traits>
 #include <utility>
@@ -12,7 +13,7 @@ namespace redis::stdexec_ext {
  * What the failure of one unit of work (a session, the accept loop, the
  * housekeeping timer) does to the rest of the server.
  */
-enum class FailPolicy {
+enum class FailPolicy : std::uint8_t {
 	/**
 	 * The failure ends this unit only: it is handled where it happened, and
 	 * the unit then completes normally. The sender can no longer fail, which

@@ -80,7 +80,7 @@ public:
 	 * handlers are left out: a strand costs a lock and a queue hop on every
 	 * completion. Call listen() before run().
 	 */
-	BasicListener(boost::asio::any_io_executor ex,
+	BasicListener(const boost::asio::any_io_executor &ex,
 				  std::shared_ptr<Services> services, bool concurrent = true)
 		requires std::constructible_from<
 			A, boost::asio::strand<boost::asio::any_io_executor>>

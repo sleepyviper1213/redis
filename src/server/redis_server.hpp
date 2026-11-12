@@ -50,6 +50,9 @@ public:
 
 	RedisServer(const RedisServer &)            = delete;
 	RedisServer &operator=(const RedisServer &) = delete;
+	RedisServer(RedisServer &&)                 = delete;
+	RedisServer &operator=(RedisServer &&)      = delete;
+	~RedisServer()                              = default;
 
 	/**
 	 * \brief Load the snapshot, serve clients until SIGINT or SIGTERM, then

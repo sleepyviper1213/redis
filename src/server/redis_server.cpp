@@ -95,12 +95,18 @@ private:
  * \param housekeeping RedisServer::cron(), not yet started.
  * \param stop Ends the race from outside: an I/O thread that failed.
  */
+// The references are the point: these objects are run()'s, which outlives
+// the coroutine by joining every I/O thread first (see the lifetime note
+// there), and copies of a listener or an io_context would not be the same
+// objects.
+// NOLINTBEGIN(cppcoreguidelines-avoid-reference-coroutine-parameters)
 stdexec_ext::InlineTask<void> serve(Listener &server,
 									stdexec_ext::InlineTask<void> housekeeping,
 									boost::asio::signal_set &signals,
 									boost::asio::io_context &io,
 									stdexec::inplace_stop_token stop,
 									FirstFailure &failure) {
+	// NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 	using stdexec_ext::FailPolicy;
 	using stdexec_ext::supervised;
 
@@ -119,7 +125,7 @@ stdexec_ext::InlineTask<void> serve(Listener &server,
 										.quoted = describe(error)});
 							   }),
 						   supervised<FailPolicy::FailFast>(std::move(housekeeping)),
-						   std::move(signalled)) |
+						   signalled) |
 			stdexec::write_env(stdexec::prop{stdexec::get_stop_token, stop})
 			// Stopped from outside is still an end: carry on to the shutdown
 			// below rather than have the frame destroyed.
