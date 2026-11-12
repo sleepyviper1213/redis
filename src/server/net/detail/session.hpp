@@ -1,8 +1,8 @@
 #pragma once
 #include "asio_context.hpp"
+#include "server/net/detail/pipeline.hpp"
 #include "server/net/guard.hpp"
 #include "server/net/net_error.hpp"
-#include "server/net/detail/pipeline.hpp"
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -25,11 +25,11 @@ namespace detail {
  * header; the stop token is forwarded so cancellation reaches the Asio
  * operation inside.
  */
-using SessionSender = exec::any_sender<exec::any_receiver<
-	stdexec::completion_signatures<stdexec::set_value_t(),
-								   stdexec::set_stopped_t()>,
-	exec::queries<stdexec::inplace_stop_token(
-		stdexec::get_stop_token_t) noexcept>>>;
+using SessionSender = exec::any_sender<
+	exec::any_receiver<stdexec::completion_signatures<stdexec::set_value_t(),
+													  stdexec::set_stopped_t()>,
+					   exec::queries<stdexec::inplace_stop_token(
+						   stdexec::get_stop_token_t) noexcept>>>;
 
 /**
  * \brief One client connection, written as a sender chain.
@@ -67,8 +67,14 @@ private:
 	stdexec::sender auto execute();
 	/// Sends replies_ to the client, then clears it.
 	stdexec::sender auto write();
-	/// One round: read, execute, write. Completes with true once the session
-	/// is over.
+	/**
+	 * Answers what was ingested: execute(), then write(), within the request
+	 * limit when the guard has one. Past it the replies are dropped and the
+	 * session ends.
+	 */
+	stdexec::sender auto respond();
+	/// One round: read, then respond. Completes with true once the session is
+	/// over.
 	stdexec::sender auto round();
 
 	// What the stages decide with, as plain code.
@@ -88,8 +94,12 @@ private:
 	boost::asio::ip::tcp::socket socket_;
 	/// The socket's strand as a scheduler, to come back to after executing.
 	std::unique_ptr<AsioContext> strand_;
-	/// Races each read when the guard has an idle limit; the loser is cancelled.
+	/// Races each read when the guard has an idle limit; the loser is
+	/// cancelled.
 	boost::asio::steady_timer idle_timer_;
+	/// Races each response (execute and write) when the guard has a request
+	/// limit. Not idle_timer_: one timer per limit keeps each race readable.
+	boost::asio::steady_timer request_timer_;
 	std::shared_ptr<Services> services_;
 	/// Holds this client's slot under Services::guard until the session ends.
 	NetGuard::Ticket ticket_;

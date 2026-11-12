@@ -145,6 +145,15 @@ CLI::App_p setup_cli_options() {
 		->group("Limits")
 		->check(CLI::NonNegativeNumber)
 		->default_val(0);
+	app->add_option("--request-timeout",
+					"Close a client whose request is not answered (executed "
+					"and its replies written) within this many seconds; 0 "
+					"never")
+		->envname("REDIS_REQUEST_TIMEOUT")
+		->option_text("<seconds>")
+		->group("Limits")
+		->check(CLI::NonNegativeNumber)
+		->default_val(0);
 
 	app->add_flag("--enable-config-set",
 				  "Let any client change settings with CONFIG SET (there is no "

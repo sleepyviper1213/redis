@@ -11,6 +11,7 @@
 #include <boost/asio/write.hpp>
 #include <exec/asio/use_sender.hpp>
 #include <exec/repeat_until.hpp>
+#include <exec/unless_stop_requested.hpp>
 #include <exec/variant_sender.hpp>
 #include <exec/when_any.hpp>
 #include <spdlog/logger.h>
@@ -53,34 +54,48 @@ struct Outcome {
 };
 
 /**
- * \p read, abandoned if \p timer runs out first. Whichever finishes first
- * cancels the other. With no limit (\p idle is zero) it is \p read itself.
+ * \p work, abandoned if \p limit passes first: whichever finishes first
+ * cancels the other through the stop token, and the race completes once both
+ * have unwound, with the winner's value. With no limit (\p limit is zero) it
+ * is \p work itself. Both the idle limit (the read) and the request limit
+ * (executing and writing) are this race.
  *
- * The timer is armed when the wait starts, not when the sender is built:
+ * The timer is armed when the race starts, not when the sender is built:
  * repeat_until restarts one sender every round, so building it runs once.
  * The aliases exist because the two cases are different sender types and
  * variant_sender needs both named.
  *
- * \tparam Read The type of the sender that waits for the client (a
- *         stdexec::sender), completing with an Outcome.
- * \return A sender; its type is deduced, a variant_sender of \p Read and the
+ * The race ends only once \p work has unwound, so \p work must finish
+ * promptly when stopped. When a stop request alone cannot promise that,
+ * \p on_expiry is where to force it (see respond()).
+ *
+ * \tparam Work The type of the sender raced against the clock (a
+ *         stdexec::sender), completing with one value.
+ * \tparam OnExpiry The type of what runs when the time runs out: a callable
+ *         taking nothing, returning a value of the type \p Work sends, so
+ *         that both branches complete the same way.
+ * \return A sender; its type is deduced, a variant_sender of \p Work and the
  *         race between it and the timer.
  */
-template <stdexec::sender Read>
-stdexec::sender auto with_idle_limit(Read read,
-									 boost::asio::steady_timer &timer,
-									 std::chrono::seconds idle) {
+template <stdexec::sender Work, std::invocable OnExpiry>
+stdexec::sender auto
+with_time_limit(Work work, boost::asio::steady_timer &timer,
+				std::chrono::seconds limit, OnExpiry on_expiry) {
+	// unless_stop_requested: when work completes at once, as it does with
+	// nothing to answer yet, the stop request reaches the timer before its wait
+	// starts. use_sender would lose it (its cancellation signal has no handler
+	// yet) and the race would wait out the whole limit, every round.
 	stdexec::sender auto expiry =
-		stdexec::just() | stdexec::let_value([&timer, idle] {
-			timer.expires_after(idle);
-			return timer.async_wait(exec::asio::use_sender);
+		stdexec::just() | stdexec::let_value([&timer, limit] {
+			timer.expires_after(limit);
+			return exec::unless_stop_requested(
+				timer.async_wait(exec::asio::use_sender));
 		}) |
-		stdexec::then(
-			[] { return Outcome{.bytes = std::nullopt, .idle = true}; });
-	using Raced  = decltype(exec::when_any(std::move(read), std::move(expiry)));
-	using Result = exec::variant_sender<Read, Raced>;
-	if (idle == std::chrono::seconds::zero()) return Result(std::move(read));
-	return Result(exec::when_any(std::move(read), std::move(expiry)));
+		stdexec::then(std::move(on_expiry));
+	using Raced  = decltype(exec::when_any(std::move(work), std::move(expiry)));
+	using Result = exec::variant_sender<Work, Raced>;
+	if (limit == std::chrono::seconds::zero()) return Result(std::move(work));
+	return Result(exec::when_any(std::move(work), std::move(expiry)));
 }
 } // namespace
 
@@ -89,6 +104,7 @@ Session::Session(tcp::socket socket, std::shared_ptr<Services> services,
 	: socket_(std::move(socket)),
 	  strand_(std::make_unique<AsioContext>(socket_.get_executor())),
 	  idle_timer_(socket_.get_executor()),
+	  request_timer_(socket_.get_executor()),
 	  services_(std::move(services)),
 	  ticket_(std::move(ticket)),
 	  peer_(peer_name(socket_)),
@@ -202,7 +218,11 @@ stdexec::sender auto Session::read() {
 	const auto idle = services_->guard.limits().idle_timeout;
 	// Acting on the result after the race, not inside its branches, keeps what
 	// each branch does to just reporting.
-	return with_idle_limit(std::move(bytes), idle_timer_, idle) |
+	return with_time_limit(
+			   std::move(bytes),
+			   idle_timer_,
+			   idle,
+			   [] { return Outcome{.bytes = std::nullopt, .idle = true}; }) |
 		   stdexec::then([this, idle](Outcome result) {
 			   if (result.idle) {
 				   services_->guard.record(Violation::IdleTimeout,
@@ -251,10 +271,59 @@ stdexec::sender auto Session::write() {
 								 exec::asio::use_sender) |
 								 stdexec::then([](size_t) {}));
 		   }) |
-		   stdexec::then([this] { replies_.clear(); }) |
+		   stdexec::then([this] {
+			   log().trace("Sent {} bytes to {}", replies_.size(), peer_);
+			   replies_.clear();
+		   }) |
 		   stdexec::let_error([this](const std::exception_ptr &error) {
 			   fail_io(ConnectionKind::WriteFailed, error);
 			   return stdexec::just();
+		   });
+}
+
+stdexec::sender auto Session::respond() {
+	stdexec::sender auto answering =
+		execute() | stdexec::let_value([this] {
+			if (after_ == AfterReplies::Close) done_ = true;
+			// A client whose request is still incomplete gets no reply.
+			return run_if(!replies_.empty(), write());
+		}) |
+		stdexec::then([] { return false; }); // the limit did not run out
+
+	const auto limit = services_->guard.limits().request_timeout;
+	// What a timeout cuts short depends on where it finds the batch, which is
+	// the delivery guarantee: one still queued for the keyspace thread never
+	// runs (the pool checks the stop request before running it), one already
+	// running completes, and a write in progress is abandoned. Either way the
+	// replies are dropped with the client.
+	// Out of time, close the socket rather than only cancel the write: a stop
+	// request asks Asio to cancel the send, and Windows does not complete a
+	// send the peer is not reading, so the race would wait for it forever.
+	// On a closed socket every pending operation completes. This runs on the
+	// session's strand, so it cannot overlap the write's own handlers, and the
+	// session is over anyway.
+	// Counted here, when the limit runs out, not once the race is over: that
+	// waits for the abandoned work to unwind, which for a batch queued behind a
+	// long one is as late as that one finishes.
+	const auto give_up = [this, limit] {
+		services_->guard.record(Violation::RequestTimeout,
+								peer_,
+								static_cast<size_t>(limit.count()));
+		log().debug("Request from {} not answered within {}s: closing",
+					peer_,
+					limit.count());
+		boost::system::error_code ignored;
+		socket_.close(ignored);
+		return true;
+	};
+	return with_time_limit(std::move(answering),
+						   request_timer_,
+						   limit,
+						   give_up) |
+		   stdexec::then([this](bool timed_out) {
+			   if (!timed_out) return;
+			   replies_.clear();
+			   done_ = true;
 		   });
 }
 
@@ -262,12 +331,7 @@ stdexec::sender auto Session::round() {
 	using stdexec::just;
 
 	return read() | stdexec::let_value([this](std::optional<size_t> bytes) {
-			   return run_if(bytes && ingest(*bytes), execute());
-		   }) |
-		   stdexec::let_value([this] {
-			   if (after_ == AfterReplies::Close) done_ = true;
-			   // A client whose request is still incomplete gets no reply.
-			   return run_if(!replies_.empty(), write());
+			   return run_if(bytes && ingest(*bytes), respond());
 		   }) |
 		   stdexec::let_error([this](const std::exception_ptr &error) {
 			   fail(error);
@@ -294,13 +358,16 @@ SessionSender Session::serve(tcp::socket socket,
 	// are the ones round() did not already turn into "the session is over":
 	// log them and finish normally.
 	return stdexec_ext::supervised<stdexec_ext::FailPolicy::Isolate>(
-		std::move(serving), [](const std::exception_ptr &e) noexcept {
+		std::move(serving),
+		[](const std::exception_ptr &e) noexcept {
 			try {
 				std::rethrow_exception(e);
 			} catch (const std::exception &ex) {
 				log_error({.kind   = ConnectionKind::SessionFailed,
 						   .quoted = ex.what()});
-			} catch (...) { log_error({.kind = ConnectionKind::SessionFailed}); }
+			} catch (...) {
+				log_error({.kind = ConnectionKind::SessionFailed});
+			}
 		});
 }
 

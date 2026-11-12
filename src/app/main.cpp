@@ -51,6 +51,8 @@ redis::NetLimits net_limits(const CLI::App &app) {
 			app.get_option("--client-output-buffer-limit")->as<size_t>(),
 		.idle_timeout =
 			std::chrono::seconds(app.get_option("--timeout")->as<int64_t>()),
+		.request_timeout = std::chrono::seconds(
+			app.get_option("--request-timeout")->as<int64_t>()),
 	};
 }
 

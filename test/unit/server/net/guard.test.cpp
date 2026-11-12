@@ -81,7 +81,8 @@ SCENARIO("The guard bounds the buffers", "[net][guard]") {
 	THEN("every violation has a description") {
 		for (const auto violation :
 			 {Violation::TooManyClients, Violation::QueryBufferFull,
-			  Violation::OutputBufferFull, Violation::IdleTimeout})
+			  Violation::OutputBufferFull, Violation::IdleTimeout,
+			  Violation::RequestTimeout})
 			CHECK_FALSE(format_as(violation).empty());
 	}
 }

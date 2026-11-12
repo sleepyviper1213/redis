@@ -1,5 +1,6 @@
-#include "server/net/detail/asio_context.hpp"
 #include "server/net/detail/session.hpp"
+
+#include "server/net/detail/asio_context.hpp"
 #include "server/services.hpp"
 #include "support/temp_file.hpp"
 
@@ -17,12 +18,17 @@
 
 #include <array>
 #include <chrono>
+#include <concepts>
+#include <cstddef>
 #include <future>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -47,10 +53,11 @@ enum class Heard { Data, Closed, Silence };
  */
 class SessionFixture {
 public:
-	explicit SessionFixture(std::chrono::seconds idle_timeout = 0s)
-		: services_(std::make_shared<Services>(
-			  file_.path(), false, std::nullopt,
-			  NetLimits{.idle_timeout = idle_timeout})),
+	/// With \p threaded, commands run on a keyspace thread of their own (as
+	/// with --io-threads above 1); otherwise inline on the session's thread.
+	explicit SessionFixture(NetLimits limits = {}, bool threaded = false)
+		: services_(std::make_shared<Services>(file_.path(), threaded,
+											   std::nullopt, limits)),
 		  work_(asio::make_work_guard(io_)),
 		  client_(io_),
 		  drain_(io_.get_executor()) {
@@ -84,6 +91,22 @@ public:
 
 	[[nodiscard]] NetGuard &guard() { return services_->guard; }
 
+	/// Runs \p fn on the keyspace thread, blocking until it has: how a test
+	/// holds that thread busy, or reads the keyspace where it lives.
+	/// \tparam F The callable's type.
+	template <std::invocable F>
+	auto on_keyspace(F fn) {
+		auto result = stdexec::sync_wait(services_->keyspace.run_on(
+			std::move(fn), stdexec::inline_scheduler{}));
+		if constexpr (!std::is_void_v<std::invoke_result_t<F>>)
+			return std::get<0>(result.value());
+	}
+
+	/// How many keys the keyspace holds, read on its own thread.
+	size_t keys() {
+		return on_keyspace([this] { return services_->db.size(); });
+	}
+
 	void send(std::string_view bytes) {
 		asio::write(client_, asio::buffer(bytes.data(), bytes.size()));
 	}
@@ -115,8 +138,9 @@ public:
 		std::string received;
 		const auto deadline = std::chrono::steady_clock::now() + limit;
 		while (received.size() < total) {
-			const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
-				deadline - std::chrono::steady_clock::now());
+			const auto left =
+				std::chrono::duration_cast<std::chrono::milliseconds>(
+					deadline - std::chrono::steady_clock::now());
 			if (left <= 0ms) break;
 			std::string part;
 			if (listen(left, part) != Heard::Data) break;
@@ -197,7 +221,7 @@ SCENARIO("A session answers over a real connection", "[net][session]") {
 
 SCENARIO("A session closes idle clients", "[net][session][timeout]") {
 	GIVEN("a one second idle limit") {
-		SessionFixture fixture(1s);
+		SessionFixture fixture(NetLimits{.idle_timeout = 1s});
 
 		WHEN("the client says nothing") {
 			std::string data;
@@ -242,13 +266,91 @@ SCENARIO("A session closes idle clients", "[net][session][timeout]") {
 	}
 }
 
+SCENARIO("A session closes clients whose requests are not answered in time",
+		 "[net][session][timeout]") {
+	GIVEN("a one second request limit") {
+		SessionFixture fixture(NetLimits{.request_timeout = 1s});
+
+		WHEN("the client is answered in time") {
+			THEN("nothing is counted") {
+				CHECK(fixture.ping_answered());
+				CHECK(fixture.ping_answered());
+				CHECK(fixture.guard().count(Violation::RequestTimeout) == 0);
+			}
+		}
+	}
+
+	GIVEN("a one second request limit, and a keyspace thread busy for two") {
+		SessionFixture fixture(NetLimits{.request_timeout = 1s}, true);
+		std::jthread busy(
+			[&fixture] { fixture.on_keyspace([] { std::this_thread::sleep_for(2s); }); });
+		std::this_thread::sleep_for(100ms); // the busy job is queued first
+
+		WHEN("the client sends a write, which waits behind that job") {
+			fixture.send("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n");
+			std::string data;
+			const auto heard = fixture.listen(4s, data);
+
+			THEN("the server hangs up and counts it, and the write never runs") {
+				CHECK(heard == Heard::Closed);
+				CHECK(fixture.guard().count(Violation::RequestTimeout) == 1);
+				CHECK(fixture.join(3s));
+				// The delivery guarantee: a batch still queued when the limit
+				// runs out is dropped, not applied late.
+				CHECK(fixture.keys() == 0);
+			}
+		}
+	}
+
+#ifndef _WIN32
+	// Windows loopback takes even 128 MiB in one write_some, unread, so a
+	// write never stalls there; the finite socket buffers of Linux and macOS
+	// do stall it.
+	GIVEN("a one second request limit, and a stored 4 MiB value") {
+		SessionFixture fixture(NetLimits{.request_timeout = 1s});
+		const std::string value(size_t{4} << 20, 'x');
+		fixture.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+								 value.size(),
+								 value));
+		REQUIRE(fixture.read_exactly(5, 10s) == "+OK\r\n");
+
+		WHEN("the client asks for more than the connection holds, unread") {
+			// 32 GETs of the value: 128 MiB of replies, more than the socket
+			// buffers at either end, so the write stalls until the limit gives
+			// up on it.
+			std::string gets;
+			for (int i = 0; i < 32; ++i)
+				gets += "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n";
+			fixture.send(gets);
+
+			THEN("the server abandons the write, hangs up and counts it") {
+				CHECK(fixture.join(6s));
+				CHECK(fixture.guard().count(Violation::RequestTimeout) == 1);
+			}
+		}
+	}
+#endif
+
+	GIVEN("no request limit") {
+		SessionFixture fixture;
+
+		WHEN("the client is served") {
+			THEN("nothing is counted") {
+				CHECK(fixture.ping_answered());
+				CHECK(fixture.guard().count(Violation::RequestTimeout) == 0);
+			}
+		}
+	}
+}
+
 SCENARIO("A reply larger than the socket buffer arrives whole",
 		 "[net][session]") {
 	GIVEN("a connected client that stored a 4 MiB value") {
 		SessionFixture fixture;
 		const std::string value(size_t{4} << 20, 'x');
-		fixture.send(fmt::format(
-			"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n", value.size(), value));
+		fixture.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+								 value.size(),
+								 value));
 		REQUIRE(fixture.read_exactly(5, 10s) == "+OK\r\n");
 
 		WHEN("it reads the value back") {

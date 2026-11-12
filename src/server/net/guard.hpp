@@ -4,7 +4,6 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -18,6 +17,7 @@ enum class Violation : uint8_t {
 	QueryBufferFull,
 	OutputBufferFull,
 	IdleTimeout,
+	RequestTimeout,
 	Count_, ///< Number of kinds; not a violation.
 };
 

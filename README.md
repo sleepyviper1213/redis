@@ -175,6 +175,8 @@ scripts/run.sh linux-gcc Release -- --port 6379 --dump ./dump.snap
 | `--host`, `--port` | `127.0.0.1`, `6379` | Listen address (`REDIS_HOST`, `REDIS_PORT`) |
 | `--io-threads` | `1` | Network I/O threads; above 1, commands run on a separate thread (`REDIS_IO_THREADS`) |
 | `--dump` | `dump.snap` | Snapshot file (`REDIS_DUMP_FILE`) |
+| `--timeout` | `0` (never) | Close a client that sends nothing for this many seconds (`REDIS_TIMEOUT`) |
+| `--request-timeout` | `0` (never) | Close a client whose request is not executed and answered within this many seconds; not a Redis setting (`REDIS_REQUEST_TIMEOUT`) |
 | `--appendonly` | off | Enable the append-only file; write every command to it and replay at startup (`REDIS_APPENDONLY`) |
 | `--appendfsync` | `everysec` | AOF fsync policy: `always`, `everysec`, `no` (`REDIS_APPENDFSYNC`) |
 | `--appenddir` | `appendonlydir` | Directory for AOF files (`REDIS_APPENDDIR`) |

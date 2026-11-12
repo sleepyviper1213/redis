@@ -18,6 +18,8 @@ size_t limit_of(const NetLimits &limits, Violation violation) noexcept {
 	case Violation::OutputBufferFull: return limits.max_output_buffer;
 	case Violation::IdleTimeout:
 		return static_cast<size_t>(limits.idle_timeout.count());
+	case Violation::RequestTimeout:
+		return static_cast<size_t>(limits.request_timeout.count());
 	case Violation::Count_: break;
 	}
 	return 0;
@@ -30,6 +32,7 @@ std::string_view format_as(Violation violation) noexcept {
 	case Violation::QueryBufferFull: return "query buffer limit exceeded";
 	case Violation::OutputBufferFull: return "output buffer limit exceeded";
 	case Violation::IdleTimeout: return "idle timeout";
+	case Violation::RequestTimeout: return "request timeout";
 	case Violation::Count_: break;
 	}
 	return "unknown";
