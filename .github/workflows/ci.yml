@@ -113,8 +113,46 @@ jobs:
       - name: Compiler cache statistics
         if: always()
         run: ccache --show-stats
+      # The server runs under the same sanitizer as the tests. The scripts stop
+      # it with SIGTERM and fail on an unclean exit or any sanitizer report on
+      # its stderr, so a race found while serving fails the step even when
+      # every reply was right. The suppressions are the unit tests' (see
+      # cmake/presets/testing.json).
+      - name: Sanitizer options for the server
+        if: matrix.config == 'ThreadSanitizer'
+        run: echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$GITHUB_WORKSPACE/test/tsan.supp" >> "$GITHUB_ENV"
       - name: Integration test
         run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }}
+      - name: Integration test, 4 I/O threads
+        env:
+          SERVER_ARGS: --io-threads 4
+        run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6382
+      # Every reply checked against a model, then the same-key
+      # linearizability race. Smaller under TSan, which is ~10x slower.
+      - name: Stress test
+        env:
+          STRESS_ARGS: ${{ matrix.config == 'ThreadSanitizer' && '--clients 8 --ops 4000 --race-rounds 500' || '--clients 16 --ops 20000' }}
+        run: scripts/stress_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6383
+      - name: Stress test, 4 I/O threads
+        env:
+          SERVER_ARGS: --io-threads 4
+          STRESS_ARGS: ${{ matrix.config == 'ThreadSanitizer' && '--clients 8 --ops 4000 --race-rounds 500' || '--clients 16 --ops 20000' }}
+        run: scripts/stress_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6384
+      # Real Redis (Debian's, as in bench.yml) as the specification: the same
+      # command stream to both, every reply byte compared. Once is enough, on
+      # the Release build. Not yet required: the first runs are expected to
+      # find divergences to triage; drop continue-on-error once it passes.
+      - name: Install Redis for the differential test
+        if: matrix.preset == 'linux-gcc-release'
+        run: |
+          apt-get install -y --no-install-recommends redis-server python3
+          redis-server --version
+      - name: Differential test against Redis
+        if: matrix.preset == 'linux-gcc-release'
+        continue-on-error: true
+        env:
+          DIFF_ARGS: --keep-going --ops 200000
+        run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }}
 
   macos:
     name: macos-arm64-llvm-debug

@@ -2,6 +2,7 @@
 #include <fmt/format.h>
 #include <hiredis/hiredis.h>
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 
@@ -58,9 +59,16 @@ private:
 	std::unique_ptr<redisReply, Deleter> rep_;
 };
 
+/// The server's port: REDIS_TEST_PORT (set by scripts/test_server.sh), else
+/// 6380.
+inline int test_port() {
+	const char *env = std::getenv("REDIS_TEST_PORT"); // NOLINT(concurrency-mt-unsafe): read before any thread starts
+	return env != nullptr ? std::atoi(env) : 6380;
+}
+
 class TestClient {
 public:
-	TestClient(const std::string &host = "127.0.0.1", int port = 6380) {
+	TestClient(const std::string &host = "127.0.0.1", int port = test_port()) {
 		if (!context_.connect(host, port)) error_ = context_.error();
 	}
 

@@ -7,6 +7,10 @@
 # with several I/O threads:
 #   SERVER_ARGS="--io-threads 4" scripts/test_server.sh
 #
+# The server is then stopped with SIGTERM and must exit cleanly, with nothing
+# from a sanitizer on its stderr: with a sanitizer preset, a race or a leak in
+# the server fails the run.
+#
 # Unit tests need no server and run through CTest instead:
 #   ctest --preset linux-gcc-debug
 set -euo pipefail
@@ -20,26 +24,14 @@ PORT="${3:-6380}"
 SERVER="$(locate_binary "$PRESET" "$CONFIG" redis_server)"
 TESTS="$(locate_binary "$PRESET" "$CONFIG" redis_integration_test)"
 WORKDIR="$(mktemp -d)"
-LOG="$WORKDIR/redis_server.log"
 
-"$SERVER" --port "$PORT" --log-level info --log-file "$LOG" \
-    --dump "$WORKDIR/dump.snap" ${SERVER_ARGS:-} >/dev/null 2>&1 &
-SERVER_PID=$!
+# shellcheck disable=SC2086 # SERVER_ARGS is a list of words
+start_server "$SERVER" "$PORT" "$WORKDIR" ${SERVER_ARGS:-}
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
-# Wait up to 10s for the port to accept connections.
-for _ in $(seq 100); do
-    if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then break; fi
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "error: server exited during startup:" >&2
-        cat "$LOG" >&2
-        exit 1
-    fi
-    sleep 0.1
-done
-
-echo "Running $TESTS against $SERVER on port $PORT"
-if ! "$TESTS" --order rand; then
-    echo "Integration tests failed. Server log: $LOG" >&2
+echo "Running $TESTS against $SERVER on port $PORT ${SERVER_ARGS:-}"
+if ! REDIS_TEST_PORT="$PORT" "$TESTS" --order rand; then
+    echo "Integration tests failed. Server log: $WORKDIR/redis_server.log" >&2
     exit 1
 fi
+stop_server "$WORKDIR"

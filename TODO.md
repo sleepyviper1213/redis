@@ -55,32 +55,77 @@ Design notes and future work. Nothing here is implemented yet.
 
 ## Concurrency verification
 
-- [ ] **Same-key linearizability test.** Many clients racing `SET` / `DEL` /
-  `GET` on one key; check every client's observed history is consistent with
-  some single order (and that each client's own requests stay in order).
+- [x] **Same-key linearizability test.** Phase 4 of the stress test: several
+  clients (`--race-clients`, 8) pipeline `SET` / `DEL` / `GET` on one key in
+  rounds (`--race-rounds`, 2000) separated by a barrier, so nothing is in
+  flight between rounds. Each round is checked by search
+  (`test/stress/linearizability.hpp`) from every value the last round may have
+  left: some order must keep each client's own order and real time and explain
+  every reply. Matching reads are placed greedily (provably without loss), so
+  reads never branch: 200 rounds check in ~1.4 s on a Debug build. The checker
+  has its own unit tests (`redis_stress_check_test`, run by CTest), so one that
+  accepts everything cannot make a stress run pass. Passes on mingw with 1 and
+  4 I/O threads.
 - [x] **Verifying stress test** (`test/stress`, `scripts/stress_server.sh`):
   private key partitions checked against a local model, strict RESP validation
   through `hiredis`, shared counter/set totals, random fragmentation, malformed
   and garbage input, a stall detector, and a seed plus per-connection trace so
   a failure replays and points at the exact request and byte. Checked against a
   fault-injecting proxy (flipped, duplicated and dropped replies are all caught).
-  Still open: run it on Linux presets and under ThreadSanitizer (below), and
-  add commands with array replies (`MGET`, `SMEMBERS`, `LRANGE`), which the
-  reply reader in the test does not yet handle.
-- [ ] **Differential test against real Redis** (Linux): same deterministic
-  command stream to both, compare reply bytes, report the first divergence.
-- [ ] **Run the multi-threaded mode under ThreadSanitizer** (`--io-threads N`)
-  on a Linux preset; it could not be run on mingw. Half done: CI's
-  `linux-gcc-tsan` job runs the unit tests under TSan, including the listener
-  on 4 I/O threads and the threaded executor, and passes. Still open: the
-  server itself with `--io-threads N` under TSan, driven by the integration or
-  stress suite.
-- [ ] **Audit `BGSAVE` forking from a multithreaded process.** The child must
-  only touch memory it owns and then `_exit`; check logging, allocator and any
-  locks held by the I/O threads at fork time.
-- [ ] **Run the integration suite with several I/O threads on Linux:**
-  `SERVER_ARGS="--io-threads 4" scripts/test_server.sh`. It passes on mingw
-  with 1 and 4 I/O threads.
+  Array replies are modelled too: `MGET`, `LPUSH`/`RPUSH`/`LPOP`/`RPOP`/
+  `LRANGE`/`LLEN` on per-client lists, `SADD`/`SREM`/`SMEMBERS` (compared
+  sorted)/`SISMEMBER`/`SCARD` on per-client sets, and the final sweep re-reads
+  the lists and sets.
+- [ ] **Differential test against real Redis** (`scripts/diff_test.py`, started
+  by `scripts/diff_server.sh`): a seeded stream over a small keyspace (wrong
+  types, missing keys, odd ranges, `SET` option combinations, bad arity,
+  unknown commands) to both servers one request at a time, raw reply bytes
+  compared (cut from the stream by hand, so `$-1` and `*-1` differ), unordered
+  replies sorted. Reports the first divergence with the requests before it;
+  `--keep-going` lists up to 20 and counts them per command, `--loose-errors`
+  compares error codes only. Wired into CI's `linux-gcc-release` job against
+  Debian's Redis, `continue-on-error` until its first findings are triaged
+  (one is likely: `LPOP key count` on a missing key answers `$-1`, Redis
+  `*-1`). Still open: run it, fix or accept each divergence, then make the
+  step required.
+- [ ] **Run the multi-threaded mode under ThreadSanitizer** (`--io-threads N`).
+  CI's `linux-gcc-tsan` job runs the unit tests under TSan (passing), and now
+  also the integration suite and the stress test against a TSan server with 1
+  and 4 I/O threads. `scripts/common.sh`'s `stop_server` stops the server with
+  SIGTERM and fails on an unclean exit or any sanitizer report on its stderr
+  (which the scripts used to discard), so a race found while serving fails the
+  step even when every reply was right. Still open: the first CI run.
+- [x] **Audit `BGSAVE` forking from a multithreaded process.** The fork happens
+  on the thread executing commands while the I/O threads, the async logger's
+  worker and the AOF's fsync thread may be anywhere. What the child does:
+  `save_snapshot()` and `close_inherited_descriptors()`, then `_exit`.
+  - *Found and fixed:* the child closed the crash handler's log descriptor
+    with the rest, so a crash in the child reported only to stderr, and the
+    number could be reused by the snapshot file the child opens next, putting
+    the report inside the snapshot. `os::keep_open_in_children()` now exempts
+    it; tested in `unit/core/os/child_process.test.cpp`.
+  - *Logging:* the child never logs (the snapshot code and `fork_and_run`
+    report through the pipe instead), so a logger mutex held at the fork, or
+    the async logger's queue, is never touched.
+  - *Allocator:* the child allocates (paths, `fmt`, cereal's buffers,
+    `opendir`). glibc's and macOS' malloc take their locks across `fork()`, and
+    the keyspace's allocator (`common/store`) has no locks; a test forks while
+    four threads allocate. A future custom allocator must be fork-safe too.
+  - *Shared state:* the keyspace is read through `const Database &`; the
+    debug-build thread-owner check passes because the child's only thread has
+    the forking thread's id. Nothing the other threads own is read.
+  - *Signals:* inherited handlers are harmless (Asio's signal pipe is closed
+    in the child), and the parent stops it with SIGKILL.
+  - *Residual risk:* if cereal throws in the child (a failed write), the
+    unwinder takes the dynamic loader's lock through `dl_iterate_phdr`; had
+    another thread held it at the fork, the child would hang and the save
+    never finish. Unlikely (no thread loads libraries while serving), and not
+    seen; a timeout on the child would bound it.
+- [ ] **Run the integration suite with several I/O threads on Linux:** now a
+  CI step on every Linux preset (`SERVER_ARGS="--io-threads 4"`). It passes on
+  mingw with 1 and 4 I/O threads. Still open: the first CI run. (The script's
+  port argument never reached the tests, which assumed 6380; it is now passed
+  as `REDIS_TEST_PORT`.)
 
 ## Executor hand-off and fairness
 
