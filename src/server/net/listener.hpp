@@ -3,8 +3,7 @@
 #include "core/stdexec_ext/task.hpp"
 #include "net_error.hpp"
 
-#include "detail/asio_context.hpp"
-#include "detail/session.hpp"
+#include "detail/sessions.hpp"
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -126,8 +125,7 @@ public:
 	/// Completes once every session has finished. Only meaningful after
 	/// stop().
 	[[nodiscard]] stdexec::sender auto drained() noexcept {
-		return stdexec::starts_on(drain_context_.get_scheduler(),
-								  scope_.join());
+		return sessions_.drained();
 	}
 
 private:
@@ -138,9 +136,8 @@ private:
 	bool concurrent_;
 	/// Paces the accept loop after a failed accept, so it cannot spin.
 	boost::asio::steady_timer retry_timer_;
-	/// Where drained() completes: join needs a scheduler to complete on.
-	detail::AsioContext drain_context_;
-	stdexec::counting_scope scope_;
+	/// Every accepted client's session.
+	detail::Sessions sessions_;
 };
 
 /// The server's listener, on a plain tcp::acceptor.

@@ -6,11 +6,10 @@
  * acceptor of their own.
  */
 
-#include "server/net/listener.hpp"
-
 #include "core/stdexec_ext/retry.hpp"
 #include "server/log_channels.hpp"
 #include "server/net/formatter.hpp" // IWYU pragma: keep (endpoint formatter)
+#include "server/net/listener.hpp"
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
@@ -50,7 +49,7 @@ BasicListener<A>::BasicListener(A acceptor, boost::asio::any_io_executor ex,
 	  services_(std::move(services)),
 	  concurrent_(concurrent),
 	  retry_timer_(ex_),
-	  drain_context_(ex_) {}
+	  sessions_(ex_) {}
 
 template <Acceptor A>
 std::expected<void, ListenError>
@@ -84,9 +83,7 @@ stdexec_ext::InlineTask<void> BasicListener<A>::run() {
 					   exec::asio::use_sender);
 			   }) |
 			   then([this](tcp::socket client) {
-				   stdexec::spawn(
-					   detail::Session::serve(std::move(client), services_),
-					   scope_.get_token());
+				   sessions_.serve(std::move(client), services_);
 			   });
 	};
 
@@ -126,7 +123,7 @@ void BasicListener<A>::stop() noexcept {
 		boost::system::error_code ignored;
 		acceptor_.close(ignored);
 	});
-	scope_.request_stop();
+	sessions_.stop();
 }
 
 } // namespace redis
