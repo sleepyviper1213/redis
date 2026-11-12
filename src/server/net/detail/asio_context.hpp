@@ -21,7 +21,9 @@ namespace detail {
  * back onto, for example, a session's strand after it ran on another thread.
  *
  * Must outlive every sender scheduled on it. Follows the shape of stdexec's
- * own asio_thread_pool.
+ * own asio_thread_pool, and with it reaches into exec::_pool, an internal
+ * namespace: when stdexec renames it again, compare with
+ * exec/asio/asio_thread_pool.hpp.
  */
 class AsioContext : public exec::thread_pool_base<AsioContext> {
 public:
@@ -34,16 +36,17 @@ public:
 
 private:
 	friend struct ::exec::thread_pool_base<AsioContext>;
-
-	template <class PoolType, class Receiver>
-	friend struct exec::_pool_::opstate;
+	/// What calls enqueue() and forward_progress_guarantee().
+	friend struct ::exec::thread_pool_access;
 
 	[[nodiscard]] static constexpr auto forward_progress_guarantee()
 		-> stdexec::forward_progress_guarantee {
 		return stdexec::forward_progress_guarantee::parallel;
 	}
 
-	void enqueue(exec::_pool_::task_base *task,
+	/// Runs \p task on executor_. The pool checks a stop request only when the
+	/// task runs, so a queued task is never abandoned early.
+	void enqueue(exec::_pool::_task_base *task,
 				 std::uint32_t tid = 0) noexcept {
 		net::post(executor_, [task, tid] { task->execute_(task, tid); });
 	}
