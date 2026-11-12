@@ -3,28 +3,23 @@
 #include "core/stdexec_ext/supervise.hpp"
 #include "server/net/detail/listener_impl.tpp" // instantiates the failing one
 #include "server/services.hpp"
+#include "support/loopback.hpp"
 #include "support/temp_file.hpp"
 
 #include <boost/asio/error.hpp>
-#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/read.hpp>
 #include <boost/asio/strand.hpp>
-#include <boost/asio/write.hpp>
 #include <boost/system/system_error.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <exec/variant_sender.hpp>
 #include <stdexec/execution.hpp>
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <exception>
-#include <future>
 #include <memory>
 #include <optional>
-#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -36,9 +31,6 @@ namespace asio = boost::asio;
 using asio::ip::tcp;
 
 namespace {
-
-constexpr std::string_view PING = "*1\r\n$4\r\nPING\r\n";
-constexpr std::string_view PONG = "+PONG\r\n";
 
 /// Which accepts a FailingAcceptor fails, shared by the test and the acceptor.
 struct FaultPlan {
@@ -96,8 +88,8 @@ private:
 };
 
 /**
- * \brief A listener on an ephemeral loopback port, served by \p threads
- * I/O threads. Every wait has a deadline so a hang fails the test.
+ * \brief A listener on an ephemeral loopback port, served by \p threads I/O
+ * threads, with its accept loop running as the server runs it.
  *
  * \tparam A The listener's acceptor: tcp::acceptor, as in the server, or
  *         FailingAcceptor to inject failed accepts.
@@ -112,10 +104,10 @@ public:
 		// one, commands may run inline on it.
 		: services_(std::make_shared<Services>(file_.path(), threads > 1,
 											   std::nullopt, NetLimits{})),
-		  work_(asio::make_work_guard(io_)),
-		  listener_(make_listener(io_, services_, threads, std::move(plan))) {
-		const auto bound = listener_.listen("127.0.0.1", 0);
-		REQUIRE(bound.has_value());
+		  context_(threads),
+		  listener_(make_listener(context_.io(), services_, threads,
+								  std::move(plan))) {
+		REQUIRE(listener_.listen("127.0.0.1", 0).has_value());
 		// As the server does, but a failure is recorded, not fatal: the tests
 		// check that stopping ends the loop without one.
 		stdexec::spawn(
@@ -125,8 +117,6 @@ public:
 					loop_failed_ = true;
 				}),
 			loop_scope_.get_token());
-		for (unsigned i = 0; i < threads; ++i)
-			threads_.emplace_back([this] { io_.run(); });
 	}
 
 	BasicListenerFixture(const BasicListenerFixture &)            = delete;
@@ -134,56 +124,25 @@ public:
 
 	~BasicListenerFixture() {
 		listener_.stop();
-		if (!drained_) drain(5s);
-		work_.reset();
-		for (auto &t : threads_) t.join();
+		if (!drained_) drain_within(5s);
 	}
 
-	/// A connected client socket, or a failed one if nothing accepts.
-	tcp::socket connect() {
-		tcp::socket client(io_);
-		client.connect({asio::ip::make_address("127.0.0.1"), listener_.port()});
-		return client;
-	}
-
-	/// PING on \p client; true if the PONG arrives.
-	static bool ping(tcp::socket &client) {
-		asio::write(client, asio::buffer(PING.data(), PING.size()));
-		std::array<char, PONG.size()> reply{};
-		boost::system::error_code ec;
-		asio::read(client, asio::buffer(reply), ec);
-		return !ec && std::string_view(reply.data(), reply.size()) == PONG;
-	}
-
-	/// True if the client sees the server hang up within \p limit.
-	bool hung_up(tcp::socket &client, std::chrono::milliseconds limit) {
-		auto done = std::async(std::launch::async, [&client] {
-			std::array<char, 16> chunk{};
-			boost::system::error_code ec;
-			client.read_some(asio::buffer(chunk), ec);
-			return static_cast<bool>(ec);
-		});
-		if (done.wait_for(limit) == std::future_status::ready)
-			return done.get();
-		boost::system::error_code ignored;
-		client.close(ignored); // unblocks the reader
-		done.wait();
-		return false;
-	}
+	/// A client connected to the listener; throws if refused.
+	test::Client connect() { return {context_.io(), listener_.port()}; }
 
 	void stop() { listener_.stop(); }
 
 	/// Whether the accept loop ended with an error rather than by stopping.
 	[[nodiscard]] bool loop_failed() const { return loop_failed_; }
 
-	/// True if the loop and every session finished within \p limit.
-	bool drain(std::chrono::milliseconds limit) {
-		auto draining = std::async(std::launch::async, [this] {
-			stdexec::sync_wait(
-				stdexec::when_all(listener_.drained(), loop_scope_.join()));
-		});
-		drained_      = draining.wait_for(limit) == std::future_status::ready;
-		return drained_;
+	/// Requires the accept loop and every session to finish within \p limit;
+	/// see test::require_finishes_within.
+	void drain_within(std::chrono::milliseconds limit) {
+		test::require_finishes_within(
+			stdexec::when_all(listener_.drained(), loop_scope_.join()),
+			limit,
+			"The listener");
+		drained_ = true;
 	}
 
 private:
@@ -207,15 +166,13 @@ private:
 
 	test::TempFile file_;
 	std::shared_ptr<Services> services_;
-	asio::io_context io_;
-	asio::executor_work_guard<asio::io_context::executor_type> work_;
+	test::RunningContext context_;
 	BasicListener<A> listener_;
 	/// Owns the accept loop, as the server's when_any does; after listener_,
 	/// so it is destroyed first.
 	stdexec::simple_counting_scope loop_scope_;
 	std::atomic<bool> loop_failed_ = false;
-	std::vector<std::thread> threads_;
-	bool drained_ = false;
+	bool drained_                  = false;
 };
 
 /// The listener exactly as the server runs it.
@@ -233,18 +190,18 @@ SCENARIO("A listener accepts clients", "[net][listener]") {
 			auto client = fixture.connect();
 
 			THEN("it is served, repeatedly") {
-				CHECK(ListenerFixture::ping(client));
-				CHECK(ListenerFixture::ping(client));
+				CHECK(client.ping_answered());
+				CHECK(client.ping_answered());
 			}
 		}
 
 		WHEN("many clients connect at once") {
-			std::vector<tcp::socket> clients;
+			std::vector<test::Client> clients;
 			clients.reserve(32);
 			for (int i = 0; i < 32; ++i) clients.push_back(fixture.connect());
 
 			THEN("every one is served") {
-				for (auto &c : clients) CHECK(ListenerFixture::ping(c));
+				for (auto &c : clients) CHECK(c.ping_answered());
 			}
 		}
 	}
@@ -253,12 +210,12 @@ SCENARIO("A listener accepts clients", "[net][listener]") {
 		ListenerFixture fixture(4);
 
 		WHEN("many clients connect at once") {
-			std::vector<tcp::socket> clients;
+			std::vector<test::Client> clients;
 			clients.reserve(32);
 			for (int i = 0; i < 32; ++i) clients.push_back(fixture.connect());
 
 			THEN("every one is served, each on its own strand") {
-				for (auto &c : clients) CHECK(ListenerFixture::ping(c));
+				for (auto &c : clients) CHECK(c.ping_answered());
 			}
 		}
 	}
@@ -272,7 +229,7 @@ SCENARIO("A listener stops", "[net][listener][shutdown]") {
 			fixture.stop();
 
 			THEN("the accept loop ends without an error, and drains") {
-				CHECK(fixture.drain(3s));
+				fixture.drain_within(3s);
 				CHECK(!fixture.loop_failed());
 			}
 		}
@@ -281,14 +238,14 @@ SCENARIO("A listener stops", "[net][listener][shutdown]") {
 	GIVEN("a server with a live client") {
 		ListenerFixture fixture;
 		auto client = fixture.connect();
-		REQUIRE(ListenerFixture::ping(client));
+		REQUIRE(client.ping_answered());
 
 		WHEN("it is stopped") {
 			fixture.stop();
 
 			THEN("the client is hung up on and everything drains") {
-				CHECK(fixture.hung_up(client, 3s));
-				CHECK(fixture.drain(3s));
+				CHECK(client.hangs_up_within(3s));
+				fixture.drain_within(3s);
 				CHECK(!fixture.loop_failed());
 			}
 		}
@@ -297,14 +254,14 @@ SCENARIO("A listener stops", "[net][listener][shutdown]") {
 			fixture.stop();
 			fixture.stop();
 
-			THEN("that is harmless") { CHECK(fixture.drain(3s)); }
+			THEN("that is harmless") { fixture.drain_within(3s); }
 		}
 	}
 
 	GIVEN("a stopped server") {
 		ListenerFixture fixture;
 		fixture.stop();
-		REQUIRE(fixture.drain(3s));
+		fixture.drain_within(3s);
 
 		THEN("new connections are refused") { CHECK_THROWS(fixture.connect()); }
 	}
@@ -322,7 +279,7 @@ SCENARIO("A listener survives failed accepts", "[net][listener][fault]") {
 
 			THEN(
 				"it is served once the failures are over, after a pause each") {
-				CHECK(FailingListenerFixture::ping(client));
+				CHECK(client.ping_answered());
 				CHECK(plan->injected == 3);
 				// A lower bound only: each failure waits ACCEPT_RETRY_DELAY
 				// before the next try, so the loop cannot have spun.
@@ -353,7 +310,7 @@ SCENARIO("A listener survives failed accepts", "[net][listener][fault]") {
 			fixture.stop();
 
 			THEN("the loop ends without an error, and drains") {
-				CHECK(fixture.drain(3s));
+				fixture.drain_within(3s);
 				CHECK(!fixture.loop_failed());
 			}
 		}

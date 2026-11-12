@@ -1,30 +1,23 @@
 #include "server/net/detail/session.hpp"
 
-#include "server/net/detail/asio_context.hpp"
+#include "server/net/detail/sessions.hpp"
 #include "server/services.hpp"
+#include "support/loopback.hpp"
 #include "support/temp_file.hpp"
 
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
 #include <boost/asio/use_future.hpp>
-#include <boost/asio/write.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
 #include <stdexec/execution.hpp>
 
-#include <array>
 #include <chrono>
 #include <concepts>
 #include <cstddef>
-#include <future>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -34,22 +27,14 @@ using namespace redis;
 using namespace std::chrono_literals;
 namespace asio = boost::asio;
 using asio::ip::tcp;
+using test::Heard;
 
 namespace {
 
-constexpr std::string_view PING = "*1\r\n$4\r\nPING\r\n";
-constexpr std::string_view PONG = "+PONG\r\n";
-
-/// How a client's wait for the server ended.
-enum class Heard { Data, Closed, Silence };
-
 /**
- * \brief A session served over a real loopback connection, in-process.
- *
- * Networking needs no special tools: the I/O runs on a thread of the
- * fixture's own io_context, the test plays the client over a real socket, and
- * every wait has a deadline so a hung session fails the test instead of
- * hanging it.
+ * \brief One session served over a real loopback connection, in-process:
+ * the server side runs on the fixture's I/O thread, and the test is the
+ * client.
  */
 class SessionFixture {
 public:
@@ -58,38 +43,28 @@ public:
 	explicit SessionFixture(NetLimits limits = {}, bool threaded = false)
 		: services_(std::make_shared<Services>(file_.path(), threaded,
 											   std::nullopt, limits)),
-		  work_(asio::make_work_guard(io_)),
-		  client_(io_),
-		  drain_(io_.get_executor()) {
-		io_thread_ = std::thread([this] { io_.run(); });
-
-		tcp::acceptor acceptor(io_, {asio::ip::make_address("127.0.0.1"), 0});
-		auto accepted =
-			acceptor.async_accept(asio::make_strand(io_), asio::use_future);
-		client_.connect(acceptor.local_endpoint());
-		// Same as the listener: each session on a strand of its own.
-		tcp::socket server_side = accepted.get();
-		// A small send buffer, so a big reply is only partly taken at once and
-		// the session has to send the rest asynchronously.
-		boost::system::error_code ignored;
-		server_side.set_option(asio::socket_base::send_buffer_size(4096),
-							   ignored);
-		stdexec::spawn(
-			detail::Session::serve(std::move(server_side), services_),
-			scope_.get_token());
-	}
+		  sessions_(context_.executor()),
+		  client(connect_and_serve()) {}
 
 	SessionFixture(const SessionFixture &)            = delete;
 	SessionFixture &operator=(const SessionFixture &) = delete;
 
 	~SessionFixture() {
-		scope_.request_stop();
-		if (!joined_) join(5s);
-		work_.reset();
-		io_thread_.join();
+		sessions_.stop();
+		if (!drained_) drain_within(5s);
 	}
 
 	[[nodiscard]] NetGuard &guard() { return services_->guard; }
+
+	/// Cancels the session, as the listener's stop() does.
+	void stop() { sessions_.stop(); }
+
+	/// Requires the session to finish within \p limit; see
+	/// test::require_finishes_within.
+	void drain_within(std::chrono::milliseconds limit) {
+		test::require_finishes_within(sessions_.drained(), limit, "The session");
+		drained_ = true;
+	}
 
 	/// Runs \p fn on the keyspace thread, blocking until it has: how a test
 	/// holds that thread busy, or reads the keyspace where it lives.
@@ -107,83 +82,34 @@ public:
 		return on_keyspace([this] { return services_->db.size(); });
 	}
 
-	void send(std::string_view bytes) {
-		asio::write(client_, asio::buffer(bytes.data(), bytes.size()));
-	}
-
-	/// Waits up to \p limit for the server to send something or hang up.
-	Heard listen(std::chrono::milliseconds limit, std::string &data) {
-		std::array<char, 64 * 1024> chunk{};
-		std::promise<std::pair<boost::system::error_code, size_t>> done;
-		auto result = done.get_future();
-		client_.async_read_some(asio::buffer(chunk),
-								[&](boost::system::error_code ec, size_t n) {
-									done.set_value({ec, n});
-								});
-		if (result.wait_for(limit) != std::future_status::ready) {
-			// Cancelling completes the read handler, which touches `done`.
-			asio::post(io_, [this] { client_.cancel(); });
-			result.wait();
-			return Heard::Silence;
-		}
-		const auto [ec, n] = result.get();
-		if (ec) return Heard::Closed;
-		data.assign(chunk.data(), n);
-		return Heard::Data;
-	}
-
-	/// Reads until \p total bytes have arrived or \p limit passes; whatever
-	/// arrived is returned.
-	std::string read_exactly(size_t total, std::chrono::milliseconds limit) {
-		std::string received;
-		const auto deadline = std::chrono::steady_clock::now() + limit;
-		while (received.size() < total) {
-			const auto left =
-				std::chrono::duration_cast<std::chrono::milliseconds>(
-					deadline - std::chrono::steady_clock::now());
-			if (left <= 0ms) break;
-			std::string part;
-			if (listen(left, part) != Heard::Data) break;
-			received += part;
-		}
-		return received;
-	}
-
-	/// Sends a PING and expects the PONG within a generous deadline.
-	bool ping_answered() {
-		send(PING);
-		std::string data;
-		return listen(2s, data) == Heard::Data && data == PONG;
-	}
-
-	/// True if every session has finished within \p limit.
-	bool join(std::chrono::milliseconds limit) {
-		auto joining = std::async(std::launch::async, [this] {
-			stdexec::sync_wait(
-				stdexec::starts_on(drain_.get_scheduler(), scope_.join()));
-		});
-		joined_      = joining.wait_for(limit) == std::future_status::ready;
-		return joined_;
-	}
-
-	/// Cancel every session, as the listener's stop() does.
-	void stop() { scope_.request_stop(); }
-
-	void close_client() {
-		boost::system::error_code ignored;
-		client_.close(ignored);
-	}
-
 private:
+	/// Connects a client to a session served by this fixture, as the listener
+	/// would serve it: on a strand of its own.
+	test::Client connect_and_serve() {
+		tcp::acceptor acceptor(context_.io(),
+							   {asio::ip::make_address("127.0.0.1"), 0});
+		auto accepted = acceptor.async_accept(asio::make_strand(context_.io()),
+											  asio::use_future);
+		test::Client connected(context_.io(), acceptor.local_endpoint().port());
+		tcp::socket server_side = accepted.get();
+		// A small send buffer, so a big reply is only partly taken at once and
+		// the session has to send the rest asynchronously.
+		boost::system::error_code ignored;
+		server_side.set_option(asio::socket_base::send_buffer_size(4096),
+							   ignored);
+		sessions_.serve(std::move(server_side), services_);
+		return connected;
+	}
+
 	test::TempFile file_;
 	std::shared_ptr<Services> services_;
-	asio::io_context io_;
-	asio::executor_work_guard<asio::io_context::executor_type> work_;
-	tcp::socket client_;
-	detail::AsioContext drain_;
-	stdexec::counting_scope scope_;
-	std::thread io_thread_;
-	bool joined_ = false;
+	test::RunningContext context_;
+	detail::Sessions sessions_;
+	bool drained_ = false;
+
+public:
+	/// The test's end of the connection; declared last, so closed first.
+	test::Client client;
 };
 
 } // namespace
@@ -194,26 +120,26 @@ SCENARIO("A session answers over a real connection", "[net][session]") {
 
 		WHEN("it sends PING") {
 			THEN("it is answered, and again on the same connection") {
-				CHECK(fixture.ping_answered());
-				CHECK(fixture.ping_answered());
+				CHECK(fixture.client.ping_answered());
+				CHECK(fixture.client.ping_answered());
 			}
 		}
 
 		WHEN("the client hangs up") {
-			CHECK(fixture.ping_answered());
-			fixture.close_client();
+			CHECK(fixture.client.ping_answered());
+			fixture.client.close();
 
-			THEN("the session ends by itself") { CHECK(fixture.join(3s)); }
+			THEN("the session ends by itself") { fixture.drain_within(3s); }
 		}
 
 		WHEN("the server is asked to stop") {
-			CHECK(fixture.ping_answered());
+			CHECK(fixture.client.ping_answered());
 			fixture.stop();
 			std::string data;
 
 			THEN("the connection is closed and the session finishes") {
-				CHECK(fixture.listen(3s, data) == Heard::Closed);
-				CHECK(fixture.join(3s));
+				CHECK(fixture.client.listen(3s, data) == Heard::Closed);
+				fixture.drain_within(3s);
 			}
 		}
 	}
@@ -225,12 +151,12 @@ SCENARIO("A session closes idle clients", "[net][session][timeout]") {
 
 		WHEN("the client says nothing") {
 			std::string data;
-			const auto heard = fixture.listen(4s, data);
+			const auto heard = fixture.client.listen(4s, data);
 
 			THEN("the server hangs up and counts the violation") {
 				CHECK(heard == Heard::Closed);
 				CHECK(fixture.guard().count(Violation::IdleTimeout) == 1);
-				CHECK(fixture.join(3s));
+				fixture.drain_within(3s);
 			}
 		}
 
@@ -240,7 +166,7 @@ SCENARIO("A session closes idle clients", "[net][session][timeout]") {
 				// 4 x 0.6 s outlives the 1 s limit: the timer must be
 				// re-armed every round, not run from the connection's start.
 				std::this_thread::sleep_for(600ms);
-				all_answered = all_answered && fixture.ping_answered();
+				all_answered = all_answered && fixture.client.ping_answered();
 			}
 
 			THEN("it is never closed for idling") {
@@ -255,12 +181,12 @@ SCENARIO("A session closes idle clients", "[net][session][timeout]") {
 
 		WHEN("the client stays quiet for a while") {
 			std::string data;
-			const auto heard = fixture.listen(1500ms, data);
+			const auto heard = fixture.client.listen(1500ms, data);
 
 			THEN("it is left alone and still served") {
 				CHECK(heard == Heard::Silence);
 				CHECK(fixture.guard().count(Violation::IdleTimeout) == 0);
-				CHECK(fixture.ping_answered());
+				CHECK(fixture.client.ping_answered());
 			}
 		}
 	}
@@ -273,8 +199,8 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 
 		WHEN("the client is answered in time") {
 			THEN("nothing is counted") {
-				CHECK(fixture.ping_answered());
-				CHECK(fixture.ping_answered());
+				CHECK(fixture.client.ping_answered());
+				CHECK(fixture.client.ping_answered());
 				CHECK(fixture.guard().count(Violation::RequestTimeout) == 0);
 			}
 		}
@@ -287,14 +213,14 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 		std::this_thread::sleep_for(100ms); // the busy job is queued first
 
 		WHEN("the client sends a write, which waits behind that job") {
-			fixture.send("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n");
+			fixture.client.send("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n");
 			std::string data;
-			const auto heard = fixture.listen(4s, data);
+			const auto heard = fixture.client.listen(4s, data);
 
 			THEN("the server hangs up and counts it, and the write never runs") {
 				CHECK(heard == Heard::Closed);
 				CHECK(fixture.guard().count(Violation::RequestTimeout) == 1);
-				CHECK(fixture.join(3s));
+				fixture.drain_within(3s);
 				// The delivery guarantee: a batch still queued when the limit
 				// runs out is dropped, not applied late.
 				CHECK(fixture.keys() == 0);
@@ -309,10 +235,10 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 	GIVEN("a one second request limit, and a stored 4 MiB value") {
 		SessionFixture fixture(NetLimits{.request_timeout = 1s});
 		const std::string value(size_t{4} << 20, 'x');
-		fixture.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+		fixture.client.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
 								 value.size(),
 								 value));
-		REQUIRE(fixture.read_exactly(5, 10s) == "+OK\r\n");
+		REQUIRE(fixture.client.read_exactly(5, 10s) == "+OK\r\n");
 
 		WHEN("the client asks for more than the connection holds, unread") {
 			// 32 GETs of the value: 128 MiB of replies, more than the socket
@@ -321,10 +247,10 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 			std::string gets;
 			for (int i = 0; i < 32; ++i)
 				gets += "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n";
-			fixture.send(gets);
+			fixture.client.send(gets);
 
 			THEN("the server abandons the write, hangs up and counts it") {
-				CHECK(fixture.join(6s));
+				fixture.drain_within(6s);
 				CHECK(fixture.guard().count(Violation::RequestTimeout) == 1);
 			}
 		}
@@ -336,7 +262,7 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 
 		WHEN("the client is served") {
 			THEN("nothing is counted") {
-				CHECK(fixture.ping_answered());
+				CHECK(fixture.client.ping_answered());
 				CHECK(fixture.guard().count(Violation::RequestTimeout) == 0);
 			}
 		}
@@ -348,13 +274,13 @@ SCENARIO("A reply larger than the socket buffer arrives whole",
 	GIVEN("a connected client that stored a 4 MiB value") {
 		SessionFixture fixture;
 		const std::string value(size_t{4} << 20, 'x');
-		fixture.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+		fixture.client.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
 								 value.size(),
 								 value));
-		REQUIRE(fixture.read_exactly(5, 10s) == "+OK\r\n");
+		REQUIRE(fixture.client.read_exactly(5, 10s) == "+OK\r\n");
 
 		WHEN("it reads the value back") {
-			fixture.send("*2\r\n$3\r\nGET\r\n$1\r\nk\r\n");
+			fixture.client.send("*2\r\n$3\r\nGET\r\n$1\r\nk\r\n");
 			const std::string expected =
 				fmt::format("${}\r\n{}\r\n", value.size(), value);
 
@@ -364,10 +290,10 @@ SCENARIO("A reply larger than the socket buffer arrives whole",
 			// buffer, so there this checks only that the reply arrives whole.
 			THEN("the socket takes part of it at once and the rest follows") {
 				const std::string reply =
-					fixture.read_exactly(expected.size(), 20s);
+					fixture.client.read_exactly(expected.size(), 20s);
 				CHECK(reply.size() == expected.size());
 				CHECK(reply == expected);
-				CHECK(fixture.ping_answered());
+				CHECK(fixture.client.ping_answered());
 			}
 		}
 	}
