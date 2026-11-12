@@ -42,6 +42,9 @@ std::optional<ChildResult> reap(const Child & /*child*/, bool /*wait*/) {
 // There is never a child to kill.
 void kill_child(pid_type /*child*/) noexcept {}
 
+// There are never children.
+void keep_open_in_children(int /*fd*/) noexcept {}
+
 std::error_code sync_file(const std::filesystem::path &path) {
 	HANDLE file = ::CreateFileW(path.c_str(), GENERIC_WRITE,
 								FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,

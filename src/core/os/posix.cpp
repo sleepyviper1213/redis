@@ -44,8 +44,17 @@ std::string read_report(int fd) {
 	return text;
 }
 
-// Close every descriptor but stdio and \p keep. The child needs none of what it
-// inherited, and holding the server's sockets is harmful: the listening socket
+// Descriptors a child keeps (keep_open_in_children). Written once at startup,
+// before any fork, so the child reads a settled copy.
+constexpr size_t MAX_KEPT_FDS = 4;
+std::array<int, MAX_KEPT_FDS> kept_fds{-1, -1, -1, -1};
+
+bool kept_open(int fd) {
+	return std::ranges::find(kept_fds, fd) != kept_fds.end();
+}
+
+// Close every descriptor but stdio, \p keep and the kept ones. The child needs
+// none of the rest of what it inherited, and holding the server's sockets is harmful: the listening socket
 // would keep the port bound if the parent died, and a client socket the parent
 // closed would not really close until the save ended. A plain close(): these
 // are the child's copies, so the parent's descriptors, and what is registered
@@ -64,7 +73,8 @@ void close_inherited_descriptors(int keep) {
 			// "." and ".." parse as nothing; the directory's own descriptor is
 			// in its own listing.
 			if (end != entry->d_name && *end == '\0' &&
-				fd >= FIRST_NON_STDIO_FD && fd != keep && fd != dir_fd)
+				fd >= FIRST_NON_STDIO_FD && fd != keep && fd != dir_fd &&
+				!kept_open(static_cast<int>(fd)))
 				fds.push_back(static_cast<int>(fd));
 		}
 		::closedir(dir);
@@ -74,7 +84,7 @@ void close_inherited_descriptors(int keep) {
 		const long limit =
 			open_max > 0 ? std::min(open_max, MAX_FALLBACK_FDS) : MAX_FALLBACK_FDS;
 		for (int fd = FIRST_NON_STDIO_FD; fd < limit; ++fd)
-			if (fd != keep) fds.push_back(fd);
+			if (fd != keep && !kept_open(fd)) fds.push_back(fd);
 	}
 	for (const int fd : fds) ::close(fd);
 }
@@ -144,6 +154,13 @@ void exit_child(int report_fd, bool success, std::string_view error) noexcept {
 } // namespace detail
 
 pid_type current_pid() noexcept { return ::getpid(); }
+
+void keep_open_in_children(int fd) noexcept {
+	if (fd < 0 || kept_open(fd)) return;
+	if (const auto free_slot = std::ranges::find(kept_fds, -1);
+		free_slot != kept_fds.end())
+		*free_slot = fd;
+}
 
 std::optional<ChildResult> reap(const Child &child, bool wait) {
 	int status      = 0;

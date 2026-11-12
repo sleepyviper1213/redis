@@ -1,6 +1,7 @@
 #include "crash.hpp"
 
 #include "current_command.hpp"
+#include "core/os/child_process.hpp"
 
 #include <fcntl.h>
 #include <signal.h> // NOLINT(modernize-deprecated-headers): sigaction
@@ -153,6 +154,10 @@ void install_crash_handler(const std::string &log_file) {
 		log_fd = ::open(log_file.c_str(),
 						O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC,
 						0644);
+	// A BGSAVE child closes what it inherited; it must keep this one, or its
+	// crash report would go nowhere, or into whatever file reused the number
+	// (the snapshot it is writing).
+	os::keep_open_in_children(log_fd);
 
 #ifdef REDIS_HAVE_BACKTRACE
 	// The first call loads the unwinder, which allocates: do it now, not in

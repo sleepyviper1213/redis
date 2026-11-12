@@ -106,6 +106,20 @@ std::expected<Child, std::error_code> fork_and_run(Task &&task);
  */
 void kill_child(pid_type child) noexcept;
 
+/**
+ * \brief Keep \p fd open in every child fork_and_run() creates, which
+ * otherwise closes everything but stdio and its report pipe.
+ *
+ * For descriptors the child must still write to: the crash handler's log
+ * file, so a crash in a BGSAVE child is reported where the parent's would be.
+ * Closed, its number could be reused by the child's next open(), the snapshot
+ * file's, and the report would be written into the snapshot instead.
+ *
+ * Call before the first fork, from one thread (at startup). At most a few
+ * descriptors; further ones are ignored. Does nothing on Windows.
+ */
+void keep_open_in_children(int fd) noexcept;
+
 /// The calling process' id.
 [[nodiscard]] pid_type current_pid() noexcept;
 
