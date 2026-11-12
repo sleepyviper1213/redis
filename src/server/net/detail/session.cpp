@@ -283,7 +283,7 @@ SessionSender Session::serve(tcp::socket socket,
 		reject_over_capacity(socket, services->guard);
 		return stdexec::just();
 	}
-	stdexec::sender auto session =
+	stdexec::sender auto serving =
 		stdexec::just(Session(std::move(socket),
 							  std::move(services),
 							  std::move(*ticket))) |
@@ -294,7 +294,7 @@ SessionSender Session::serve(tcp::socket socket,
 	// are the ones round() did not already turn into "the session is over":
 	// log them and finish normally.
 	return stdexec_ext::supervised<stdexec_ext::FailPolicy::Isolate>(
-		std::move(session), [](const std::exception_ptr &e) noexcept {
+		std::move(serving), [](const std::exception_ptr &e) noexcept {
 			try {
 				std::rethrow_exception(e);
 			} catch (const std::exception &ex) {
