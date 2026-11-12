@@ -77,7 +77,9 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 	for (size_t i = 3; i < args.size(); ++i) {
 		// Looked up before the loop variable moves on to the option's value.
 		const std::string_view arg = args[i];
-		const auto *const expiry =
+		// An iterator, not a pointer: only libstdc++'s std::array iterator is
+		// a raw pointer, and MSVC's STL rejects `const auto *` here.
+		const auto expiry =
 			std::ranges::find_if(EXPIRY_OPTIONS,
 								 [arg](const ExpiryOption &option) {
 									 return iequals(arg, option.name);
