@@ -9,8 +9,11 @@ name: CI
 # full matrix including sanitizers; macOS builds with Homebrew LLVM.
 
 on:
+  # Push any commit to a test/ branch to run the whole matrix on it without a
+  # pull request:
+  #   git push -f origin HEAD:test/<name>
   push:
-    branches: [main]
+    branches: [main, "test/**"]
   pull_request:
   workflow_dispatch:
 
