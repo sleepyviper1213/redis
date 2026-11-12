@@ -11,6 +11,7 @@ include(Catch)
 # Unit tests: in-process, no network, run by CTest.
 add_executable(redis_unit_test
     unit/logging.setup.cpp
+    support/crash_report_windows.cpp
 
     unit/core/chrono/date_time.test.cpp
     unit/core/chrono/deadline_timer.test.cpp
