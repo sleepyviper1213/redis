@@ -50,6 +50,7 @@ add_executable(redis_unit_test
     unit/server/net/session.test.cpp
     unit/server/persistence/persist_error.test.cpp
     unit/server/persistence/persist_error_debug.test.cpp
+    unit/core/os/child_process.test.cpp
     unit/core/os/save_file.test.cpp
     unit/server/persistence/snapshot.test.cpp
 )
@@ -101,3 +102,11 @@ endif()
 target_compile_definitions(redis_stress_test PRIVATE BOOST_ASIO_NO_DEPRECATED)
 set_warnings(redis_stress_test)
 copy_sanitizer_runtime(redis_stress_test)
+
+# The stress test's own checks, which need no server: run by CTest, so a
+# checker that accepts everything cannot make a stress run pass.
+add_executable(redis_stress_check_test stress/linearizability.test.cpp)
+target_link_libraries(redis_stress_check_test PRIVATE Catch2::Catch2WithMain)
+set_warnings(redis_stress_check_test)
+copy_sanitizer_runtime(redis_stress_check_test)
+catch_discover_tests(redis_stress_check_test)
