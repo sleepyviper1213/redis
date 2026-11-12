@@ -10,6 +10,8 @@
 #include <spdlog/async_logger.h>
 #include <spdlog/common.h>
 #include <spdlog/details/log_msg.h>
+#include <spdlog/details/registry.h>
+#include <spdlog/details/thread_pool.h>
 #include <spdlog/formatter.h>
 #include <spdlog/logger.h>
 #include <spdlog/sinks/basic_file_sink.h>
@@ -247,6 +249,21 @@ void flush() noexcept {
 void shutdown() noexcept {
 	flush();
 	try {
+		// Join the async worker before the loggers are dropped, not after as
+		// spdlog::shutdown() does. Each queued message holds its logger, so
+		// otherwise the worker can drop the last reference and free the
+		// logger on its own thread, unordered with the main thread's release
+		// as far as ThreadSanitizer can see (libstdc++'s refcount is not
+		// instrumented). Joined first, the worker writes out everything still
+		// queued, the flush above included, and lets go of its references
+		// while the registry still holds the loggers; the last release, and
+		// the free, then happen here, after the join. Loggers keep only a
+		// weak_ptr to the pool, so this copy and the registry's are its only
+		// owners: the reset below is what joins.
+		if (auto pool = spdlog::thread_pool()) {
+			spdlog::details::registry::instance().set_tp(nullptr);
+			pool.reset();
+		}
 		spdlog::shutdown();
 	} catch (...) {} // NOLINT(bugprone-empty-catch)
 }

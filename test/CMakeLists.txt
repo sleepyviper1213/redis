@@ -15,6 +15,7 @@ add_executable(redis_unit_test
 
     unit/core/chrono/date_time.test.cpp
     unit/core/chrono/deadline_timer.test.cpp
+    unit/core/logging/lifecycle.test.cpp
     unit/core/stdexec_ext/retry.test.cpp
     unit/core/stdexec_ext/supervise.test.cpp
     unit/core/stdexec_ext/task.test.cpp
