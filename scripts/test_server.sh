@@ -4,8 +4,8 @@
 #   scripts/test_server.sh [configure-preset] [configuration] [port]
 #
 # Extra server options can be passed in SERVER_ARGS, e.g. to run the same suite
-# against the sender-based sessions and several I/O threads:
-#   SERVER_ARGS="--sender-sessions --io-threads 4" scripts/test_server.sh
+# with several I/O threads:
+#   SERVER_ARGS="--io-threads 4" scripts/test_server.sh
 #
 # Unit tests need no server and run through CTest instead:
 #   ctest --preset linux-gcc-debug

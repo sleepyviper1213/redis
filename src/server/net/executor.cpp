@@ -3,6 +3,8 @@
 #include <stdexec/execution.hpp>
 
 #include <cassert>
+#include <concepts>
+#include <optional>
 #include <thread>
 #include <tuple>
 
@@ -14,9 +16,10 @@ Executor::Executor(bool threaded) {
 #ifndef NDEBUG
 	// Learn the worker's id by asking it, so stop() can tell its own thread.
 	// NOLINTBEGIN(bugprone-unchecked-optional-access): pool_ was emplaced above
-	const auto reported = stdexec::sync_wait(
-		stdexec::schedule(pool_->get_scheduler()) |
-		stdexec::then([] { return std::this_thread::get_id(); }));
+	const std::same_as<std::optional<std::tuple<std::thread::id>>> auto reported =
+		stdexec::sync_wait(
+			stdexec::schedule(pool_->get_scheduler()) |
+			stdexec::then([] { return std::this_thread::get_id(); }));
 	pool_thread_ = std::get<0>(reported.value());
 	// NOLINTEND(bugprone-unchecked-optional-access)
 #endif

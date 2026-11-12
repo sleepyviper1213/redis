@@ -10,8 +10,8 @@
 #
 #   scripts/bench_server.sh [configure-preset] [configuration] [port]
 #
-# Server options go in SERVER_ARGS, e.g. the sender-based sessions:
-#   SERVER_ARGS="--sender-sessions --io-threads 4" scripts/bench_server.sh
+# Server options go in SERVER_ARGS, e.g. several I/O threads:
+#   SERVER_ARGS="--io-threads 4" scripts/bench_server.sh
 #
 # Other knobs: RUNS (repeats per scenario, default 3), REQUESTS (default
 # 200000), PIPE_REQUESTS (the pipeline and bigget scenarios, default 8000000),

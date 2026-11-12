@@ -1,12 +1,9 @@
 #pragma once
-// Must precede every Asio include: makes co_await on Asio operations return
-// (error_code, result) tuples.
+#include "core/stdexec_ext/task.hpp"
 #include "net/net_limits.hpp"
-#include "net/nothrow_awaitable_t.hpp" // IWYU pragma: keep
 #include "persistence/aof_config.hpp"
 #include "server_error.hpp"
 
-#include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
 
@@ -29,9 +26,6 @@ struct ServerConfig {
 	/// Threads running network I/O. 1 runs everything on one thread; more
 	/// adds a thread dedicated to executing commands (see Executor).
 	unsigned io_threads = 1;
-	/// Serve clients with the sender-based v2::Session instead of the
-	/// coroutine-based Session.
-	bool sender_sessions = false;
 	/// Log write commands to an append-only file; unset, snapshots alone
 	/// persist the keyspace.
 	std::optional<AofConfig> aof;
@@ -68,8 +62,8 @@ public:
 
 private:
 	/// Periodic housekeeping, like Redis' serverCron: active expiry and
-	/// collecting finished background saves.
-	net::awaitable<void> cron();
+	/// collecting finished background saves. Runs until its scope is stopped.
+	stdexec_ext::InlineTask<void> cron();
 
 	/// How often cron() runs, and how many keys one expiry cycle may remove.
 	static constexpr auto CRON_PERIOD = std::chrono::milliseconds(100);

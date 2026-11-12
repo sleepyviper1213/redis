@@ -4,8 +4,8 @@
 #   scripts/stress_server.sh [configure-preset] [configuration] [port]
 #
 # Server options go in SERVER_ARGS, stress options in STRESS_ARGS, e.g. to
-# stress the sender-based sessions with several I/O threads:
-#   SERVER_ARGS="--sender-sessions --io-threads 4" \
+# stress several I/O threads:
+#   SERVER_ARGS="--io-threads 4" \
 #   STRESS_ARGS="--clients 64 --ops 50000 --pipeline 64" \
 #       scripts/stress_server.sh
 #

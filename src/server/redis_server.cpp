@@ -1,16 +1,19 @@
 #include "redis_server.hpp"
 #include "core/error/failed.hpp"
+#include "core/stdexec_ext/supervise.hpp"
 
 #include "log_channels.hpp"
 #include "net/formatter.hpp"
+#include "net/detail/asio_context.hpp"
 #include "net/listener.hpp"
-#include "net/v2/listener.hpp"
+#include "net/net_error.hpp"
 #include "services.hpp"
 
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <exec/asio/use_sender.hpp>
 #include <exec/start_detached.hpp>
+#include <exec/when_any.hpp>
+#include <stdexec/execution.hpp>
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -46,6 +49,93 @@ std::string_view signal_name(int sig) {
 	default: return "unknown signal";
 	}
 }
+
+/**
+ * The first failure of the server, whichever task or I/O thread it came from:
+ * what run() returns. record() may be called from any thread; message() only
+ * once every thread that could record has been joined.
+ */
+class FirstFailure {
+public:
+	/// Keeps \p message if nothing was recorded before; drops it otherwise.
+	void record(std::string message) {
+		std::call_once(once_, [&] { message_ = std::move(message); });
+	}
+
+	/// What was recorded, if anything.
+	[[nodiscard]] std::optional<std::string> &message() { return message_; }
+
+private:
+	std::once_flag once_;
+	std::optional<std::string> message_;
+};
+
+/**
+ * \brief Serve until the first of the accept loop, the housekeeping and the
+ * wait for a signal finishes; then cancel the others, drain the sessions and
+ * stop the event loop.
+ *
+ * A coroutine, not a sender chain: it runs once, and it is sequential logic
+ * whose failure path is naturally a try/catch. The pieces it strings
+ * together stay senders.
+ *
+ * The first of the three to finish, however it finishes, cancels the other
+ * two through the stop token, and when_any completes once they have unwound,
+ * with the first one's result. The accept loop and the housekeeping are
+ * FailFast: the server is of no use without them, so their failure ends it,
+ * and is recorded in \p failure. A signal is the normal way to end.
+ *
+ * \p stop applies to the race only, not to the whole coroutine: a stop request
+ * does not resume a coroutine, it destroys its frame. Were the coroutine
+ * itself stoppable, a stop arriving while it waits for the sessions to drain
+ * would skip io.stop() below, and the server would never exit.
+ *
+ * Every reference must outlive the coroutine; see run().
+ *
+ * \param housekeeping RedisServer::cron(), not yet started.
+ * \param stop Ends the race from outside: an I/O thread that failed.
+ */
+stdexec_ext::InlineTask<void> serve(Listener &server,
+									stdexec_ext::InlineTask<void> housekeeping,
+									boost::asio::signal_set &signals,
+									boost::asio::io_context &io,
+									stdexec::inplace_stop_token stop,
+									FirstFailure &failure) {
+	using stdexec_ext::FailPolicy;
+	using stdexec_ext::supervised;
+
+	stdexec::sender auto signalled =
+		signals.async_wait(exec::asio::use_sender) | stdexec::then([](int sig) {
+			log().info("Received {}, shutting down", signal_name(sig));
+		});
+
+	try {
+		co_await (
+			exec::when_any(supervised<FailPolicy::FailFast>(
+							   server.run(),
+							   [](const std::exception_ptr &error) noexcept {
+								   log_error(
+									   {.kind   = ConnectionKind::AcceptLoopFailed,
+										.quoted = describe(error)});
+							   }),
+						   supervised<FailPolicy::FailFast>(std::move(housekeeping)),
+						   std::move(signalled)) |
+			stdexec::write_env(stdexec::prop{stdexec::get_stop_token, stop})
+			// Stopped from outside is still an end: carry on to the shutdown
+			// below rather than have the frame destroyed.
+			| stdexec::upon_stopped([]() noexcept {}));
+	} catch (...) {
+		// co_await turns whatever error ended the race into an exception.
+		failure.record(describe(std::current_exception()));
+	}
+
+	// Sessions are not in the race, since they come and go: cancel them now,
+	// and stop the loop only once they have unwound. Their scope must not be
+	// destroyed while they run.
+	server.stop();
+	co_await server.drained();
+	io.stop();
+}
 } // namespace
 
 RedisServer::RedisServer(ServerConfig config)
@@ -72,81 +162,46 @@ std::expected<void, ServerError> RedisServer::run() {
 										   .source = loaded.error()});
 	}
 
-	// Exactly one front end: binding the port twice would fail.
-	std::optional<Listener> server;
-	std::optional<v2::Listener> sender_server;
-	if (config_.sender_sessions) {
-		sender_server.emplace(io_.get_executor(),
-							  services_,
-							  config_.io_threads > 1);
-		if (auto listening = sender_server->listen(config_.host, config_.port);
-			!listening)
-			REDIS_FAILED(ServerError{.kind   = ServerKind::ListenFailed,
-											   .source = listening.error()});
-	} else {
-		server.emplace(io_.get_executor(), services_, config_.io_threads > 1);
-		if (auto listening = server->listen(config_.host, config_.port);
-			!listening)
-			REDIS_FAILED(ServerError{.kind   = ServerKind::ListenFailed,
-											   .source = listening.error()});
-	}
+	Listener server(io_.get_executor(), services_, config_.io_threads > 1);
+	if (auto listening = server.listen(config_.host, config_.port); !listening)
+		REDIS_FAILED(ServerError{.kind   = ServerKind::ListenFailed,
+										   .source = listening.error()});
 
-	// Leave the event loop, once. Coroutine sessions are simply dropped with
-	// it. Sender sessions live in a scope that must not be destroyed while
-	// they run: cancel them and stop the loop only after they have unwound.
-	std::once_flag shutting_down;
-	const auto shut_down = [&] {
-		std::call_once(shutting_down, [&] {
-			if (!sender_server) {
-				server->stop();
-				io_.stop();
-				return;
-			}
-			sender_server->stop();
-			exec::start_detached(sender_server->drained() |
-								 stdexec::then([this] { io_.stop(); }));
-		});
-	};
+	FirstFailure failure;
+	// Stops serve()'s tasks from outside them: an I/O thread that failed.
+	stdexec::inplace_stop_source stop_serving;
 
-	signals_.async_wait([&](const boost::system::error_code &ec, int sig) {
-		if (ec) return;
-		log().info("Received {}, shutting down", signal_name(sig));
-		shut_down();
-	});
-
-	// A failure on any I/O thread stops them all and is returned from here,
-	// as it would be from a single-threaded io_.run(). Only the first is kept.
-	std::optional<std::string> failure;
-	std::once_flag failed;
-	auto record = [&](std::string message) {
-		std::call_once(failed, [&] { failure = std::move(message); });
-		shut_down();
-	};
-	auto on_done = [&](const std::exception_ptr &error) {
-		if (error) record(describe(error));
-	};
-	if (sender_server) sender_server->start();
-	else net::co_spawn(io_, server->start(), on_done);
-	net::co_spawn(io_, cron(), on_done);
+	// Lifetime: serve() holds references to server, failure and stop_serving,
+	// locals of this function, and its steps run on the I/O threads, not here
+	// (InlineTask has no scheduler affinity). That is safe only because this
+	// function destroys them after every I/O thread has been joined below, and
+	// the last thing serve() does is stop the loop those threads run.
+	exec::start_detached(serve(server, cron(), signals_, io_,
+							   stop_serving.get_token(), failure));
 
 	log().info("Ready to accept connections");
 	{
+		// Asio handlers can throw; this is where that ends. A failed I/O
+		// thread stops the others, as it would a single-threaded io_.run().
 		const auto run_io = [&] {
-			// Asio handlers can throw; this is where that ends.
 			try {
 				io_.run();
 			} catch (const std::exception &e) {
-				record(e.what());
-			} catch (...) { record("unknown exception"); }
+				failure.record(e.what());
+				stop_serving.request_stop();
+			} catch (...) {
+				failure.record("unknown exception");
+				stop_serving.request_stop();
+			}
 		};
 		std::vector<std::jthread> workers;
 		for (unsigned i = 1; i < config_.io_threads; ++i)
 			workers.emplace_back(run_io);
 		run_io();
-	} // joins the workers
-	if (failure)
+	} // joins the workers: from here on, nothing else touches failure
+	if (auto &message = failure.message())
 		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
-										   .detail = std::move(*failure)});
+										   .detail = std::move(*message)});
 
 	// A batch may still be executing: wait for it before reading the keyspace.
 	services_->keyspace.stop();
@@ -173,28 +228,32 @@ std::expected<void, ServerError> RedisServer::run() {
 	return {};
 }
 
-net::awaitable<void> RedisServer::cron() {
-	net::steady_timer timer(co_await net::this_coro::executor);
+stdexec_ext::InlineTask<void> RedisServer::cron() {
+	boost::asio::steady_timer timer(io_);
+	// Housekeeping touches the keyspace on its thread and comes back here.
+	detail::AsioContext back(io_.get_executor());
 	const auto services = services_;
 	while (true) {
 		timer.expires_after(CRON_PERIOD);
-		if (auto [ec] = co_await timer.async_wait(); ec) co_return;
+		co_await timer.async_wait(exec::asio::use_sender);
 
 		// Touches the keyspace, so it runs where commands run.
-		co_await services->keyspace.run([&services] {
-			if (const auto expired =
-					services->db.active_expire_cycle(EXPIRE_KEYS_PER_RUN))
-				log().trace("Expired {} keys", expired);
-			services->stats.sample();
-			services->persistence.poll();
-			if (services->aof) {
-				// The expiry above, and the writes since the last batch, if
-				// any, need to reach the file too.
-				services->aof->log_expired(services->db);
-				services->aof->after_batch();
-				services->aof->poll();
-			}
-		});
+		co_await services->keyspace.run_on(
+			[&services] {
+				if (const auto expired =
+						services->db.active_expire_cycle(EXPIRE_KEYS_PER_RUN))
+					log().trace("Expired {} keys", expired);
+				services->stats.sample();
+				services->persistence.poll();
+				if (services->aof) {
+					// The expiry above, and the writes since the last batch,
+					// if any, need to reach the file too.
+					services->aof->log_expired(services->db);
+					services->aof->after_batch();
+					services->aof->poll();
+				}
+			},
+			back.get_scheduler());
 	}
 }
 

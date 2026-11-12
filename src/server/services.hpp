@@ -1,9 +1,9 @@
 #pragma once
-#include "net/executor.hpp"
-#include "net/guard.hpp"
 #include "commands/command.hpp"
 #include "commands/handler.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
+#include "net/executor.hpp"
+#include "net/guard.hpp"
 #include "persistence.hpp"
 #include "stats.hpp"
 

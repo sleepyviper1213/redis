@@ -1,11 +1,4 @@
 #pragma once
-// Must precede every Asio include: makes co_await on Asio operations return
-// (error_code, result) tuples.
-#include "nothrow_awaitable_t.hpp" // IWYU pragma: keep
-
-#include <boost/asio/awaitable.hpp>
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/use_awaitable.hpp>
 #include <exec/asio/asio_thread_pool.hpp>
 #include <exec/variant_sender.hpp>
 #include <stdexec/execution.hpp>
@@ -13,30 +6,27 @@
 #include <concepts>
 #include <optional>
 #include <thread>
-#include <type_traits>
 #include <utility>
 
 namespace redis {
-namespace net = boost::asio;
 
 /**
- * \brief The single thread that owns the keyspace, reachable from Asio
- * coroutines.
+ * \brief The single thread that owns the keyspace.
  *
  * With several I/O threads, sessions read, parse and write in parallel but
  * must still execute commands one at a time: the keyspace has no locks. A
- * session hands its parsed batch to run(), which runs it on this thread (a
- * stdexec thread pool of one) and resumes the coroutine back on its own I/O
- * executor once the batch has run; v2 sessions use run_on() to the same end.
- * Commands from every session therefore interleave on one thread, exactly as
- * they do on a single-threaded server.
+ * session hands its parsed batch to run_on(), which runs it on this thread (a
+ * stdexec thread pool of one) and continues back on the session's own I/O
+ * executor once the batch has run. Commands from every session therefore
+ * interleave on one thread, exactly as they do on a single-threaded server.
  *
- * Built unthreaded, run() calls the function inline instead and nothing is
+ * Built unthreaded, run_on() calls the function inline instead and nothing is
  * handed off, so the single-threaded server pays nothing for this class.
  */
 class Executor {
 public:
-	/// \param threaded Start the dedicated thread; otherwise run() is inline.
+	/// \param threaded Start the dedicated thread; otherwise run_on() is
+	/// inline.
 	explicit Executor(bool threaded);
 
 	Executor(const Executor &)            = delete;
@@ -47,7 +37,7 @@ public:
 	/**
 	 * \brief Wait until everything already queued has run, so that nothing
 	 * else touches the keyspace and the caller may. Only meaningful once no
-	 * coroutine can call run() any more, i.e. after the I/O threads stopped.
+	 * session can call run_on() any more, i.e. after the I/O threads stopped.
 	 *
 	 * \pre Must not be called from a task running on the keyspace thread itself
 	 *      — that would deadlock waiting for a task only that thread can run.
@@ -60,35 +50,24 @@ public:
 	}
 
 	/**
-	 * \brief Call \p fn on the keyspace thread and resume the awaiting
-	 * coroutine on its own executor with the result.
+	 * \brief Call \p fn on the keyspace thread, then continue on \p back, a
+	 * scheduler over the caller's own executor (see AsioContext). Completes
+	 * with fn's result; an exception thrown by \p fn completes with set_error.
 	 *
-	 * \p fn may capture locals of the awaiting coroutine by reference: the
-	 * coroutine is suspended until \p fn has returned. An exception thrown by
-	 * \p fn is rethrown from the co_await.
-	 */
-	template <std::invocable F>
-	net::awaitable<std::invoke_result_t<F>> run(F fn) {
-		if (!is_threaded()) co_return fn();
-
-		// co_spawn onto the pool's own Asio executor runs the call there and
-		// completes on this coroutine's executor, so the coroutine is never
-		// resumed on the keyspace thread. The pool is stdexec's; only its Asio
-		// face is used here.
-		// NOLINTNEXTLINE(bugprone-unchecked-optional-access): is_threaded() above
-		co_return co_await net::co_spawn(pool_->get_executor(),
-										 call(std::move(fn)),
-										 net::use_awaitable);
-	}
-
-	/**
-	 * \brief The sender form of run(), for v2 sessions: call \p fn on the
-	 * keyspace thread, then continue on \p back, a scheduler over the
-	 * caller's own executor (see AsioContext). Completes with fn's result;
-	 * an exception thrown by \p fn completes with set_error.
+	 * \p fn may capture locals of the caller by reference, as long as the
+	 * caller keeps them alive until the sender completes.
 	 *
 	 * Without a dedicated thread \p fn simply runs where the sender starts,
 	 * and nothing is handed off.
+	 *
+	 * \tparam F The callable's type (std::invocable with no arguments): what
+	 *         runs on the keyspace thread. Its return type is what the sender
+	 *         completes with.
+	 * \tparam Back The type of the scheduler to continue on (a
+	 *         stdexec::scheduler), usually AsioContext's.
+	 * \return A sender completing on \p back (or where it started, without a
+	 *         dedicated thread). Its type is deduced: a variant_sender of the
+	 *         handed-off and the inline chain, so both cases share one type.
 	 */
 	template <std::invocable F, stdexec::scheduler Back>
 	stdexec::sender auto run_on(F fn, Back back) {
@@ -104,14 +83,6 @@ public:
 	}
 
 private:
-	/// What run() hands to the pool. A named coroutine taking \p fn by value
-	/// rather than a lambda capturing it: a coroutine's frame, unlike a
-	/// closure's captures, is guaranteed to outlive the suspended call.
-	template <std::invocable F>
-	static net::awaitable<std::invoke_result_t<F>> call(F fn) {
-		co_return fn();
-	}
-
 	/// One thread: tasks run one at a time, in the order they were queued.
 	std::optional<exec::asio::asio_thread_pool> pool_;
 #ifndef NDEBUG

@@ -100,7 +100,7 @@ client ──TCP──► net/session ──► resp::parse_request ──► co
 
 - **One command thread, no locks.** Like Redis, commands run one at a time on
   a single thread, so the keyspace needs no synchronisation. By default that
-  thread also runs the event loop (Boost.Asio, C++20 coroutines). With
+  thread also runs the event loop (Boost.Asio, stdexec senders). With
   `--io-threads N` (N > 1) reading, parsing and writing spread over N I/O
   threads, and parsed batches are handed through stdexec to one dedicated
   thread that executes them. Latency comes from keeping each command and each
@@ -174,7 +174,6 @@ scripts/run.sh linux-gcc Release -- --port 6379 --dump ./dump.snap
 |--------|---------|-|
 | `--host`, `--port` | `127.0.0.1`, `6379` | Listen address (`REDIS_HOST`, `REDIS_PORT`) |
 | `--io-threads` | `1` | Network I/O threads; above 1, commands run on a separate thread (`REDIS_IO_THREADS`) |
-| `--sender-sessions` | off | Serve clients with sender-based (stdexec) sessions instead of coroutines (`REDIS_SENDER_SESSIONS`) |
 | `--dump` | `dump.snap` | Snapshot file (`REDIS_DUMP_FILE`) |
 | `--appendonly` | off | Enable the append-only file; write every command to it and replay at startup (`REDIS_APPENDONLY`) |
 | `--appendfsync` | `everysec` | AOF fsync policy: `always`, `everysec`, `no` (`REDIS_APPENDFSYNC`) |

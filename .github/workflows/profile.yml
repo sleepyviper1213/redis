@@ -1,7 +1,7 @@
 name: Profile
 
-# Profiles redis_server with `perf` under redis-benchmark load, v1 and v2 one
-# after the other, once per compiler. Push any commit to a profile/ branch:
+# Profiles redis_server with `perf` under redis-benchmark load, once per
+# compiler. Push any commit to a profile/ branch:
 #
 #   git push -f origin HEAD:profile/<name>
 #

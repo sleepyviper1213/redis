@@ -22,8 +22,6 @@ add_library(
     server_error.cpp
     net/detail/session.cpp
     net/listener.cpp
-    net/v2/detail/session.cpp
-    net/v2/listener.cpp
 
     persistence/append_only_file.cpp
     persistence/persist_error.cpp

@@ -1,5 +1,5 @@
-#include "server/net/v2/detail/asio_context.hpp"
-#include "server/net/v2/detail/session.hpp"
+#include "server/net/detail/asio_context.hpp"
+#include "server/net/detail/session.hpp"
 #include "server/services.hpp"
 #include "support/temp_file.hpp"
 
@@ -38,7 +38,7 @@ constexpr std::string_view PONG = "+PONG\r\n";
 enum class Heard { Data, Closed, Silence };
 
 /**
- * \brief A v2 session served over a real loopback connection, in-process.
+ * \brief A session served over a real loopback connection, in-process.
  *
  * Networking needs no special tools: the I/O runs on a thread of the
  * fixture's own io_context, the test plays the client over a real socket, and
@@ -68,7 +68,7 @@ public:
 		server_side.set_option(asio::socket_base::send_buffer_size(4096),
 							   ignored);
 		stdexec::spawn(
-			detail::v2::Session::serve(std::move(server_side), services_),
+			detail::Session::serve(std::move(server_side), services_),
 			scope_.get_token());
 	}
 
@@ -164,7 +164,7 @@ private:
 
 } // namespace
 
-SCENARIO("A v2 session answers over a real connection", "[net][v2][session]") {
+SCENARIO("A session answers over a real connection", "[net][session]") {
 	GIVEN("a connected client") {
 		SessionFixture fixture;
 
@@ -195,7 +195,7 @@ SCENARIO("A v2 session answers over a real connection", "[net][v2][session]") {
 	}
 }
 
-SCENARIO("A v2 session closes idle clients", "[net][v2][session][timeout]") {
+SCENARIO("A session closes idle clients", "[net][session][timeout]") {
 	GIVEN("a one second idle limit") {
 		SessionFixture fixture(1s);
 
@@ -243,7 +243,7 @@ SCENARIO("A v2 session closes idle clients", "[net][v2][session][timeout]") {
 }
 
 SCENARIO("A reply larger than the socket buffer arrives whole",
-		 "[net][v2][session]") {
+		 "[net][session]") {
 	GIVEN("a connected client that stored a 4 MiB value") {
 		SessionFixture fixture;
 		const std::string value(size_t{4} << 20, 'x');

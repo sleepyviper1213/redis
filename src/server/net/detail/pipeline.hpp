@@ -97,8 +97,8 @@ void drop_consumed(std::string &pending, ParsedBatch &batch);
  *
  * This is what a single-threaded server runs, with no hand-off between the
  * stages. Like each stage on its own it is ordinary synchronous code, kept out
- * of the session coroutine on purpose so its locals live in registers and on
- * the stack rather than in the heap-allocated coroutine frame.
+ * of the session's sender chain on purpose so its locals live in registers
+ * and on the stack rather than in the chain's operation state.
  */
 AfterReplies execute_pending(std::string &pending, ParsedBatch &batch,
 							 std::string &replies,

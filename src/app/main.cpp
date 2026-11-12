@@ -86,7 +86,6 @@ int run(int argc, char **argv) {
 			.port            = app->get_option("--port")->as<uint16_t>(),
 			.dump_file       = app->get_option("--dump")->as<std::string>(),
 			.io_threads      = app->get_option("--io-threads")->as<unsigned>(),
-			.sender_sessions = app->get_option("--sender-sessions")->as<bool>(),
 			.aof             = aof_config(*app),
 			.limits          = net_limits(*app),
 			.config_set_enabled =

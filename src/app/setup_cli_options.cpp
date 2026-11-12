@@ -85,12 +85,6 @@ CLI::App_p setup_cli_options() {
 		->group("Network")
 		->check(CLI::Range(1, 256))
 		->default_val(1);
-	app->add_flag("--sender-sessions",
-				  "Serve clients with sender-based sessions (stdexec) "
-				  "instead of coroutines")
-		->envname("REDIS_SENDER_SESSIONS")
-		->group("Network")
-		->default_val(false);
 	app->add_option("--dump","Snapshot file, loaded at startup and written "
 							 "by SAVE, BGSAVE and on shutdown")
 		->envname("REDIS_DUMP_FILE")

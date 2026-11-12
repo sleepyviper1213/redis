@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Profile redis_server with Linux `perf` while redis-benchmark loads it, for
-# the sender sessions (v2) and the coroutine sessions (v1) one after the
-# other, each against a fresh server. The Linux counterpart of
-# profile_server.sh (macOS `sample`).
+# against a fresh server. The Linux counterpart of profile_server.sh (macOS
+# `sample`).
 #
 #   scripts/profile_server_linux.sh [configure-preset] [configuration] [scenario]
 #
@@ -13,7 +12,7 @@
 #
 # Knobs: PORT (default 6381), DURATION (seconds sampled, default 10), WARMUP
 # (seconds of load before sampling, default 3), TOP (lines of the report,
-# default 40), KEYSPACE (default 2000000), VERSIONS (default "v1 v2") and
+# default 40), KEYSPACE (default 2000000) and
 # ANNOTATE (an awk regex for the symbol whose hot instructions are listed;
 # default: the keyspace lookup; empty for none). Compare a KEYSPACE that fits the CPU caches
 # (10000) with one that does not to tell cache misses from compute: a symbol
@@ -37,7 +36,6 @@ WARMUP="${WARMUP:-3}"
 TOP="${TOP:-40}"
 INCLUSIVE_TOP="${INCLUSIVE_TOP:-120}"
 KEYSPACE="${KEYSPACE:-2000000}"
-VERSIONS="${VERSIONS:-v1 v2}"
 ANNOTATE="${ANNOTATE-raw_hash_set|operator==\(redis::detail::BasicSimpleDynamicString}"
 
 case "$SCENARIO" in
@@ -136,15 +134,15 @@ annotate() {
           awk 'NR <= 25 { print substr($0, 1, 200) }' "$raw"; }
 }
 
-# profile <version> <server args...>
+# profile <name> <server args...>
 profile() {
-    local version="$1"
+    local name="$1"
     shift
-    local data="$OUT/$version.perf.data"
+    local data="$OUT/$name.perf.data"
 
     # Logging is capped at error level: it would skew the profile.
-    "$SERVER" --port "$PORT" --log-level error --log-file "$OUT/$version.log" \
-        --dump "$OUT/$version.snap" "$@" >/dev/null 2>&1 &
+    "$SERVER" --port "$PORT" --log-level error --log-file "$OUT/$name.log" \
+        --dump "$OUT/$name.snap" "$@" >/dev/null 2>&1 &
     SERVER_PID=$!
     wait_for_port
 
@@ -171,7 +169,7 @@ profile() {
         return 1
     fi
 
-    echo "== $version, $SCENARIO: sampling pid $SERVER_PID for ${DURATION}s =="
+    echo "== $name, $SCENARIO: sampling pid $SERVER_PID for ${DURATION}s =="
     # Count over the same window as the samples, so the counters can be divided
     # by the commands the server handled: per-request figures, comparable
     # between versions even when the throughput differs.
@@ -179,16 +177,16 @@ profile() {
     before="$(commands_processed)"
     perf stat -x, -e context-switches,cpu-migrations,task-clock \
         -e cycles,instructions,cache-misses,LLC-load-misses \
-        -p "$SERVER_PID" -o "$OUT/$version.stat" -- sleep "$DURATION" \
+        -p "$SERVER_PID" -o "$OUT/$name.stat" -- sleep "$DURATION" \
         >/dev/null 2>&1 &
     stat_pid=$!
     perf record -F 999 ${CALLGRAPH_ARGS[@]+"${CALLGRAPH_ARGS[@]}"} \
         -p "$SERVER_PID" -o "$data" -- sleep "$DURATION" \
-        >/dev/null 2>"$OUT/$version.perf.err" ||
-        { cat "$OUT/$version.perf.err" >&2; return 1; }
+        >/dev/null 2>"$OUT/$name.perf.err" ||
+        { cat "$OUT/$name.perf.err" >&2; return 1; }
     wait "$stat_pid" || true
     after="$(commands_processed)"
-    report_counters "$OUT/$version.stat" "$((after - before))"
+    report_counters "$OUT/$name.stat" "$((after - before))"
 
     kill "$BENCH_PID" 2>/dev/null || true
     wait "$BENCH_PID" 2>/dev/null || true
@@ -234,10 +232,4 @@ profile() {
     echo
 }
 
-for version in $VERSIONS; do
-    case "$version" in
-        v1) profile v1 ;;
-        v2) profile v2 --sender-sessions ;;
-        *) echo "error: unknown version '$version'" >&2; exit 1 ;;
-    esac
-done
+profile server

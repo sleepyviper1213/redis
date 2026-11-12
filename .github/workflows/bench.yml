@@ -113,10 +113,9 @@ jobs:
         run: |
           cmake --build --preset ${{ matrix.preset }}-release --target redis_server
           ccache --show-stats
-      - name: Benchmark (v1, coroutine sessions)
+      - name: Benchmark
         env:
           REF_SERVER: redis-server
-          # A push has no inputs: fall back to the defaults above.
           THREADS: ${{ inputs.threads || '2' }}
           SERVER_CPUS: "0-1"
           CLIENT_CPUS: "2-3"
@@ -124,25 +123,8 @@ jobs:
           RUNS: ${{ inputs.runs || '7' }}
         run: |
           mkdir -p bench
-          report="bench/${{ matrix.compiler }}-v1.txt"
-          echo "${{ matrix.compiler }}, v1, runner: $(nproc) CPUs" | tee "$report"
-          bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a "$report"
-          { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Benchmark (v2, sender sessions)
-        # The same run with --sender-sessions, in the same job: compare the
-        # gap to redis-server here with the one above.
-        env:
-          REF_SERVER: redis-server
-          SERVER_ARGS: --sender-sessions
-          THREADS: ${{ inputs.threads || '2' }}
-          SERVER_CPUS: "0-1"
-          CLIENT_CPUS: "2-3"
-          REQUESTS: ${{ inputs.requests || '200000' }}
-          RUNS: ${{ inputs.runs || '7' }}
-        run: |
-          mkdir -p bench
-          report="bench/${{ matrix.compiler }}-v2.txt"
-          echo "${{ matrix.compiler }}, v2, runner: $(nproc) CPUs" | tee "$report"
+          report="bench/${{ matrix.compiler }}.txt"
+          echo "${{ matrix.compiler }}, runner: $(nproc) CPUs" | tee "$report"
           bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a "$report"
           { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the results
@@ -152,7 +134,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bench-${{ matrix.compiler }}
-          path: bench/${{ matrix.compiler }}-*.txt
+          path: bench/${{ matrix.compiler }}.txt
           if-no-files-found: warn
 
   merge:
@@ -163,8 +145,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Merge the results into one artifact
-        # Download "bench", unzip: gcc-v1.txt, gcc-v2.txt, clang-v1.txt,
-        # clang-v2.txt.
+        # Download "bench", unzip: gcc.txt, clang.txt.
         uses: actions/upload-artifact/merge@v4
         with:
           name: bench

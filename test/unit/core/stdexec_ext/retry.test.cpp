@@ -14,7 +14,7 @@ namespace ex = stdexec;
 
 namespace {
 /// An attempt that throws until it has been tried \p succeed_on times.
-AttemptFactory auto flaky(int &calls, int succeed_on) {
+AttemptFunc auto flaky(int &calls, int succeed_on) {
 	return [&calls, succeed_on] {
 		return ex::just() | ex::then([&calls, succeed_on] {
 				   if (++calls < succeed_on) throw std::runtime_error("flaky");
@@ -60,7 +60,7 @@ SCENARIO("A failed sender is tried again", "[retry]") {
 
 	GIVEN("an attempt with no value") {
 		int calls     = 0;
-		AttemptFactory auto make     = [&calls] {
+		AttemptFunc auto make     = [&calls] {
 			return ex::just() | ex::then([&calls] {
 					   if (++calls < 2) throw std::runtime_error("flaky");
 				   });
@@ -79,7 +79,7 @@ SCENARIO("The policy sees every failure", "[retry]") {
 		int calls = 0;
 		std::vector<size_t> failures;
 		std::vector<std::string> reasons;
-		RetryPolicy auto policy = [&](size_t count, const std::exception_ptr &error) {
+		RetryFunc auto policy = [&](size_t count, const std::exception_ptr &error) {
 			failures.push_back(count);
 			try {
 				std::rethrow_exception(error);
@@ -102,7 +102,7 @@ SCENARIO("The policy sees every failure", "[retry]") {
 
 	GIVEN("an attempt that fails with an error code rather than an exception") {
 		int calls = 0;
-		AttemptFactory auto make = [&calls] {
+		AttemptFunc auto make = [&calls] {
 			++calls;
 			return ex::just_error(
 				std::make_error_code(std::errc::connection_refused));
@@ -120,7 +120,7 @@ SCENARIO("A retry that cannot overflow the stack", "[retry]") {
 	GIVEN("an attempt that fails immediately, many times in a row") {
 		const auto error = std::make_exception_ptr(std::runtime_error("down"));
 		size_t calls     = 0;
-		AttemptFactory auto make        = [&] {
+		AttemptFunc auto make        = [&] {
             ++calls;
             return ex::just_error(error);
 		};
@@ -137,7 +137,7 @@ SCENARIO("A retry that cannot overflow the stack", "[retry]") {
 SCENARIO("A stop is never retried", "[retry]") {
 	GIVEN("a policy whose wait is stopped") {
 		int calls   = 0;
-		RetryPolicy auto policy = [](size_t, const std::exception_ptr &) {
+		RetryFunc auto policy = [](size_t, const std::exception_ptr &) {
 			return ex::just_stopped() | ex::then([] { return true; });
 		};
 
@@ -150,7 +150,7 @@ SCENARIO("A stop is never retried", "[retry]") {
 
 	GIVEN("an attempt that is itself stopped") {
 		int calls = 0;
-		AttemptFactory auto make = [&calls] {
+		AttemptFunc auto make = [&calls] {
 			++calls;
 			return ex::just_stopped() | ex::then([] { return 1; });
 		};

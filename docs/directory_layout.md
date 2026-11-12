@@ -42,9 +42,9 @@ files.
 
 ## Request path
 
-1. `net/listener` accepts a connection and spawns a `net/session` coroutine
-   for it. The session lives in that coroutine's frame, so nothing else owns
-   or shares it.
+1. `net/listener` accepts a connection and starts a `net/detail/session`
+   sender for it. The session lives in that sender's operation state, so
+   nothing else owns or shares it.
 2. The hot path is split in stages (`net/pipeline`). The session reads bytes
    and `parse_pending` cuts complete requests out of them: RESP arrays from
    client libraries, or inline commands from telnet and redis-benchmark. A
@@ -56,7 +56,7 @@ files.
    thread, reached through stdexec's scheduler and resumed back on the
    session's own strand, that is the only one executing commands. With
    `--io-threads 1` there is no hand-off: `execute_pending` runs both stages
-   inline, as plain functions kept out of the coroutine frame.
+   inline, as plain functions kept out of the session's sender chain.
 4. `commands/handler` checks the request shape and arity, then calls the
    command through a hash table built from each family's `CommandInfo` list.
 5. The command reads or writes `storage/database` through typed lookups
@@ -65,25 +65,48 @@ files.
 6. Replies to every request in the batch are RESP-encoded and sent back in one
    write, again from the I/O thread.
 
-### Sessions, v1 and v2
+### Sessions
 
-There are two interchangeable implementations of the session and the accept
-loop; `--sender-sessions` selects v2. Both run the same `net/pipeline` stages
-and the same `net/executor`.
+A session and the accept loop are stdexec senders over Asio's `use_sender`
+(`net/detail/session`, `net/listener`); the hot path stages live in
+`net/detail/pipeline`.
 
-| | v1 (`net/session`, `net/listener`) | v2 (`net/v2/`) |
-|---|---|---|
-| Style | Asio C++20 coroutines | stdexec sender chains over Asio's `use_sender` |
-| Session state lives in | the `serve()` coroutine frame | the chain's operation state |
-| Round | `co_await` read, parse, execute, write | `read \| parse \| execute \| write`, repeated by `repeat_until` |
-| Hop to the keyspace thread | `Executor::run`, resumed on the strand | `Executor::run_on` then `continues_on` the strand's `AsioContext` |
-| Owns the connections | detached coroutines | a `stdexec::counting_scope` |
-| Shutdown | the event loop is stopped, dropping sessions | sessions are cancelled through the scope's stop token and unwound before the loop stops |
+| | |
+|---|---|
+| Session state lives in | the chain's operation state, with no coroutine frame |
+| Round | `read \| parse \| execute \| write`, repeated by `repeat_until` |
+| Hop to the keyspace thread | `Executor::run_on`, then `continues_on` the strand's `AsioContext` |
+| Owns the connections | a `stdexec::counting_scope` |
+| Shutdown | sessions are cancelled through the scope's stop token and unwound before the loop stops |
 
 `AsioContext` adapts an Asio executor (a strand) into a stdexec scheduler,
-which stdexec does not ship. The v2 accept loop is `repeat_until` over an
-`async_accept` that is rebuilt each iteration, so every client gets its own
-strand.
+which stdexec does not ship. The accept loop is a coroutine
+(`stdexec_ext::InlineTask`) that `co_await`s `stdexec_ext::retry` over one
+`async_accept`, rebuilt for each attempt so every client gets its own strand.
+A coroutine is used for loops with branches that run per accept or failure, not
+per request: the request path stays a sender chain, because a coroutine
+allocates a frame per call and turns `set_error` into an exception. The
+housekeeping timer below is a coroutine for the same reason.
+
+### What a failure stops
+
+`RedisServer::run()` runs three tasks under one `exec::when_any`: the accept
+loop, the housekeeping timer and the wait for SIGINT/SIGTERM. The first to
+finish, however it finishes, cancels the other two through the stop token.
+Each task's `stdexec_ext::FailPolicy` is named where it is started
+(`supervised<...>`):
+
+| Task | Policy | A failure |
+|---|---|---|
+| A session | `Isolate` | is logged and ends that client only |
+| The accept loop | `FailFast` | is logged, then ends the server with that error |
+| Housekeeping | `FailFast` | ends the server with that error |
+| An I/O thread | (outside the tasks) | requests stop, then ends the server with that error |
+
+Sessions are not in the race, since they come and go: once it is over they are
+cancelled through the listener's scope and drained, then the event loop stops.
+After a signal the final snapshot is written; after a failure `run()` returns
+the error without writing one, and `main()` exits non-zero.
 
 ## Background work
 
@@ -111,7 +134,7 @@ malformed input; shared counters and sets are checked for exact totals. hiredis
 only encodes and decodes, so a framing bug cannot hide on both sides. A failure
 names the client, the request number and the first wrong byte, with that
 client's last exchanges, and prints the seed to replay it. Use `SERVER_ARGS` and
-`STRESS_ARGS` to run it against v2 and several I/O threads.
+`STRESS_ARGS` to run it against several I/O threads.
 
 Tests are written BDD-style (`SCENARIO` / `GIVEN` / `WHEN` / `THEN`). Files
 are named `<component>.test.cpp`; helpers shared by sibling suites live in a
