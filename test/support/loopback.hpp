@@ -55,6 +55,20 @@ public:
 
 	~RunningContext() { work_.reset(); } // threads_ join as they go
 
+	/**
+	 * \brief Let the threads return once the context runs out of work, and
+	 * wait for them. Everything already posted runs first.
+	 *
+	 * For objects declared after this one, and so destroyed before it, that
+	 * posted work to the context: joining first means none of it still runs
+	 * while they are destroyed. Hangs if something never stops; afterwards
+	 * nothing runs the context.
+	 */
+	void join() {
+		work_.reset();
+		threads_.clear(); // a jthread joins when destroyed
+	}
+
 	[[nodiscard]] boost::asio::io_context &io() noexcept { return io_; }
 
 	[[nodiscard]] boost::asio::any_io_executor executor() noexcept {

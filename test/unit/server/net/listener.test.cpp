@@ -125,6 +125,11 @@ public:
 	~BasicListenerFixture() {
 		listener_.stop();
 		if (!drained_) drain_within(5s);
+		// stop() posts the acceptor's close to an I/O thread. Without the
+		// join, the listener (destroyed before context_) could be destroyed
+		// while that close still runs: a race, found by TSan, and a use after
+		// free. The server joins its I/O threads before its listener goes too.
+		context_.join();
 	}
 
 	/// A client connected to the listener; throws if refused.
