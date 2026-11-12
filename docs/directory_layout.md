@@ -108,6 +108,35 @@ cancelled through the listener's scope and drained, then the event loop stops.
 After a signal the final snapshot is written; after a failure `run()` returns
 the error without writing one, and `main()` exits non-zero.
 
+### What a client can rely on
+
+What a session reads at once, every complete request in it, is one batch.
+The keyspace thread executes a batch whole, a command at a time, and nothing
+is checked between its commands, so:
+
+- **Each command is applied entirely or not at all.** Nothing interrupts a
+  command, or the batch it is in, once it has started.
+- **A batch stops part-way only at the output limit.** Once its replies pass
+  `--client-output-buffer-limit`, the commands after the one that crossed it
+  do not run; the earlier ones have, and the client is dropped without any
+  reply.
+- **Cancellation is honoured between operations only.** A stop at shutdown,
+  the idle limit (`--timeout`, which only ever interrupts the wait for a
+  request) and the request limit (`--request-timeout`) all act the same way:
+  a batch still queued for the keyspace thread never runs, a batch already
+  running completes, and an unfinished reply is dropped with the client.
+  With one I/O thread a batch runs as soon as it is read and is never
+  queued, so only the reply can be cut short there.
+- **A reply received is durable as configured.** With an append-only file,
+  a batch's writes are in the file (and on disk, with `appendfsync always`)
+  before any of its replies is sent.
+
+What a client cannot know is what happened when its connection drops, or is
+closed by a limit, before the reply arrives: its commands may have run in
+full, or not at all. Retrying is safe for idempotent commands (`SET`, `DEL`);
+retrying `INCR` or `LPUSH` blindly may apply it twice. See "Retries and
+idempotency" in `TODO.md`.
+
 ## Background work
 
 `net/redis_server` runs a 100 ms timer (Redis' `serverCron`) on the event

@@ -21,13 +21,21 @@ Design notes and future work. Nothing here is implemented yet.
 
 ## Cancellation and timeouts
 
-- [ ] **Per-request timeouts.** The idle limit already races the read against
-  a `steady_timer` with `exec::when_any` (`with_idle_limit` in the session), so
-  whichever finishes first cancels the other through the stop token; a
-  per-request limit would race execute and write the same way.
-- [ ] **Document the delivery guarantee.** A command is applied entirely or not
-  at all (cancellation is only honoured between operations), but a client
-  cannot know which when the connection drops before the reply.
+- [x] **Per-request timeouts.** `--request-timeout <seconds>`
+  (`NetLimits::request_timeout`, zero for none): once a batch is read, it must
+  be executed and its replies written within the limit, or the client is
+  closed and `Violation::RequestTimeout` counted. The session races
+  `respond()` (execute, then write) against a timer with `with_time_limit`,
+  as the idle limit races the read. Two things the race needed: closing the
+  socket when time runs out, because Windows does not complete a cancelled
+  send the peer is not reading; and `unless_stop_requested` on the timer,
+  because `use_sender` loses a stop requested before its wait starts, which
+  made every round with nothing to answer wait out the whole limit.
+- [x] **Document the delivery guarantee.** "What a client can rely on" in
+  `docs/directory_layout.md`: a command is applied entirely or not at all; a
+  batch stops part-way only at the output limit; a stop or a limit skips a
+  queued batch, lets a running one finish and drops its reply; and a client
+  cannot know which when its connection drops before the reply.
 - [x] **Log which stage failed.** Each stage of the session handles its own
   error (`fail_io` with `ReadFailed`, `ExecuteFailed`, `WriteFailed`); only
   what escapes them is logged as a generic "Connection:".
@@ -191,16 +199,16 @@ One command thread means one slow command stalls every client.
     and a policy that waits on a real timer;
   - no coroutine-frame allocation on the request path (count allocations in the
     session test).
-- [ ] **Switch `InlineTask` to `stdexec::task` (P3552).** Unblocked: since the
-  vcpkg baseline bump (stdexec 2026-11-02), `stdexec::task` is a sender, not
-  only an awaitable. `InlineTask` is still `exec::task` with the inline
-  context, from an internal namespace (`core/stdexec_ext/task.hpp`). Check
-  before switching: `stdexec::task` is scheduler-affine by default, and
-  `spawn()` provides no scheduler to start on (use `starts_on`, or turn the
-  affinity off with an `inline_scheduler` start scheduler type in the task's
-  environment); the accept loop and housekeeping must keep
-  resuming where Asio completes them; and its error channel is still
-  `exception_ptr`.
+- [x] **`InlineTask` is `stdexec::task` (P3552).** `stdexec::task<T,
+  InlineTaskEnv>`, where the environment's `start_scheduler_type` is
+  `inline_scheduler` (`core/stdexec_ext/task.hpp`): no scheduler needed to
+  start, so `spawn()` and `start_detached()` take it, and no hop back after a
+  `co_await`, so the accept loop and housekeeping resume where Asio completes
+  them. No internal stdexec namespace any more. The second template argument
+  is an environment, not a scheduler: `task<T, inline_scheduler>` would be
+  an ordinary affine task, which `spawn()` rejects at compile time.
+  `test/unit/core/stdexec_ext/task.test.cpp` checks the no-hop behaviour,
+  which the compiler cannot.
 - [ ] **Replace `asio_thread_pool` as the keyspace thread.** Nothing needs its
   Asio face any more: sessions and housekeeping only use `run_on()`'s
   scheduler. Try `exec::static_thread_pool(1)` or a single-thread context
