@@ -62,7 +62,11 @@ Design notes and future work. Nothing here is implemented yet.
 - [ ] **Differential test against real Redis** (Linux): same deterministic
   command stream to both, compare reply bytes, report the first divergence.
 - [ ] **Run the multi-threaded mode under ThreadSanitizer** (`--io-threads N`)
-  on a Linux preset; it could not be run on mingw.
+  on a Linux preset; it could not be run on mingw. Half done: CI's
+  `linux-gcc-tsan` job runs the unit tests under TSan, including the listener
+  on 4 I/O threads and the threaded executor, and passes. Still open: the
+  server itself with `--io-threads N` under TSan, driven by the integration or
+  stress suite.
 - [ ] **Audit `BGSAVE` forking from a multithreaded process.** The child must
   only touch memory it owns and then `_exit`; check logging, allocator and any
   locks held by the I/O threads at fork time.
@@ -136,7 +140,16 @@ One command thread means one slow command stalls every client.
 - [ ] **Benchmark with `redis-benchmark`:** before and after the merge and the
   coroutine accept loop, and `--io-threads 1` vs N. The hop to the keyspace
   thread adds latency per batch; the gain should only show with many
-  connections.
+  connections. After the merge, against Redis 8.0.2 (CI `bench` workflow, gcc
+  and clang, two runs of the same commit, one I/O thread): plain clients -0.2
+  to -2.9%, one client +5 to +8%, pipelined +9 to +15%, `bigget` +16 to +21%.
+  Two runs of identical code differed by up to ~6 points on these ratios, so
+  read a smaller change between CI runs as noise. Still open: the comparison
+  with the code before the merge, and `--io-threads N`.
+- [ ] **Plain clients trail Redis slightly.** The one scenario where the server
+  does not lead: behind in all four measurements above, by 0.2 to 2.9%. Small,
+  but always on the same side. Profile the 50-client, unpipelined case
+  (`scripts/profile_server_linux.sh <preset> RelWithDebInfo clients`).
 - [x] **Unit tests for the listener** (`test/unit/server/net/listener.test.cpp`,
   on an ephemeral port): clients served, many at once, on 1 and 4 I/O threads;
   `stop()` while accepting and with a live client, twice, then refused
@@ -151,23 +164,43 @@ One command thread means one slow command stalls every client.
   ends the server with that error, where a dead accept loop used to leave it
   running), sessions are `Isolate`.
 - [ ] **Test that a FailFast failure ends the server**, with the error returned
-  from `run()` and the sessions drained. Needs a way to make the accept loop or
-  housekeeping fail on demand.
+  from `run()` and the sessions drained. Accepts can now fail on demand
+  (`BasicListener<FailingAcceptor>` in the listener test), but by design
+  `retry` absorbs those, so the loop never fails from them. A FailFast end
+  needs a failure outside `retry`: a seam in housekeeping (`cron()`), say.
+- [ ] **Decide: a final snapshot after a FailFast failure?** `run()` returns
+  the error without saving, so a dead accept loop loses the writes since the
+  last save. Saving anyway would keep them whenever the keyspace thread itself
+  is still healthy.
+- [ ] **Fewer exceptions in the coroutines.** `serve()` catches the race's
+  error with `try`/`catch` around the `co_await`, and the accept loop does the
+  same around `retry`. Recording the error in an `upon_error` before the
+  `co_await` throws nothing and keeps the reason (the handler records it).
 - [x] **The accept loop as a coroutine** (`stdexec_ext::InlineTask`) that
   `co_await`s `retry` over one accept. The per-request round stays a sender
   chain: a task allocates a frame per call, and `co_await` turns `set_error`
   into an exception.
+- [x] **Failed accepts, injected.** `BasicListener` takes its acceptor as a
+  template parameter (`tcp::acceptor` in the server, so it costs nothing);
+  the test's `FailingAcceptor` fails the next n accepts. Covered: the client is
+  served once the failures stop, after `ACCEPT_RETRY_DELAY` each; a run of
+  failures retries about once per delay, not in a tight loop; `stop()` while
+  waiting after a failure ends the loop without an error.
 - [ ] **Remaining accept-loop tests:**
-  - a failed accept is logged, waits `ACCEPT_RETRY_DELAY`, and tries again
-    (inject a failure: an exhausted descriptor limit, or a fake acceptor);
-  - `stop()` while waiting after a failure;
   - `retry`: stop during an attempt, attempts that complete on another thread,
     and a policy that waits on a real timer;
   - no coroutine-frame allocation on the request path (count allocations in the
     session test).
-- [ ] **Switch to `stdexec::task` (P3552)** when the pinned stdexec makes it a
-  sender. Today it is awaitable only, so `InlineTask` uses `exec::task` with
-  the inline context, from an internal namespace (`core/stdexec_ext/task.hpp`).
+- [ ] **Switch `InlineTask` to `stdexec::task` (P3552).** Unblocked: since the
+  vcpkg baseline bump (stdexec 2026-11-02), `stdexec::task` is a sender, not
+  only an awaitable. `InlineTask` is still `exec::task` with the inline
+  context, from an internal namespace (`core/stdexec_ext/task.hpp`). Check
+  before switching: `stdexec::task` is scheduler-affine by default, and
+  `spawn()` provides no scheduler to start on (use `starts_on`, or turn the
+  affinity off with an `inline_scheduler` start scheduler type in the task's
+  environment); the accept loop and housekeeping must keep
+  resuming where Asio completes them; and its error channel is still
+  `exception_ptr`.
 - [ ] **Replace `asio_thread_pool` as the keyspace thread.** Nothing needs its
   Asio face any more: sessions and housekeeping only use `run_on()`'s
   scheduler. Try `exec::static_thread_pool(1)` or a single-thread context
@@ -208,3 +241,30 @@ One command thread means one slow command stalls every client.
   Use the same case-insensitive match for the `SET` options (`NX`, `EX`, ...).
   Avoid x86-only CRC32 intrinsics (the Mac is arm64). Reference, not to copy
   (CC-BY-NC-ND): <https://github.com/strager/perfect-hash-tables>.
+
+## Tooling
+
+- [ ] **AddressSanitizer on Windows with LLVM's clang-cl.** It works, but only
+  by hand. `cmake/sanitizers/Address.cmake` looks for the runtime DLL beside the
+  compiler, and LLVM keeps it in `lib/clang/<version>/lib/windows`. It also
+  adds no runtime libraries, so `lld-link`, called directly by CMake, fails
+  with undefined `__asan_*` symbols: with the static CRT it needs
+  `clang_rt.asan_dynamic-x86_64.lib` and
+  `clang_rt.asan_static_runtime_thunk-x86_64.lib`. And abseil's prebuilt
+  library (no ASan) disagrees with ASan-built code about `raw_hash_set`'s
+  layout (ASan turns on its generation tracking), which crashes inside the
+  keyspace: build ASan trees with `-DREDIS_KEYSPACE_MAP=boost`, or abseil with
+  ASan too.
+- [ ] **Static analysis is mostly noise.** CI's clang-tidy reports about 900
+  distinct warnings in our code, most from `misc-include-cleaner`, unchecked
+  container access and magic numbers, and the job passes regardless, so a new
+  real finding is easy to miss. Decide per check: fix it, or turn it off in
+  `.clang-tidy`. cppcheck runs without `--enable`, so it reports only
+  error-severity findings (both of today's are false positives).
+- [x] **MinGW: one Asio thread type in every file.** Asio chose `posix_thread`
+  or `win_thread` per file, by include order, so `win_iocp_io_context` had two
+  layouts in one program: a crash, an invalid handle or a hang in
+  `~io_context`. `BOOST_ASIO_HAS_PTHREADS` is now defined everywhere on MinGW
+  (`cmake/Dependencies.cmake`). `test/support/crash_report_windows.cpp` makes
+  such bugs report themselves: a crash prints its stack, and strict handle
+  checking faults on the first invalid handle.
