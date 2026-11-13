@@ -18,9 +18,9 @@ namespace redis::os {
  * private, never through a link, whatever a crash or someone else left under
  * that name. commit() makes it durable (fsync), renames it over the target and
  * syncs the directory, so the rename survives a power cut too. A step that
- * fails is a SaveError naming the step and the target. A SaveFile dropped without a
- * successful commit() removes its temporary file and leaves the target as it
- * was.
+ * fails is a SaveError naming the step and the target. A SaveFile dropped
+ * without a successful commit() removes its temporary file and leaves the
+ * target as it was.
  *
  * For a serializer that wants a std::ostream, stream() writes through
  * a buffer straight into the file; write() is the same thing for a string.
@@ -52,8 +52,8 @@ private:
 	SaveFile(DurableFile file, std::filesystem::path target,
 			 std::filesystem::path temp);
 
-	/// The state, on the heap: the stream refers to the buffer and the buffer to
-	/// the file, so it must not move when the SaveFile does.
+	/// The state, on the heap: the stream refers to the buffer and the buffer
+	/// to the file, so it must not move when the SaveFile does.
 	indirect<Impl> impl_;
 };
 

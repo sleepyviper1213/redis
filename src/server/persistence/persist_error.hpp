@@ -63,8 +63,8 @@ using PersistError = Failure<PersistKind>;
 /// startup message, and (behind "ERR ") the reply to a client all use it.
 [[nodiscard]] std::string display(const PersistError &error);
 
-/// A failed SaveFile step as a PersistError (kind SaveCreate .. SaveSyncDirectory),
-/// with the same path and cause.
+/// A failed SaveFile step as a PersistError (kind SaveCreate ..
+/// SaveSyncDirectory), with the same path and cause.
 [[nodiscard]] PersistError to_persist_error(const os::SaveError &error);
 
 } // namespace redis::persistence
