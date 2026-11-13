@@ -34,11 +34,11 @@ Parser::parse_recursive(std::string_view data, size_t &pos, int depth) {
 
 	const std::string_view line =
 		data.substr(pos, line_end - pos); // exclude CRLF
-	pos                   = line_end + 2; // move past "\r\n"
+	pos = line_end + 2;                   // move past "\r\n"
 
 	if (line.empty()) REDIS_FAILED(EMPTY_LINE);
 
-	const char prefix        = line[0];
+	const char prefix              = line[0];
 	const std::string_view payload = line.substr(1);
 
 	switch (prefix) {
@@ -51,7 +51,8 @@ Parser::parse_recursive(std::string_view data, size_t &pos, int depth) {
 	case '$': {
 		const auto len = REDIS_TRY_FROM(parse_integer(payload), RespError);
 		if (len == -1) return Value::from_null();
-		if (len < -1 || len > MAX_BULK_LENGTH) REDIS_FAILED(INVALID_BULK_LENGTH);
+		if (len < -1 || len > MAX_BULK_LENGTH)
+			REDIS_FAILED(INVALID_BULK_LENGTH);
 
 		// len is in [0, MAX_BULK_LENGTH] here.
 		const auto size = static_cast<size_t>(len);
@@ -67,7 +68,8 @@ Parser::parse_recursive(std::string_view data, size_t &pos, int depth) {
 	}
 	case '*': {
 		const auto len = REDIS_TRY_FROM(parse_integer(payload), RespError);
-		if (len == -1) return Value::from_null();
+		// Not from_null(): that one formats back as $-1, another RESP type.
+		if (len == -1) return Value::from_null_array();
 		if (len < -1) REDIS_FAILED(INVALID_ARRAY_LENGTH);
 
 		std::vector<Value> arr;
