@@ -1,39 +1,50 @@
 @startuml
+title Use Cases - Redis-like Server
 left to right direction
 
-actor client
-actor admin
+actor Client
+actor Operator
 
 rectangle "Redis-like Server" {
-  usecase "Connect via TCP" as UC5
-  usecase "Store Key-Value Data" as UC1
-  usecase "Retrieve Key-Value Data" as UC2
-  usecase "Snapshot Data to Disk" as UC6
-  usecase "Configure Server Settings" as UC7
-  usecase "Extend System Features" as UC9
+  usecase "Connect over TCP\n(RESP or inline)" as UC5
+  usecase "Store and read data\n(strings, lists, hashes, sets)" as UC1
+  usecase "Expire keys\n(SET EX/PX, TTL, PERSIST)" as UC2
+  usecase "Inspect the keyspace\n(KEYS, TYPE, EXISTS, DBSIZE)" as UC3
+  usecase "Snapshot data to disk\n(SAVE, BGSAVE)" as UC6
+  usecase "Rewrite the append-only file\n(BGREWRITEAOF)" as UC8
+  usecase "Inspect the server\n(INFO, CONFIG GET)" as UC4
+  usecase "Change the log level\n(CONFIG SET loglevel)" as UC10
+  usecase "Configure the server\n(options, config file, environment)" as UC7
+  usecase "Stop the server\n(SIGTERM: final save)" as UC11
+  usecase "Watch the logs\n(watchdog warnings, crash reports)" as UC12
+  usecase "Extend system features" as UC9
 }
 
-' Client interactions
-client --> UC1
-client --> UC2
-client --> UC5
-client --> UC6
+Client --> UC5
+Client --> UC1
+Client --> UC2
+Client --> UC3
+Client --> UC6
+Client --> UC8
+Client --> UC4
+Client --> UC10
 
-' Admin interactions
-admin --> UC7
-admin --> UC9
+Operator --> UC7
+Operator --> UC11
+Operator --> UC12
+Operator --> UC9
 
-' Extend relationships
-UC1 --> UC6 : <<extend>>
+UC1 <.. UC2 : <<extend>>
+UC1 ..> UC8 : write commands\nare logged
 
-' Notes
-note right of UC6
-  Optional background save based on threshold or interval
+note right of UC10
+  Only with --enable-config-set:
+  there is no authentication.
 end note
-
-
 
 note right of UC9
-  BR-009:\nFor future features like Pub/Sub
+  BR-009: for future features
+  such as Pub/Sub
 end note
+
 @enduml

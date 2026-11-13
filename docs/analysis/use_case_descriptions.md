@@ -1,4 +1,3 @@
-
 # Use Case: Save Snapshot
 
 ## Use Case ID
@@ -7,59 +6,71 @@ UC-001
 
 ## Description
 
-Client requests the server to persist the in-memory database to disk using the `SAVE` command.
+Client asks the server to persist the in-memory keyspace to disk, with `SAVE` (blocking) or `BGSAVE` (in the
+background).
 
 ## Primary Actor
 
-Client (via Python console or HTTP interface)
+Client (redis-cli or any Redis client)
 
 ## Preconditions
 
 * Server is running
-* The database contains at least one key-value pair
-* Command syntax is valid: `SAVE`
+* Command syntax is valid: `SAVE` or `BGSAVE`, with no arguments
 
 ## Postconditions
 
-* A snapshot file (`redis.snap`) is created in the project directory
-* If an older snapshot exists, it's renamed to `redis.snap.bak`
+* The snapshot file (`--dump`, default `dump.snap`) holds every live key, in this project's snapshot format
+* The previous snapshot was replaced atomically: readers see the old file or the new one, never a partial one
+* `LASTSAVE` reports the time of the snapshot
 
 ## Flow of Events
 
-| Step | Actor  | Description                      |
-|------|--------|----------------------------------|
-| 1    | Client | Sends `SAVE` command             |
-| 2    | Server | Validates command                |
-| 3    | Server | Runs file-write snapshot routine |
-| 4    | Server | Writes snapshot to disk          |
-| 5    | Server | Responds with success or error   |
+| Step | Actor  | Description                                                                                      |
+|------|--------|--------------------------------------------------------------------------------------------------|
+| 1    | Client | Sends `SAVE`                                                                                     |
+| 2    | Server | Checks the command and its arity                                                                 |
+| 3    | Server | Writes every live key to a temporary file in the same directory and syncs it to disk             |
+| 4    | Server | Renames the temporary file over the snapshot, then syncs the directory                           |
+| 5    | Server | Replies `+OK`                                                                                    |
 
 ## Alternate Flows
 
-### A1: Invalid Command Format
+### A1: Wrong number of arguments
 
-* Server replies: `ERR wrong number of arguments for 'SAVE'`
+* Server replies: `ERR wrong number of arguments for 'save' command`
 
-### A2: Fork or I/O Error
+### A2: Background save (`BGSAVE`)
 
-* Server replies with relevant failure message
+* Server forks a child that writes the snapshot, and replies `+Background saving started` at once
+* The server keeps serving clients; the child's copy-on-write view is the keyspace at the moment of the fork
+* The housekeeping task collects the child when it ends and logs the outcome
+* Relies on `fork` (POSIX)
+
+### A3: A background save is already running
+
+* Server replies: `ERR Background save already in progress`
+
+### A4: I/O error
+
+* Server replies `ERR` followed by what failed (for example the file could not be created), and the previous snapshot
+  is left in place
 
 ## Related Functional Requirements
 
-* FR-4: SAVE
-* FR-7: Snapshot File
-* FR-8: Backup on Save
+* FR-011: Snapshots
+* FR-010: Error replies
 
 ## Related Nonfunctional Requirements
 
-* NFR-3.4.1: Performance (Snapshot latency ≤ 100ms)
-* NFR-3.4.2: Security (No overwrite without `.bak`)
-* NFR-3.4.3: Reliability (Crash recovery from latest snapshot)
-* NFR-3.4.5: Availability (Server remains responsive during snapshot)
+* NFR-001: Performance (`SAVE` blocking time)
+* NFR-003: Reliability (atomic replacement, recovery from the latest snapshot)
+* NFR-005: Availability (`BGSAVE` keeps serving)
 
 ## Notes
 
-* Snapshotting is currently blocking. Future versions may implement background saving.
+* `SAVE` blocks every client while it writes, as in Redis; prefer `BGSAVE` on large datasets.
+* A snapshot is also written at shutdown (FR-017).
 
 ---
 
@@ -71,55 +82,68 @@ UC-002
 
 ## Description
 
-Client stores or updates a key-value pair in the in-memory database using the `SET` command.
+Client stores or replaces a string value with `SET`, optionally with an expiry or a condition.
 
 ## Primary Actor
 
-Client (Python console or CLI)
+Client (redis-cli or any Redis client)
 
 ## Preconditions
 
 * Server is running
-* Command syntax is valid: `SET <key> <value>`
+* Command syntax is valid:
+  `SET <key> <value> [NX | XX] [GET] [EX s | PX ms | EXAT ts | PXAT ms-ts | KEEPTTL]`
 
 ## Postconditions
 
-* The key-value pair is stored or updated in memory
-* Any existing value for the key is overwritten
+* The key holds the new string value, whatever type it held before
+* With an expiry option, the key has a deadline; with `KEEPTTL`, it keeps the one it had; otherwise any previous
+  deadline is cleared
+* With the append-only file on, the write is logged (an `EX` or `PX` expiry as an absolute `PXAT`)
 
 ## Flow of Events
 
-| Step | Actor  | Description                               |
-| ---- | ------ | ----------------------------------------- |
-| 1    | Client | Sends `SET <key> <value>`                 |
-| 2    | Server | Parses and validates command              |
-| 3    | Server | Inserts or updates the key with new value |
-| 4    | Server | Responds with `"OK"`                      |
+| Step | Actor  | Description                                         |
+|------|--------|-----------------------------------------------------|
+| 1    | Client | Sends `SET <key> <value>`                           |
+| 2    | Server | Parses the request and checks the options           |
+| 3    | Server | Stores the value, replacing any previous one        |
+| 4    | Server | Replies `+OK`                                       |
 
 ## Alternate Flows
 
-### A1: Invalid Command Format
+### A1: Wrong number of arguments
 
-* Server responds with: `ERR wrong number of arguments for 'SET'`
+* Server replies: `ERR wrong number of arguments for 'set' command`
 
-### A2: Value Contains Spaces
+### A2: Condition not met (`NX` on an existing key, `XX` on a missing one)
 
-* Client should wrap value in quotes or use encoding
+* Nothing is stored; server replies with a null bulk string
+
+### A3: `GET` option
+
+* Server replies with the previous value, or null if there was none; `WRONGTYPE` if the key held another type
+
+### A4: Invalid option or expiry
+
+* Server replies `ERR syntax error`, or `ERR invalid expire time in 'set' command`
+
+### A5: Value contains spaces
+
+* Through a Redis client, values are sent as RESP bulk strings and may contain anything, binary data included
+* Through telnet (inline commands), quote the value
 
 ## Related Functional Requirements
 
-* FR-2: SET
-* FR-13: Error Responses
+* FR-001: String commands
+* FR-006: Key expiry
+* FR-010: Error replies
+* FR-012: Append-only file
 
 ## Related Nonfunctional Requirements
 
-* NFR-3.4.1: Performance (≤ 1ms latency)
-* NFR-3.4.6: Maintainability
-* NFR-3.4.8: Extensibility
-
-## Notes
-
-* Only string keys and values are supported. No TTL or expiration implemented.
+* NFR-001: Performance
+* NFR-004: Compatibility (replies match Redis)
 
 ---
 
@@ -131,55 +155,58 @@ UC-003
 
 ## Description
 
-Client retrieves the value for a key using the `GET` command.
+Client reads the string value of a key with `GET`.
 
 ## Primary Actor
 
-Client (Python console or CLI)
+Client (redis-cli or any Redis client)
 
 ## Preconditions
 
 * Server is running
 * Command syntax is valid: `GET <key>`
-* Key-value store is initialized
 
 ## Postconditions
 
-* If key exists and is valid, value is returned
-* If key does not exist or is expired, nil or error is returned
+* The keyspace is unchanged, except that a key found expired is removed
 
 ## Flow of Events
 
-| Step | Actor  | Description                     |
-| ---- | ------ | ------------------------------- |
-| 1    | Client | Sends `GET <key>`               |
-| 2    | Server | Parses and validates command    |
-| 3    | Server | Looks up key and returns result |
+| Step | Actor  | Description                                   |
+|------|--------|-----------------------------------------------|
+| 1    | Client | Sends `GET <key>`                             |
+| 2    | Server | Parses the request and checks its arity       |
+| 3    | Server | Looks the key up as a string                  |
+| 4    | Server | Replies with the value as a bulk string       |
 
 ## Alternate Flows
 
-### A1: Key Expired
+### A1: Key missing or expired
 
-* Server deletes key and responds with nil
+* An expired key is removed on access; server replies with a null bulk string
 
-### A2: Invalid Format
+### A2: Key holds another type
 
-* Respond with: `ERR wrong number of arguments for 'GET'`
+* Server replies: `WRONGTYPE Operation against a key holding the wrong kind of value`
+
+### A3: Wrong number of arguments
+
+* Server replies: `ERR wrong number of arguments for 'get' command`
 
 ## Related Functional Requirements
 
-* FR-1: GET
-* FR-13: Error Responses
+* FR-001: String commands
+* FR-006: Key expiry
+* FR-010: Error replies
 
 ## Related Nonfunctional Requirements
 
-* NFR-3.4.1: Performance (≤ 1ms latency)
-* NFR-3.4.3: Reliability
-* NFR-3.4.6: Maintainability
+* NFR-001: Performance
+* NFR-004: Compatibility
 
 ## Notes
 
-* Keys are strings only. No support for complex types.
+* Lists, hashes and sets have their own read commands (`LRANGE`, `HGET`, `SMEMBERS` and others; see FR-002 to FR-004).
 
 ---
 
@@ -191,55 +218,54 @@ UC-004
 
 ## Description
 
-Client deletes one or more keys from the in-memory store using the `DEL` command.
+Client deletes one or more keys, of any type, with `DEL`.
 
 ## Primary Actor
 
-Client (Python console or CLI)
+Client (redis-cli or any Redis client)
 
 ## Preconditions
 
 * Server is running
-* Command syntax is valid: `DEL <key1> <key2> ...`
+* Command syntax is valid: `DEL <key> [<key> ...]`
 
 ## Postconditions
 
-* All specified keys that exist are removed
-* Response returns number of keys deleted
+* Every named key that existed is removed, with its deadline
+* With the append-only file on, the deletion is logged
 
 ## Flow of Events
 
-| Step | Actor  | Description                                   |
-| ---- | ------ | --------------------------------------------- |
-| 1    | Client | Sends `DEL <key1> <key2> ...`                 |
-| 2    | Server | Parses command and extracts key list          |
-| 3    | Server | Deletes all found keys, ignoring missing ones |
-| 4    | Server | Returns number of keys deleted                |
+| Step | Actor  | Description                                         |
+|------|--------|-----------------------------------------------------|
+| 1    | Client | Sends `DEL <key1> <key2> ...`                       |
+| 2    | Server | Parses the request and checks its arity             |
+| 3    | Server | Removes each key that exists, skipping missing ones |
+| 4    | Server | Replies with the number of keys removed             |
 
 ## Alternate Flows
 
-### A1: No Keys Given
+### A1: No key given
 
-* Respond with: `ERR wrong number of arguments for 'DEL'`
+* Server replies: `ERR wrong number of arguments for 'del' command`
 
-### A2: Some Keys Missing
+### A2: Some keys missing
 
-* Server deletes existing keys, skips missing ones
+* Missing keys are skipped and not counted
 
 ## Related Functional Requirements
 
-* FR-3: DEL
-* FR-13: Error Responses
+* FR-005: Keyspace commands
+* FR-010: Error replies
 
 ## Related Nonfunctional Requirements
 
-* NFR-3.4.1: Performance
-* NFR-3.4.6: Maintainability
+* NFR-001: Performance
+* NFR-004: Compatibility
 
 ## Notes
 
-* The command is idempotent. Missing keys do not cause failure.
-  Here’s the **use case description** for a client connection ping-pong, following the same structure and formatting as your example:
+* The command is idempotent: deleting a missing key is not an error.
 
 ---
 
@@ -251,63 +277,65 @@ UC-005
 
 ## Description
 
-Client maintains an active connection with the server by periodically sending `PING` commands and receiving `PONG` responses to verify liveness.
+Client checks that the server is alive, and that its connection still works, by sending `PING`.
 
 ## Primary Actor
 
-Client (e.g., Redis CLI, custom client application)
+Client (redis-cli, a client library's health check, a load balancer probe)
 
 ## Preconditions
 
-* Server is running and listening on the configured port
-* Client is connected to the server via TCP socket
-* Command syntax is valid: `PING`
+* Server is running and listening on `--host`:`--port`
+* Client is connected, and was admitted (fewer than `--maxclients` clients)
 
 ## Postconditions
 
-* Server responds with `PONG` for each `PING`
-* Connection health is verified
-* If server does not respond, client detects connection failure
+* Client knows the server answered; nothing changes on the server
 
 ## Flow of Events
 
-| Step | Actor  | Description                           |
-| ---- | ------ | ------------------------------------- |
-| 1    | Client | Sends `PING` command over connection  |
-| 2    | Server | Validates the command                 |
-| 3    | Server | Responds with `PONG`                  |
-| 4    | Client | Receives `PONG` and confirms liveness |
+| Step | Actor  | Description                                   |
+|------|--------|-----------------------------------------------|
+| 1    | Client | Sends `PING`                                  |
+| 2    | Server | Parses the request and checks its arity       |
+| 3    | Server | Replies `+PONG`                               |
+| 4    | Client | Receives the reply                            |
 
 ## Alternate Flows
 
-### A1: Invalid Command Format
+### A1: PING with a message
 
-* Server replies: `ERR wrong number of arguments for 'PING'`
+* `PING <message>` is answered with the message, as a bulk string
 
-### A2: Connection Lost
+### A2: Too many arguments
 
-* Server does not respond
-* Client times out and marks connection as broken
+* Server replies: `ERR wrong number of arguments for 'ping' command`
 
-### A3: Server Overloaded
+### A3: Idle client
 
-* Response is delayed or dropped
-* Client retries or reconnects based on configuration
+* With `--idle-timeout` set, a client that sends nothing for that long is disconnected; a periodic `PING` keeps it
+  connected
+
+### A4: Server full
+
+* A connection past `--maxclients` gets `ERR max number of clients reached` and is closed
+
+### A5: Connection lost
+
+* No reply arrives; the client's own timeout detects it and reconnects
 
 ## Related Functional Requirements
 
-* FR-1: Command Execution
-* FR-2: Connection Handling
-* FR-3: Health Check (PING/PONG)
+* FR-007: Server commands
+* FR-008: TCP server and protocol
+* FR-014: Client limits
 
 ## Related Nonfunctional Requirements
 
-* NFR-2.1: Latency (PING round-trip ≤ 10ms under normal load)
-* NFR-2.2: Availability (Server responds to PING during normal operation)
-* NFR-2.3: Reliability (Client detects failure on missing response)
+* NFR-001: Performance
+* NFR-005: Availability
 
 ## Notes
 
-* `PING` is often used as a heartbeat mechanism to keep idle connections alive
-* Future versions may allow `PING <message>` returning `<message>` instead of `PONG` for debugging purposes
-
+* A slow command on the server delays every reply, `PING` included, until it ends; the command watchdog logs such
+  commands (FR-016).

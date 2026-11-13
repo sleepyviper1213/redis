@@ -1,30 +1,62 @@
 @startuml
-title Startup Initialization - Redis-like Server
+title Startup and Shutdown - Redis-like Server
 
 start
 
-:Load Configuration;
-:Initialize Logger;
-:Bind TCP Port;
+:Read the options: command line, --config file, REDIS_* environment;
+:Start logging (an async logger thread);
+:Install the crash handler (POSIX);
 
-partition "Subsystem Initialization" {
-  :Initialize Command Registry;
-  :Initialize Database Store;
-  :Initialize Snapshot Manager;
+partition "Build the server" {
+  :Keyspace, command table, snapshot manager;
+  :Keyspace thread, with --io-threads above 1;
+  :Watchdog thread, with --watchdog-ms above 0;
 }
 
-:Restore from Snapshot?;
-if (Has valid snapshot?) then (yes)
-  :Load Data from Snapshot;
+if (--appendonly?) then (yes)
+  :Replay the append-only file
+  (its base snapshot, then the logged commands);
 else (no)
-  :Initialize Empty DB;
+  :Load the snapshot (--dump), if there is one;
+endif
+if (Loaded?) then (no)
+  :Refuse to start, rather than serve an empty keyspace
+  and overwrite the unreadable files with it later;
+  stop
 endif
 
-:Start Listening for Connections;
+if (Listening on --host:--port?) then (no)
+  :Exit with the error;
+  stop
+endif
 
-partition "Monitoring" {
-  :Spawn Metrics Thread;
-  :Spawn Snapshot Auto-save Thread;
+:Run the event loop on --io-threads threads;
+fork
+  :Accept loop: one session per client;
+fork again
+  :Housekeeping every 100 ms: expire keys,
+  sample stats, reap BGSAVE and rewrite children;
+fork again
+  :Watchdog: warn about a command
+  running past --watchdog-ms;
+fork again
+  :Wait for SIGINT or SIGTERM;
+end fork
+note right
+  A race: the first to finish (normally the signal)
+  stops the other three.
+end note
+
+partition "Shut down" {
+  :Stop listening; cancel the sessions and wait until they have unwound;
+  :Stop the event loop; join the I/O threads;
+  :Wait for batches still queued for the keyspace thread;
+  :Cancel a BGSAVE or rewrite in progress; close the AOF;
+  if (Final snapshot saved?) then (yes)
+    :Exit 0;
+  else (no)
+    :Exit non-zero, so a supervisor sees the data was not saved;
+  endif
 }
 
 stop

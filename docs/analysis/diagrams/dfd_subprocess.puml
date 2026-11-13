@@ -1,32 +1,38 @@
 @startuml
 title Level 1 DFD - Redis-like Server
 
-' External
 actor "Client" as Client
 
-' Processes
-rectangle "1 Accept & Parse Command" as Parse
-rectangle "2 Validate & Dispatch" as Dispatch
-rectangle "3 Execute Command" as Execute
-rectangle "4 Save Snapshot Periodically" as SnapshotSaver
+rectangle "1 Read and parse requests\n(session, I/O thread)" as Parse
+rectangle "2 Dispatch\n(look up, check arity)" as Dispatch
+rectangle "3 Execute command\n(keyspace thread)" as Execute
+rectangle "4 Persist\n(snapshot, append-only file)" as Persist
+rectangle "5 Housekeeping\n(every 100 ms)" as Cron
 
-' Data Stores
-database "D1: In-Memory Store" as MemStore
-database "D2: Snapshot File (redis.snap)" as Snapshot
+database "D1: Keyspace\n(typed values, expiry)" as Keyspace
+database "D2: dump.snap" as Snapshot
+database "D3: appendonlydir/" as Aof
+database "D4: Stats\n(INFO counters)" as Stats
 
-' Flows
-Client --> Parse : RESP Command
-Parse --> Dispatch : Command Object
-Dispatch --> Execute : Validated Command
-Execute --> MemStore : Read/Write Data
-MemStore --> Execute : Query Result
-Execute --> Dispatch : Execution Result
-Dispatch --> Parse : RESP-formatted Result
-Parse --> Client : RESP Response
+Client --> Parse : RESP or inline commands
+Parse --> Dispatch : batch of parsed requests
+Dispatch --> Execute : known command, right arity
+Dispatch --> Parse : error reply\n(unknown command, wrong arity)
+Execute --> Keyspace : reads and writes
+Keyspace --> Execute : values, or WRONGTYPE
+Execute --> Stats : calls, time per command
+Execute --> Parse : replies
+Execute --> Persist : write commands,\nSAVE, BGSAVE, BGREWRITEAOF
+Parse --> Client : the batch's replies, in one write
 
-' Snapshot flows
-MemStore --> SnapshotSaver : Current State
-SnapshotSaver --> Snapshot : Write Snapshot
-Snapshot --> MemStore : Load on Startup
+Persist --> Aof : append, fsync, rewrite
+Persist --> Snapshot : save
+Keyspace --> Persist : state to save
+Snapshot --> Keyspace : load at startup
+Aof --> Keyspace : replay at startup
+
+Cron --> Keyspace : expire keys
+Cron --> Persist : reap finished children
+Cron --> Stats : sample
 
 @enduml

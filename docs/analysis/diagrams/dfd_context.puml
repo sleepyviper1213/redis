@@ -1,22 +1,27 @@
 @startuml
-' Context-Level DFD for Redis-like Server
+' Context-level DFD for the Redis-like server
 
 title Level 0 DFD - Redis-like Server
 
-' External Entities
 actor "Client" as Client
+actor "Operator" as Operator
 
-' Process
-rectangle "Redis-like Server" as Server
+rectangle "0 Redis-like Server" as Server
 
-' Data Stores
-database "Snapshot File (RDB)" as Snapshot
+database "Snapshot file\n(dump.snap)" as Snapshot
+database "Append-only file\n(appendonlydir/)" as Aof
+database "Log file\n(redis_server.log)" as Log
 
-' Data Flows
-Client --> Server : RESP Command
-Server --> Client : RESP Response
+Client --> Server : RESP or inline commands
+Server --> Client : RESP replies
 
-Server --> Snapshot : Save Snapshot
-Snapshot --> Server : Load on Startup
+Operator --> Server : options (CLI, config file,\nenvironment), SIGINT / SIGTERM
+Server --> Log : log lines, watchdog warnings,\ncrash reports
+Log --> Operator : reads
+
+Server --> Snapshot : SAVE, BGSAVE, shutdown save
+Snapshot --> Server : load at startup
+Server --> Aof : every write command, rewrites
+Aof --> Server : replay at startup\n(instead of the snapshot)
 
 @enduml

@@ -1,22 +1,29 @@
 @startuml
-title Redis-like Server - RESP over TCP Communication Lifecycle
+title Connection Lifecycle - Redis-like Server
 
-[*] --> Idle : Server started
+[*] --> Admission : TCP connection accepted
 
-Idle --> Listening : Bind & Listen on TCP port
+Admission --> Rejected : past --maxclients
+Rejected --> [*] : "-ERR max number of clients reached", closed
 
-Listening --> Connected : TCP connection accepted
+Admission --> Waiting : admitted
 
-Connected --> Parsing : On received command
+state Waiting : wait for bytes;\n--idle-timeout runs here
+state Parsing : cut complete requests\nout of the buffer
+state Executing : run the batch, a command at a time;\n--request-timeout runs from here
+state Writing : send every reply\nof the batch at once
 
+Waiting --> Parsing : bytes read
+Parsing --> Waiting : no complete request yet
+Parsing --> Executing : one or more requests
+Executing --> Writing : replies ready
+Writing --> Waiting : all sent
 
-Parsing --> Executing : Valid RESP command parsed
+Waiting --> Closed : client closed, idle limit,\nquery buffer past its limit
+Executing --> Closed : request limit (batch dropped\nif still queued)
+Writing --> Closed : protocol error (after its reply),\noutput past its limit, request limit
+Waiting --> Closed : server shutting down
 
-Executing --> Parsing : Response sent to client
-Executing --> Closed : Fatal error (e.g., protocol violation)
-
-Parsing --> Closed : Client sent QUIT or error occurs
-
-Closed --> [*] : Connection closed
+Closed --> [*]
 
 @enduml

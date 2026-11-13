@@ -1,28 +1,51 @@
 @startuml
 title Command Execution Pipeline - Redis-like Server
 
+' One connection's rounds: read | parse | execute | write, repeated.
+' Reading, parsing and writing run on the session's I/O thread; executing
+' runs on the keyspace thread with --io-threads above 1, or in line.
+
 start
-
-:Receive Request from Client;
-:Parse RESP Input String;
-
-if (Valid RESP Format?) then (yes)
-  :Construct Command Object;
-
-  :Lookup Command in Registry;
-
-  if (Command Found?) then (yes)
-    :Execute Command Handler;
-    :Generate Response String;
-  else (no)
-    :Generate Error Response\n("ERR unknown command");
+:Accept the connection
+(refused with "-ERR max number of clients reached"
+past --maxclients);
+repeat
+  :Wait for bytes
+  (closed after --idle-timeout, if set);
+  :Read them into the session's buffer;
+  if (Buffer past --client-query-buffer-limit?) then (yes)
+    :Close the connection;
+    stop
   endif
-
-else (no)
-  :Generate Error Response\n("ERR protocol error");
-endif
-
-:Send Response to Client;
-
+  :parse_pending(): cut every complete request out of the buffer
+  (RESP arrays, or inline commands from telnet and redis-benchmark);
+  note right
+    A request split across reads waits for the rest of it;
+    one read can carry several pipelined requests,
+    which then run as one batch.
+  end note
+  :Execute the batch
+  (closed after --request-timeout, if set);
+  repeat
+    :Look up the command name, in any case;
+    if (Known command?) then (yes)
+      if (Arity matches?) then (yes)
+        :Run it on the keyspace
+        (typed lookups: WRONGTYPE for a key of another type);
+      else (no)
+        :Reply "ERR wrong number of arguments for '<cmd>' command";
+      endif
+    else (no)
+      :Reply "ERR unknown command '<name>', with args beginning with: ...";
+    endif
+  repeat while (More requests in the batch,
+  and replies under --client-output-buffer-limit?) is (yes)
+  :Append the batch's writes to the AOF, if it is on
+  (and fsync first with appendfsync always);
+  :Write every reply of the batch in one write;
+repeat while (Protocol error, or output past the limit?) is (no)
+-> yes;
+:Reply "-ERR Protocol error: ..." if that was the cause;
+:Close the connection;
 stop
 @enduml
