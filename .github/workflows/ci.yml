@@ -29,7 +29,7 @@ env:
   VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
 
 jobs:
-  test:
+  linux:
     name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04
     # One image per compiler, so a job carries only its own toolchain (Ubuntu's
