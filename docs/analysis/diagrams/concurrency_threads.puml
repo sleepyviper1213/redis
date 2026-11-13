@@ -1,0 +1,62 @@
+@startuml
+title Threads and Processes - Redis-like Server
+
+' Every thread the server runs, what each one owns, and how work crosses
+' between them. Solid arrows hand work over; dotted arrows read or write
+' shared state. With --io-threads 1 there is no keyspace thread: the main
+' thread executes commands and housekeeping itself, in line.
+
+node "redis_server process" {
+  rectangle "**Main thread**\n\nLoads the snapshot or the AOF\nRuns io_.run(): I/O thread 0\nOnce the loop stops: waits for the\nkeyspace thread, then the final save" <<thread>> as Main
+
+  rectangle "**I/O worker threads**\n(--io-threads minus 1)\n\nRun io_.run() with the main thread\nAccept loop, signal wait, cron timer\nSessions: read, parse, write,\neach on a strand of its own" <<thread>> as IO
+
+  rectangle "**Keyspace thread** (Executor)\nonly with --io-threads above 1\n\nExecutes every batch, one at a time\nRuns cron's housekeeping: expiry,\nstats, reaping children, AOF writes" <<thread>> as KS
+
+  rectangle "**Watchdog thread**\n(exec::timed_thread_context)\nonly with --watchdog-ms above 0\n\nEvery 100 ms reads the heartbeat;\nwarns once about a command\nrunning past the threshold" <<thread>> as WD
+
+  rectangle "**AOF fsync thread**\nonly with appendfsync everysec\n\nfsyncs the log once a second;\ntouches nothing but the file" <<thread>> as FS
+
+  rectangle "**Logger thread**\n(spdlog async pool of 1)\n\nWrites every channel's\nqueued messages" <<thread>> as LOG
+
+  database "Keyspace\n(no locks: one owner,\nchecked in debug builds)" as DB
+
+  rectangle "Heartbeat\n(atomics: start time,\ngeneration, command name)" as HB
+}
+
+node "BGSAVE child" <<process>> as SnapChild
+node "AOF rewrite child" <<process>> as RewriteChild
+file "dump.snap\nappendonlydir/" as Files
+
+IO --> KS : batch, by Executor::run_on()
+KS --> IO : replies: continues_on(session strand)
+KS --> DB : reads and writes
+KS ..> HB : CommandScope stamps it\n(two stores per command)
+WD ..> HB : heartbeat() every period
+WD --> IO : at shutdown: continues_on(io_)
+
+KS --> SnapChild : fork() for BGSAVE
+KS --> RewriteChild : fork() for a rewrite
+KS --> Files : AOF writes
+FS --> Files : fsync
+SnapChild --> Files : snapshot
+RewriteChild --> Files : new base file
+
+Main ..> IO : joins them at shutdown
+Main ..> KS : Executor::stop()
+IO ..> LOG : log messages, queued\n(every thread logs this way)
+
+note bottom of HB
+  One writer: the thread that runs commands.
+  Readers: the watchdog, and the crash handler,
+  on whichever thread crashes.
+end note
+
+note right of Main
+  A work guard keeps io_.run() going
+  until serve() stops the loop itself:
+  at shutdown serve() still waits for the
+  watchdog, which is no work of io_'s.
+end note
+
+@enduml

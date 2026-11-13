@@ -137,6 +137,24 @@ full, or not at all. Retrying is safe for idempotent commands (`SET`, `DEL`);
 retrying `INCR` or `LPUSH` blindly may apply it twice. See "Retries and
 idempotency" in `TODO.md`.
 
+## Threads
+
+| Thread | Runs | Exists |
+|---|---|---|
+| Main | loading, `io_.run()` as I/O thread 0, the final save | always |
+| I/O workers | `io_.run()`: accept loop, signals, cron's timer, sessions (each on a strand) | `--io-threads` minus 1 |
+| Keyspace (`net/executor`) | every batch, and cron's housekeeping | `--io-threads` above 1 |
+| Watchdog (`diagnostics/command_watchdog`) | reads the per-command heartbeat every 100 ms | `--watchdog-ms` above 0 |
+| AOF fsync | `fsync` of the log once a second | `appendfsync everysec` |
+| Logger | writes every channel's queued messages | always |
+
+`BGSAVE` and AOF rewrites fork a child process instead of a thread. The
+keyspace has no locks: one thread owns it at a time, which debug builds check.
+See [concurrency_threads.puml](analysis/diagrams/concurrency_threads.puml)
+for who hands what to whom, and
+[sequence_threads_request_and_shutdown.puml](analysis/diagrams/sequence_threads_request_and_shutdown.puml)
+for one request across threads and the order they stop in.
+
 ## Background work
 
 `net/redis_server` runs a 100 ms timer (Redis' `serverCron`) on the event

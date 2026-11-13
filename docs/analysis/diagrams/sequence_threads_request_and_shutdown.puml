@@ -1,0 +1,50 @@
+@startuml
+title Threads: One Request, Then Shutdown (--io-threads above 1)
+
+' How one request crosses threads, and the order in which the threads stop.
+' With --io-threads 1 the keyspace thread's part runs on the I/O thread
+' itself, in line, and there is no hand-off.
+
+actor Client
+participant "I/O thread\n(session strand)" as IO
+participant "Keyspace thread\n(Executor)" as KS
+participant "Watchdog thread" as WD
+participant "Main thread" as Main
+
+== One request ==
+Client -> IO : RESP request
+IO -> IO : read, parse_pending()
+IO -> KS : Executor::run_on(batch)
+activate KS
+KS -> KS : CommandScope: stamp the heartbeat\n(start time, generation, name)
+KS -> KS : run the command on the keyspace
+loop every 100 ms, whatever the other threads do
+  WD -> WD : heartbeat(): has a command been\nrunning past --watchdog-ms?
+end
+opt the command is still running past it
+  WD -> WD : warn, once per command\n(ReportPolicy::Once)
+end
+KS -> KS : CommandScope ends: clear the heartbeat
+KS --> IO : continues_on(session strand)
+deactivate KS
+IO -> Client : the batch's replies, in one write
+
+== Shutdown ==
+[-> IO : SIGTERM: the signal wait completes
+note over IO
+  The race in serve() ends: the accept loop,
+  cron and the watchdog are asked to stop.
+end note
+IO -> WD : stop request
+WD -> WD : the cancelled wait completes\non the watchdog thread
+WD --> IO : continues_on(io_): back to the event loop
+note over IO
+  A work guard has kept io_.run() going
+  this long: io_ had no work of its own left.
+end note
+IO -> IO : stop the listener, drain the sessions,\nthen io.stop()
+IO --> Main : io_.run() returns; workers joined
+Main -> KS : Executor::stop(): wait for queued batches
+Main -> Main : final save, then exit
+
+@enduml
