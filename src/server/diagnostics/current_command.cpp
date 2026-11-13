@@ -26,6 +26,10 @@ std::atomic<std::size_t> arg_count{0};
 std::atomic<const char *> name_ptr{nullptr};
 /// When the command started, in TickClock ticks; 0 when none runs.
 std::atomic<TickClock::rep> started_ticks{0};
+/// A sequence lock over the record, for heartbeat(): odd while a command is
+/// being recorded, and two more for every command. A read that sees it change
+/// may have mixed two commands (one's name length with the other's name, which
+/// would read past the shorter one), and is thrown away.
 std::atomic<std::uint64_t> generation{0};
 
 } // namespace
@@ -33,15 +37,18 @@ std::atomic<std::uint64_t> generation{0};
 void set_current_command(std::string_view name, std::size_t argc,
 						 TickClock::time_point started) noexcept {
 	const auto len = std::min(name.size(), MAX_NAME);
+	// One writer, so plain stores do: no read-modify-write needed.
+	const auto sequence = generation.load(std::memory_order_relaxed);
+	generation.store(sequence + 1, std::memory_order_relaxed);
+	// The stores below must not be seen before the one above.
+	std::atomic_thread_fence(std::memory_order_release);
 	std::copy_n(name.data(), len, name_buf.data());
 	name_ptr.store(name.data(), std::memory_order_relaxed);
 	started_ticks.store(started.time_since_epoch().count(),
 						std::memory_order_relaxed);
 	arg_count.store(argc, std::memory_order_relaxed);
-	// One writer, so a plain store does: no read-modify-write needed.
-	generation.store(generation.load(std::memory_order_relaxed) + 1,
-					 std::memory_order_relaxed);
 	name_len.store(len, std::memory_order_release);
+	generation.store(sequence + 2, std::memory_order_release);
 }
 
 void clear_current_command() noexcept {
@@ -56,15 +63,23 @@ CurrentCommand current_command() noexcept {
 }
 
 std::optional<Heartbeat> heartbeat() noexcept {
-	const auto len   = name_len.load(std::memory_order_acquire);
+	const auto sequence = generation.load(std::memory_order_acquire);
+	// A command is being recorded: it has only just started.
+	if (sequence % 2 != 0) return std::nullopt;
+	const auto len   = name_len.load(std::memory_order_relaxed);
 	const auto ticks = started_ticks.load(std::memory_order_relaxed);
 	const char *name = name_ptr.load(std::memory_order_relaxed);
+	const auto argc  = arg_count.load(std::memory_order_relaxed);
+	// The loads above must not be seen after the one below.
+	std::atomic_thread_fence(std::memory_order_acquire);
+	// Another command started meanwhile: what was read may mix the two.
+	if (generation.load(std::memory_order_relaxed) != sequence)
+		return std::nullopt;
 	if (len == 0 || ticks == 0 || name == nullptr) return std::nullopt;
 	return Heartbeat{
-		.generation = generation.load(std::memory_order_relaxed),
+		.generation = sequence / 2,
 		.started    = TickClock::time_point{TickClock::duration{ticks}},
-		.command    = {.name = {name, len},
-					   .argc = arg_count.load(std::memory_order_relaxed)},
+		.command    = {.name = {name, len}, .argc = argc},
 	};
 }
 

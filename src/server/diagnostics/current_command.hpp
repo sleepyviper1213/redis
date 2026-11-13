@@ -56,9 +56,9 @@ struct Heartbeat {
  * current_command(), safe to call from any thread at any time: every field it
  * reads is atomic.
  *
- * The fields may come from two commands, if one starts while they are read.
- * A watchdog does not mind: it reports only a command that started long ago,
- * and then the writer is stuck in it and overwrites nothing.
+ * The fields all come from one command: a read that a new command overlaps
+ * gives nullopt rather than a mix of the two. A watchdog loses nothing by it:
+ * that command has only just started.
  */
 [[nodiscard]] std::optional<Heartbeat> heartbeat() noexcept;
 

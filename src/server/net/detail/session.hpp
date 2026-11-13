@@ -4,6 +4,7 @@
 #include "server/net/guard.hpp"
 #include "server/net/net_error.hpp"
 
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <exec/any_sender_of.hpp>
@@ -12,6 +13,7 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace redis {
@@ -30,6 +32,54 @@ using SessionSender = exec::any_sender<
 													  stdexec::set_stopped_t()>,
 					   exec::queries<stdexec::inplace_stop_token(
 						   stdexec::get_stop_token_t) noexcept>>>;
+
+/**
+ * \brief Closes a socket once a stop is requested, so that every operation
+ * pending on it completes.
+ *
+ * A stop request alone asks Asio to cancel them, and Windows does not complete
+ * a cancelled send to a peer that is not reading: draining the sessions at
+ * shutdown would wait for it forever. On a closed socket every pending
+ * operation completes. The close is posted to the socket's executor (its
+ * strand, when it has one), so it never overlaps the session's own handlers,
+ * and it does nothing once the session has ended.
+ */
+class CloseOnStop {
+public:
+	CloseOnStop()                               = default;
+	CloseOnStop(CloseOnStop &&) noexcept        = default;
+	CloseOnStop(const CloseOnStop &)            = delete;
+	CloseOnStop &operator=(const CloseOnStop &) = delete;
+	CloseOnStop &operator=(CloseOnStop &&)      = delete;
+	/// Forgets the socket: a close still queued finds nothing to close.
+	~CloseOnStop();
+
+	/// From now on, a stop request on \p stop closes \p socket, which must
+	/// not move any more. Called once.
+	void arm(boost::asio::ip::tcp::socket &socket,
+			 stdexec::inplace_stop_token stop);
+
+private:
+	/// What the queued close and the destructor share: the socket, until
+	/// the session ends.
+	struct Target {
+		std::mutex mutex;
+		boost::asio::ip::tcp::socket *socket = nullptr;
+	};
+
+	/// Runs on the socket's executor.
+	static void close(Target &target);
+
+	/// The stop callback: queues the close.
+	struct Request {
+		std::shared_ptr<Target> target;
+		boost::asio::any_io_executor executor;
+		void operator()() const noexcept;
+	};
+
+	std::shared_ptr<Target> target_;
+	std::unique_ptr<stdexec::inplace_stop_callback<Request>> callback_;
+};
 
 /**
  * \brief One client connection, written as a sender chain.
@@ -76,6 +126,9 @@ private:
 	/// One round: read, then respond. Completes with true once the session is
 	/// over.
 	stdexec::sender auto round();
+	/// Every round, until the session is over; a stop request closes the
+	/// socket (see CloseOnStop).
+	stdexec::sender auto run();
 
 	// What the stages decide with, as plain code.
 	/// Take in \p bytes just read. Returns whether there is anything to
@@ -83,15 +136,16 @@ private:
 	bool ingest(size_t bytes);
 	/// Run everything ingested; the replies end up in replies_.
 	void run_batch();
-	/// An error no stage claimed ended the round: log it and end the session.
-	void fail(const std::exception_ptr &error);
 	/// The stage \p kind failed with \p error: log it under that kind and end
-	/// the session. A client leaving (end of file) is not a failure.
+	/// the session. A client leaving (end of file) is not a failure, nor is
+	/// an operation cut short by the server closing the socket itself.
 	void fail_io(ConnectionKind kind, const std::exception_ptr &error);
 
 	static constexpr size_t READ_CHUNK_SIZE = 16uz * 1024;
 
 	boost::asio::ip::tcp::socket socket_;
+	/// After socket_, so that it lets go of the socket first.
+	CloseOnStop close_on_stop_;
 	/// The socket's strand as a scheduler, to come back to after executing.
 	std::unique_ptr<AsioContext> strand_;
 	/// Races each read when the guard has an idle limit; the loser is

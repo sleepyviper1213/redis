@@ -8,6 +8,7 @@
 #include "server/net/net_error.hpp"
 #include "server/services.hpp"
 
+#include <boost/asio/post.hpp>
 #include <boost/asio/write.hpp>
 #include <exec/asio/use_sender.hpp>
 #include <exec/repeat_until.hpp>
@@ -99,6 +100,38 @@ with_time_limit(Work work, boost::asio::steady_timer &timer,
 }
 } // namespace
 
+CloseOnStop::~CloseOnStop() {
+	// No new close is queued after this, and one already queued finds no
+	// socket.
+	callback_.reset();
+	if (!target_) return;
+	const std::scoped_lock lock(target_->mutex);
+	target_->socket = nullptr;
+}
+
+void CloseOnStop::arm(tcp::socket &socket, stdexec::inplace_stop_token stop) {
+	target_         = std::make_shared<Target>();
+	target_->socket = &socket;
+	// Calls the request at once if the stop was already requested.
+	callback_ = std::make_unique<stdexec::inplace_stop_callback<Request>>(
+		stop,
+		Request{.target = target_, .executor = socket.get_executor()});
+}
+
+void CloseOnStop::close(Target &target) {
+	const std::scoped_lock lock(target.mutex);
+	if (target.socket == nullptr) return; // the session is over
+	boost::system::error_code ignored;
+	target.socket->close(ignored);
+}
+
+// NOLINTNEXTLINE(bugprone-exception-escape): posting fails only out of memory.
+void CloseOnStop::Request::operator()() const noexcept {
+	// Not closed here: the stop may be requested on any thread, and the
+	// socket is the session's executor's alone.
+	boost::asio::post(executor, [target = target] { close(*target); });
+}
+
 Session::Session(tcp::socket socket, std::shared_ptr<Services> services,
 				 NetGuard::Ticket ticket)
 	: socket_(std::move(socket)),
@@ -117,6 +150,9 @@ Session::Session(tcp::socket socket, std::shared_ptr<Services> services,
 }
 
 bool Session::ingest(size_t bytes) {
+	// A spurious wakeup read nothing: what is pending was already answered as
+	// far as it goes, so there is nothing to run and no timer to arm.
+	if (bytes == 0) return false;
 	// The previous batch has run, so the bytes its requests viewed can go
 	// (execute_pending has already dropped them when there is no executor
 	// thread).
@@ -162,33 +198,19 @@ void Session::run_batch() {
 	}
 }
 
-void Session::fail(const std::exception_ptr &error) {
-	done_ = true;
-	try {
-		std::rethrow_exception(error);
-	} catch (const boost::system::system_error &e) {
-		if (e.code() == boost::asio::error::eof)
-			log().debug("Client disconnected normally");
-		else
-			log_error(
-				{.kind = ConnectionKind::ConnectionFailed, .cause = e.code()});
-	} catch (const std::exception &e) {
-		log_error(
-			{.kind = ConnectionKind::ConnectionFailed, .quoted = e.what()});
-	}
-}
-
 void Session::fail_io(ConnectionKind kind, const std::exception_ptr &error) {
-	done_ = true;
-	try {
-		std::rethrow_exception(error);
-	} catch (const boost::system::system_error &e) {
-		if (e.code() == boost::asio::error::eof)
-			log().debug("Client disconnected normally");
-		else log_error({.kind = kind, .cause = e.code()});
-	} catch (const std::exception &e) {
-		log_error({.kind = kind, .quoted = e.what()});
-	}
+	done_                         = true;
+	const ConnectionError failure = connection_error(kind, error);
+	if (failure.cause == boost::system::error_code(boost::asio::error::eof))
+		log().debug("Client disconnected normally");
+	// The server closed the socket itself (the request limit ran out, or it
+	// is shutting down), and what was pending on it failed with it: already
+	// accounted for, not news.
+	else if (!socket_.is_open())
+		log().debug("{} from {} after the server closed the socket",
+					failure,
+					peer_);
+	else log_error(failure);
 }
 
 stdexec::sender auto Session::read() {
@@ -334,10 +356,19 @@ stdexec::sender auto Session::round() {
 			   return run_if(bytes && ingest(*bytes), respond());
 		   }) |
 		   stdexec::let_error([this](const std::exception_ptr &error) {
-			   fail(error);
+			   fail_io(ConnectionKind::ConnectionFailed, error);
 			   return just();
 		   }) |
 		   stdexec::then([this] { return done_; });
+}
+
+stdexec::sender auto Session::run() {
+	return stdexec::read_env(stdexec::get_stop_token) |
+		   stdexec::let_value([this](stdexec::inplace_stop_token stop) {
+			   // Here, where the session no longer moves.
+			   close_on_stop_.arm(socket_, stop);
+			   return exec::repeat_until(round());
+		   });
 }
 
 SessionSender Session::serve(tcp::socket socket,
@@ -351,23 +382,14 @@ SessionSender Session::serve(tcp::socket socket,
 		stdexec::just(Session(std::move(socket),
 							  std::move(services),
 							  std::move(*ticket))) |
-		stdexec::let_value([](Session &session) {
-			return exec::repeat_until(session.round());
-		});
+		stdexec::let_value([](Session &session) { return session.run(); });
 	// One client's failure is that client's alone. The chain's only failures
 	// are the ones round() did not already turn into "the session is over":
 	// log them and finish normally.
 	return stdexec_ext::supervised<stdexec_ext::FailPolicy::Isolate>(
 		std::move(serving),
 		[](const std::exception_ptr &e) noexcept {
-			try {
-				std::rethrow_exception(e);
-			} catch (const std::exception &ex) {
-				log_error({.kind   = ConnectionKind::SessionFailed,
-						   .quoted = ex.what()});
-			} catch (...) {
-				log_error({.kind = ConnectionKind::SessionFailed});
-			}
+			log_error(connection_error(ConnectionKind::SessionFailed, e));
 		});
 }
 

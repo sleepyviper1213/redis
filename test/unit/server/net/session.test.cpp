@@ -63,7 +63,9 @@ public:
 	/// Requires the session to finish within \p limit; see
 	/// test::require_finishes_within.
 	void drain_within(std::chrono::milliseconds limit) {
-		test::require_finishes_within(sessions_.drained(), limit, "The session");
+		test::require_finishes_within(sessions_.drained(),
+									  limit,
+									  "The session");
 		drained_ = true;
 	}
 
@@ -72,8 +74,9 @@ public:
 	/// \tparam F The callable's type.
 	template <std::invocable F>
 	auto on_keyspace(F fn) {
-		auto result = stdexec::sync_wait(services_->keyspace.run_on(
-			std::move(fn), stdexec::inline_scheduler{}));
+		auto result = stdexec::sync_wait(
+			services_->keyspace.run_on(std::move(fn),
+									   stdexec::inline_scheduler{}));
 		if constexpr (!std::is_void_v<std::invoke_result_t<F>>)
 			return std::get<0>(result.value());
 	}
@@ -209,8 +212,9 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 
 	GIVEN("a one second request limit, and a keyspace thread busy for two") {
 		SessionFixture fixture(NetLimits{.request_timeout = 1s}, true);
-		std::jthread busy(
-			[&fixture] { fixture.on_keyspace([] { std::this_thread::sleep_for(2s); }); });
+		std::jthread busy([&fixture] {
+			fixture.on_keyspace([] { std::this_thread::sleep_for(2s); });
+		});
 		std::this_thread::sleep_for(100ms); // the busy job is queued first
 
 		WHEN("the client sends a write, which waits behind that job") {
@@ -218,7 +222,8 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 			std::string data;
 			const auto heard = fixture.client.listen(4s, data);
 
-			THEN("the server hangs up and counts it, and the write never runs") {
+			THEN(
+				"the server hangs up and counts it, and the write never runs") {
 				CHECK(heard == Heard::Closed);
 				CHECK(fixture.guard().count(Violation::RequestTimeout) == 1);
 				fixture.drain_within(3s);
@@ -236,9 +241,10 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 	GIVEN("a one second request limit, and a stored 4 MiB value") {
 		SessionFixture fixture(NetLimits{.request_timeout = 1s});
 		const std::string value(size_t{4} << 20, 'x');
-		fixture.client.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
-								 value.size(),
-								 value));
+		fixture.client.send(
+			fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+						value.size(),
+						value));
 		REQUIRE(fixture.client.read_exactly(5, 10s) == "+OK\r\n");
 
 		WHEN("the client asks for more than the connection holds, unread") {
@@ -272,14 +278,46 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 	}
 }
 
+#ifndef _WIN32
+// As above: only where a write to a client that does not read stalls.
+SCENARIO("A session stalled on a client that does not read still stops",
+		 "[net][session][shutdown]") {
+	GIVEN("no request limit, and a stored 4 MiB value") {
+		SessionFixture fixture;
+		const std::string value(size_t{4} << 20, 'x');
+		fixture.client.send(
+			fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+						value.size(),
+						value));
+		REQUIRE(fixture.client.read_exactly(5, 10s) == "+OK\r\n");
+
+		WHEN("the client asks for more than the connection holds, unread, and "
+			 "the server stops") {
+			std::string gets;
+			for (int i = 0; i < 32; ++i)
+				gets += "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n";
+			fixture.client.send(gets);
+			// Long enough for the write to be stuck; the test holds either way.
+			std::this_thread::sleep_for(500ms);
+			fixture.stop();
+
+			THEN("the session closes its socket and drains") {
+				fixture.drain_within(REDIS_TSAN ? 20s : 6s);
+			}
+		}
+	}
+}
+#endif
+
 SCENARIO("A reply larger than the socket buffer arrives whole",
 		 "[net][session]") {
 	GIVEN("a connected client that stored a 4 MiB value") {
 		SessionFixture fixture;
 		const std::string value(size_t{4} << 20, 'x');
-		fixture.client.send(fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
-								 value.size(),
-								 value));
+		fixture.client.send(
+			fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
+						value.size(),
+						value));
 		REQUIRE(fixture.client.read_exactly(5, 10s) == "+OK\r\n");
 
 		WHEN("it reads the value back") {

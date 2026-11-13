@@ -28,14 +28,10 @@ namespace detail {
 /// descriptors lasts until one is freed), and retrying at once would spin.
 inline constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds(100);
 
-/// Logs what a failed accept said. Errors travel as exception_ptrs, so the
-/// only way to read one is to throw it again.
+/// Logs what a failed accept said, whatever was thrown: a failure to log must
+/// not end the loop.
 inline void log_accept_failure(const std::exception_ptr &error) {
-	try {
-		std::rethrow_exception(error);
-	} catch (const std::exception &ex) {
-		log_error({.kind = ConnectionKind::AcceptFailed, .quoted = ex.what()});
-	}
+	log_error(connection_error(ConnectionKind::AcceptFailed, error));
 }
 
 } // namespace detail
@@ -48,7 +44,9 @@ BasicListener<A>::BasicListener(A acceptor, boost::asio::any_io_executor ex,
 	  acceptor_(std::move(acceptor)),
 	  services_(std::move(services)),
 	  concurrent_(concurrent),
-	  retry_timer_(ex_),
+	  // On the acceptor's strand: the loop resumes where the wait completes,
+	  // and must stay serialized with stop()'s close.
+	  retry_timer_(acceptor_.get_executor()),
 	  sessions_(ex_) {}
 
 template <Acceptor A>
@@ -107,7 +105,7 @@ stdexec_ext::InlineTask<void> BasicListener<A>::run() {
 	while (acceptor_.is_open()) {
 		try {
 			co_await stdexec_ext::retry(accept_one, after_failure);
-		} catch (const std::exception &) {
+		} catch (...) {
 			co_return; // retry gives up only once the acceptor is closed
 		}
 	}

@@ -21,6 +21,7 @@
 #include <csignal>
 #include <exception>
 #include <expected>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -72,6 +73,30 @@ private:
 };
 
 /**
+ * \brief Run \p io on this thread until it is stopped, which is serve()'s
+ * last step.
+ *
+ * Asio handlers can throw; this is where that ends. The failure is recorded
+ * and \p stop_serving asked to end the race, as for any fatal failure, and
+ * then the thread goes back to running \p io (Asio allows that after a
+ * throw): the shutdown that follows runs there too. A thread that gave up
+ * instead could leave none to run it (with one I/O thread, there would be
+ * none), and run() would destroy what serve() still uses.
+ */
+void run_until_stopped(boost::asio::io_context &io, FirstFailure &failure,
+					   stdexec::inplace_stop_source &stop_serving) {
+	while (true) {
+		try {
+			io.run();
+			return;
+		} catch (const std::exception &e) {
+			failure.record(e.what());
+		} catch (...) { failure.record("unknown exception"); }
+		stop_serving.request_stop();
+	}
+}
+
+/**
  * \brief Serve until the first of the accept loop, the housekeeping and the
  * wait for a signal finishes; then cancel the others, drain the sessions and
  * stop the event loop.
@@ -120,8 +145,9 @@ serve(Listener &server, stdexec_ext::InlineTask<void> housekeeping,
 				supervised<FailPolicy::FailFast>(
 					server.run(),
 					[](const std::exception_ptr &error) noexcept {
-						log_error({.kind   = ConnectionKind::AcceptLoopFailed,
-								   .quoted = describe(error)});
+						log_error(
+							connection_error(ConnectionKind::AcceptLoopFailed,
+											 error));
 					}),
 				supervised<FailPolicy::FailFast>(std::move(housekeeping)),
 				signalled) |
@@ -197,23 +223,14 @@ std::expected<void, ServerError> RedisServer::run() {
 
 	log().info("Ready to accept connections");
 	{
-		// Asio handlers can throw; this is where that ends. A failed I/O
-		// thread stops the others, as it would a single-threaded io_.run().
-		const auto run_io = [&] {
-			try {
-				io_.run();
-			} catch (const std::exception &e) {
-				failure.record(e.what());
-				stop_serving.request_stop();
-			} catch (...) {
-				failure.record("unknown exception");
-				stop_serving.request_stop();
-			}
-		};
+		// A failed handler shuts the server down; see run_until_stopped.
 		std::vector<std::jthread> workers;
 		for (unsigned i = 1; i < config_.io_threads; ++i)
-			workers.emplace_back(run_io);
-		run_io();
+			workers.emplace_back(run_until_stopped,
+								 std::ref(io_),
+								 std::ref(failure),
+								 std::ref(stop_serving));
+		run_until_stopped(io_, failure, stop_serving);
 	} // joins the workers: from here on, nothing else touches failure
 	if (auto &message = failure.message())
 		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
