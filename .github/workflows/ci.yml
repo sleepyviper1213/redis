@@ -140,8 +140,7 @@ jobs:
         run: scripts/stress_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6384
       # Real Redis (Debian's, as in bench.yml) as the specification: the same
       # command stream to both, every reply byte compared. Once is enough, on
-      # the Release build. Not yet required: the first runs are expected to
-      # find divergences to triage; drop continue-on-error once it passes.
+      # the Release build. Any divergence fails the job.
       - name: Install Redis for the differential test
         if: matrix.preset == 'linux-gcc-release'
         run: |
@@ -149,7 +148,6 @@ jobs:
           redis-server --version
       - name: Differential test against Redis
         if: matrix.preset == 'linux-gcc-release'
-        continue-on-error: true
         env:
           DIFF_ARGS: --keep-going --ops 200000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }}
@@ -201,16 +199,17 @@ jobs:
       - name: Compiler cache statistics
         if: always()
         run: ccache --show-stats
-      - name: One unwinder only
-        # Homebrew's libunwind next to libSystem's breaks exceptions; see
-        # cmake/toolchains/homebrew-llvm.cmake. Its libc++abi must not bring it
-        # back either.
+      - name: The unwinder libc++abi uses
+        # Homebrew's libc++abi unwinds with Homebrew's libunwind; the binary's
+        # own _Unwind_* calls must go there too, not to libSystem's copy. See
+        # cmake/toolchains/homebrew-llvm.cmake.
         run: |
           set -euo pipefail
-          libcxxabi="$(brew --prefix llvm)/lib/c++/libc++abi.1.dylib"
           tests="$(find build/macos-arm64-llvm -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
-          otool -L "$libcxxabi" "$tests"
-          ! otool -L "$libcxxabi" "$tests" | grep -q 'libunwind\.1\.dylib'
+          otool -L "$tests"
+          nm -m "$tests" | grep -E '_Unwind_|_personality_v0' || true
+          otool -L "$tests" | grep -q 'libunwind\.1\.dylib'
+          ! nm -m "$tests" | grep -E '_Unwind_' | grep -q 'from libSystem'
       - name: Sanitizer options for the server
         if: matrix.config == 'ThreadSanitizer'
         run: echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$GITHUB_WORKSPACE/test/tsan.supp" >> "$GITHUB_ENV"
