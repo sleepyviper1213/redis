@@ -148,11 +148,12 @@ private:
 	CloseOnStop close_on_stop_;
 	/// The socket's strand as a scheduler, to come back to after executing.
 	std::unique_ptr<AsioContext> strand_;
-	/// Races each read when the guard has an idle limit; the loser is
-	/// cancelled.
+	/// Times each read's time limit when the guard has an idle limit, as a
+	/// TimerScheduler: one timer for every round, not one per round.
 	boost::asio::steady_timer idle_timer_;
-	/// Races each response (execute and write) when the guard has a request
-	/// limit. Not idle_timer_: one timer per limit keeps each race readable.
+	/// Times each response's time limit (execute and write) when the guard has
+	/// a request limit. Not idle_timer_: a TimerScheduler takes one wait at a
+	/// time, and one timer per limit keeps each race readable.
 	boost::asio::steady_timer request_timer_;
 	std::shared_ptr<Services> services_;
 	/// Holds this client's slot under Services::guard until the session ends.

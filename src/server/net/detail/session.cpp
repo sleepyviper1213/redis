@@ -1,9 +1,11 @@
 #include "session.hpp"
 
 #include "core/stdexec_ext/supervise.hpp"
+#include "core/stdexec_ext/watchdog/time_limited.hpp"
 #include "server/log_channels.hpp"
 #include "server/net/detail/admission.hpp"
 #include "server/net/detail/pipeline.hpp"
+#include "server/net/detail/timer_scheduler.hpp"
 #include "server/net/formatter.hpp"
 #include "server/net/net_error.hpp"
 #include "server/services.hpp"
@@ -12,9 +14,7 @@
 #include <boost/asio/write.hpp>
 #include <exec/asio/use_sender.hpp>
 #include <exec/repeat_until.hpp>
-#include <exec/unless_stop_requested.hpp>
 #include <exec/variant_sender.hpp>
-#include <exec/when_any.hpp>
 #include <spdlog/logger.h>
 
 #include <chrono>
@@ -55,48 +55,35 @@ struct Outcome {
 };
 
 /**
- * \p work, abandoned if \p limit passes first: whichever finishes first
- * cancels the other through the stop token, and the race completes once both
- * have unwound, with the winner's value. With no limit (\p limit is zero) it
- * is \p work itself. Both the idle limit (the read) and the request limit
- * (executing and writing) are this race.
+ * \p work within \p limit, timed on \p timer: stdexec_ext::time_limited(),
+ * whose contract this is, or \p work itself when there is no limit (\p limit is
+ * zero, which is how the guard says "off"). Both the idle limit (the read)
+ * and the request limit (executing and writing) are this race.
  *
- * The timer is armed when the race starts, not when the sender is built:
- * repeat_until restarts one sender every round, so building it runs once.
  * The aliases exist because the two cases are different sender types and
  * variant_sender needs both named.
  *
- * The race ends only once \p work has unwound, so \p work must finish
- * promptly when stopped. When a stop request alone cannot promise that,
- * \p on_expiry is where to force it (see respond()).
- *
- * \tparam Work The type of the sender raced against the clock (a
- *         stdexec::sender), completing with one value.
- * \tparam OnExpiry The type of what runs when the time runs out: a callable
- *         taking nothing, returning a value of the type \p Work sends, so
- *         that both branches complete the same way.
+ * \tparam Work The type of the sender raced against the clock, completing
+ *         with one value.
+ * \tparam OnExpiry What runs when the time runs out, returning a value of the
+ *         type \p Work sends; see time_limited() for when it runs.
  * \return A sender; its type is deduced, a variant_sender of \p Work and the
- *         race between it and the timer.
+ *         time limit.
  */
 template <stdexec::sender Work, std::invocable OnExpiry>
-stdexec::sender auto
-with_time_limit(Work work, boost::asio::steady_timer &timer,
-				std::chrono::seconds limit, OnExpiry on_expiry) {
-	// unless_stop_requested: when work completes at once, as it does with
-	// nothing to answer yet, the stop request reaches the timer before its wait
-	// starts. use_sender would lose it (its cancellation signal has no handler
-	// yet) and the race would wait out the whole limit, every round.
-	stdexec::sender auto expiry =
-		stdexec::just() | stdexec::let_value([&timer, limit] {
-			timer.expires_after(limit);
-			return exec::unless_stop_requested(
-				timer.async_wait(exec::asio::use_sender));
-		}) |
-		stdexec::then(std::move(on_expiry));
-	using Raced  = decltype(exec::when_any(std::move(work), std::move(expiry)));
-	using Result = exec::variant_sender<Work, Raced>;
+stdexec::sender auto with_time_limit(Work work, TimerScheduler timer,
+									 std::chrono::seconds limit,
+									 OnExpiry on_expiry) {
+	using Limited = decltype(stdexec_ext::time_limited(std::move(work),
+													   timer,
+													   limit,
+													   std::move(on_expiry)));
+	using Result  = exec::variant_sender<Work, Limited>;
 	if (limit == std::chrono::seconds::zero()) return Result(std::move(work));
-	return Result(exec::when_any(std::move(work), std::move(expiry)));
+	return Result(stdexec_ext::time_limited(std::move(work),
+											timer,
+											limit,
+											std::move(on_expiry)));
 }
 } // namespace
 
@@ -242,7 +229,7 @@ stdexec::sender auto Session::read() {
 	// each branch does to just reporting.
 	return with_time_limit(
 			   std::move(bytes),
-			   idle_timer_,
+			   TimerScheduler(*strand_, idle_timer_),
 			   idle,
 			   [] { return Outcome{.bytes = std::nullopt, .idle = true}; }) |
 		   stdexec::then([this, idle](Outcome result) {
@@ -339,7 +326,7 @@ stdexec::sender auto Session::respond() {
 		return true;
 	};
 	return with_time_limit(std::move(answering),
-						   request_timer_,
+						   TimerScheduler(*strand_, request_timer_),
 						   limit,
 						   give_up) |
 		   stdexec::then([this](bool timed_out) {

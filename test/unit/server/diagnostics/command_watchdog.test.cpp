@@ -17,7 +17,7 @@ using namespace std::chrono_literals;
 // thread nor real time to pass.
 SCENARIO("A command running past the threshold is reported once",
 		 "[watchdog]") {
-	StallDetector detector(ReportPolicy::Once, 50ms);
+	StallDetector detector(command_heartbeat(), ReportPolicy::Once, 50ms);
 	const auto t0 = TickClock::now();
 
 	GIVEN("no command running") {
@@ -37,8 +37,8 @@ SCENARIO("A command running past the threshold is reported once",
 			const auto stall = detector.check(t0 + 60ms);
 			THEN("it is reported with its name, size and how long it ran") {
 				REQUIRE(stall);
-				CHECK(stall->command.name == "DEBUG");
-				CHECK(stall->command.argc == 2);
+				CHECK(stall->subject.name == "DEBUG");
+				CHECK(stall->subject.argc == 2);
 				CHECK(stall->running == 60ms);
 			}
 			AND_THEN("it is not reported again while it keeps running") {
@@ -61,7 +61,7 @@ SCENARIO("A command running past the threshold is reported once",
 		THEN("the second one is reported too") {
 			const auto stall = detector.check(t0 + 200ms);
 			REQUIRE(stall);
-			CHECK(stall->command.name == "SORT");
+			CHECK(stall->subject.name == "SORT");
 		}
 		clear_current_command();
 	}
@@ -69,7 +69,9 @@ SCENARIO("A command running past the threshold is reported once",
 
 SCENARIO("Under EveryPeriod, a stuck command is reported at every look",
 		 "[watchdog]") {
-	StallDetector detector(ReportPolicy::EveryPeriod, 50ms);
+	StallDetector detector(command_heartbeat(),
+						   ReportPolicy::EveryPeriod,
+						   50ms);
 	const auto t0 = TickClock::now();
 	set_current_command("DEBUG", 2, t0);
 
@@ -104,7 +106,7 @@ SCENARIO("The watchdog reports a stalled command while it runs", "[watchdog]") {
 		CommandWatchdog dog(ReportPolicy::Once,
 							{.threshold = 1ms, .period = 1ms},
 							[&](const Stall &stall) {
-								name = stall.command.name;
+								name = stall.subject.name;
 								++reports;
 							});
 		set_current_command("DEBUG", 2, TickClock::now() - 1s);
