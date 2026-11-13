@@ -1,34 +1,47 @@
 @startuml
 title Level 2 DFD - 3.0 Execute Command (Redis-like Server)
 
-actor "Dispatcher" as Dispatcher
+actor "2 Dispatch" as Dispatcher
 
-' Sub-processes
-rectangle "3.1 Execute GET" as GET
-rectangle "3.2 Execute SET" as SET
-rectangle "3.3 Execute DEL" as DEL
+rectangle "3.1 Strings\nSET GET MSET MGET APPEND STRLEN\nINCR DECR INCRBY DECRBY" as Strings
+rectangle "3.2 Lists\nLPUSH RPUSH LPOP RPOP\nLLEN LRANGE LINDEX" as Lists
+rectangle "3.3 Hashes\nHSET HGET HMGET HDEL\nHGETALL HLEN HEXISTS" as Hashes
+rectangle "3.4 Sets\nSADD SREM SCARD SMEMBERS\nSISMEMBER SINTER SPOP" as Sets
+rectangle "3.5 Keyspace\nDEL EXISTS KEYS TYPE TTL PTTL\nPERSIST FLUSHDB DBSIZE" as Keys
+rectangle "3.6 Server\nPING ECHO INFO CONFIG SAVE\nBGSAVE LASTSAVE BGREWRITEAOF" as ServerCmds
 
-' Data Store
-database "D1: In-Memory Store" as Store
+database "D1: Keyspace" as Store
+database "D3: appendonlydir/" as Aof
+database "D2: dump.snap" as Snapshot
+database "D4: Stats" as Stats
 
-' Flow from Dispatcher
-Dispatcher --> GET : GET Command
-Dispatcher --> SET : SET Command
-Dispatcher --> DEL : DEL Command
+Dispatcher --> Strings
+Dispatcher --> Lists
+Dispatcher --> Hashes
+Dispatcher --> Sets
+Dispatcher --> Keys
+Dispatcher --> ServerCmds
 
-' GET
-GET --> Store : Lookup Key
-Store --> GET : Value or nil
-GET --> Dispatcher : RESP Bulk String or Null
+Strings --> Store : find_string
+Lists --> Store : find_as<List>,\nfind_or_create<List>
+Hashes --> Store : find_as<Hash>,\nfind_or_create<Hash>
+Sets --> Store : find_as<Set>,\nfind_or_create<Set>
+Keys --> Store : lookup, delete, expiry
+Store --> Dispatcher : value, nil or WRONGTYPE\n(as a RESP reply)
 
-' SET
-SET --> Store : Insert/Update Key
-Store --> SET : OK
-SET --> Dispatcher : RESP Simple String
+Strings --> Aof : writes, as executed\n(SET with EX/PX logged as PXAT)
+Lists --> Aof : writes
+Hashes --> Aof : writes
+Sets --> Aof : writes
+Keys --> Aof : writes
 
-' DEL
-DEL --> Store : Delete Key
-Store --> DEL : Count Deleted
-DEL --> Dispatcher : RESP Integer
+ServerCmds --> Snapshot : SAVE, BGSAVE
+ServerCmds --> Aof : BGREWRITEAOF
+ServerCmds --> Stats : INFO reads it
+
+note bottom of Store
+  A typed lookup of a key holding another
+  type returns WRONGTYPE, never the value.
+end note
 
 @enduml

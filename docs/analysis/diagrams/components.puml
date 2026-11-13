@@ -1,37 +1,82 @@
 @startuml
-title Redis System Architecture
+title Components - Redis-like Server
 
-node "Redis Server" {
-    [TCP Listener]
-    [Command Parser]
-    [Config Manager]
-    [Snapshot Manager]
-    [In-Memory Store]
+' One library per directory under src/; dependencies point one way only
+' (see docs/directory_layout.md). core and common never depend on server.
+
+actor Client
+
+package "app (redis_server executable)" {
+  [main + CLI options] as App
 }
 
-[Client] --> [TCP Listener] : TCP (port 6379)
-[TCP Listener] --> [Command Parser]
-[Command Parser] --> [In-Memory Store] : e.g., GET/SET
-[Command Parser] --> [Snapshot Manager] : e.g., SAVE
-[In-Memory Store] --> [Snapshot Manager] : snapshot trigger
-[Snapshot Manager] --> [File System] : File I/O
+package "server (redis_server_lib)" {
+  package "net" {
+    [Listener\n(accept loop, admission)] as Listener
+    [Session\n(read, parse, write)] as Session
+    [Executor\n(the keyspace thread)] as Executor
+    [NetGuard\n(limits, violation counters)] as Guard
+  }
+  package "commands" {
+    [CommandHandler\n(lookup, arity, dispatch)] as Handler
+    [Command families\nstrings, lists, hashes, sets,\nkeyspace, server] as Families
+  }
+  package "persistence" {
+    [SnapshotManager\n(SAVE, BGSAVE)] as Snapshots
+    [AppendOnlyFile\n(log, fsync, rewrite)] as Aof
+  }
+  package "diagnostics" {
+    [CommandWatchdog] as Watchdog
+    [Crash handler +\ncurrent command] as Crash
+  }
+  [RedisServer\n(composition root)] as Server
+}
 
-' Notes
-note right of [Client]
-Redis-CLI or Telnet
+package "common" {
+  [RESP parser and encoder\n(resp/)] as Resp
+  [Keyspace: typed values,\nexpiry indexes (store/)] as Store
+}
+
+package "core" {
+  [stdexec_ext\n(every, watchdog, retry, supervised)] as StdexecExt
+  [logging, chrono, os, utils] as CoreUtils
+}
+
+folder "files" {
+  file "dump.snap" as SnapFile
+  file "appendonlydir/" as AofDir
+}
+
+Client --> Listener : TCP (port 6379)
+App --> Server
+Server --> Listener
+Server --> Watchdog
+Listener --> Session : one per client
+Listener ..> Guard : admission
+Session --> Resp : parse requests
+Session --> Executor : batch
+Executor --> Handler
+Handler --> Families
+Families --> Store : typed lookups
+Families --> Snapshots : SAVE, BGSAVE
+Families --> Aof : writes, BGREWRITEAOF
+Snapshots --> SnapFile
+Aof --> AofDir
+Handler ..> Crash : current command
+Watchdog ..> Crash : heartbeat
+Watchdog ..> StdexecExt
+Session ..> StdexecExt
+Server ..> CoreUtils
+
+note right of Store
+  Strings, lists, hashes and sets,
+  with per-key expiry. No locks:
+  one thread owns it at a time.
 end note
 
-note right of [Command Parser]
-Parses RESP protocol
-Maps commands to handlers
-end note
-
-note right of [In-Memory Store]
-Supports strings, lists
-end note
-
-note right of [Snapshot Manager]
-Serializes in RESP format
+note bottom of SnapFile
+  This project's own format,
+  not Redis' RDB.
 end note
 
 @enduml

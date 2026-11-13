@@ -1,21 +1,44 @@
 @startuml
 title Client-Server Interaction - Redis-like Server
 
+' Two pipelined requests in one write, as client libraries send them.
+' With --io-threads above 1, the CommandHandler part runs on the keyspace
+' thread and the replies come back to the session's strand.
+
 actor Client
-participant "TCP Socket" as Socket
-participant "Command Handler\n(Dispatcher)" as Dispatcher
-participant "Database Store\n(Key-Value Map)" as DB
+participant "Listener" as Listener
+participant "Session\n(I/O thread)" as Session
+participant "CommandHandler" as Handler
+database "Keyspace" as DB
+participant "AppendOnlyFile\n(--appendonly)" as Aof
 
-Client -> Socket : Connect (TCP Handshake)
-Client -> Socket : Send RESP Command("*2\\r\\n$3\\r\\nGET\\r\\n$3\\r\\nkey\\r\\n\")
-Socket -> Dispatcher : Parse and Construct Command
-Dispatcher -> DB : Execute Command\n(GET key)
-DB --> Dispatcher : Result ("value")
-Dispatcher -> Socket : Format and Send RESP Response\n($5\\r\\nvalue\\r\\n)
-Socket -> Client : Return Response
+Client -> Listener : connect
+alt past --maxclients
+  Listener --> Client : -ERR max number of clients reached, then close
+else admitted
+  Listener -> Session : start a session
+end
 
-Client -> Socket : Disconnect / QUIT
-Socket -> Dispatcher : Cleanup Connection
-Socket --> Client : Close TCP Connection
+Client -> Session : *3 SET k v  +  *2 GET k\n(one write, two requests)
+Session -> Session : parse_pending(): two complete requests
+Session -> Handler : execute the batch
+Handler -> Handler : SET: known, arity 3 is fine
+Handler -> DB : find_string("k"), store "v"
+Handler -> Handler : GET: known, arity 2 is fine
+Handler -> DB : find_string("k")
+DB --> Handler : "v"
+Handler -> Aof : after the batch: SET k v
+Handler --> Session : +OK\\r\\n  $1\\r\\nv\\r\\n
+Session -> Client : both replies, in one write
+
+Client -> Session : *3 LPUSH k x
+Session -> Handler : execute
+Handler -> DB : find_or_create<List>("k")
+DB --> Handler : WRONGTYPE (k holds a string)
+Handler --> Session : -WRONGTYPE Operation against a key\nholding the wrong kind of value
+Session -> Client : the error reply
+
+Client -> Session : close the connection
+Session -> Session : read finds end of file;\nthe session ends
 
 @enduml
