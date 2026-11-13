@@ -121,7 +121,7 @@ is checked between its commands, so:
   do not run; the earlier ones have, and the client is dropped without any
   reply.
 - **Cancellation is honoured between operations only.** A stop at shutdown,
-  the idle limit (`--timeout`, which only ever interrupts the wait for a
+  the idle limit (`--idle-timeout`, which only ever interrupts the wait for a
   request) and the request limit (`--request-timeout`) all act the same way:
   a batch still queued for the keyspace thread never runs, a batch already
   running completes, and an unfinished reply is dropped with the client.

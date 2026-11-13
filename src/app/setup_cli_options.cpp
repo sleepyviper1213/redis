@@ -140,9 +140,9 @@ CLI::App_p setup_cli_options() {
 		->group("Limits")
 		->check(CLI::PositiveNumber)
 		->default_val(NetLimits{}.max_output_buffer);
-	app->add_option("--timeout",
+	app->add_option("--idle-timeout",
 					"Close a client idle this many seconds; 0 never")
-		->envname("REDIS_TIMEOUT")
+		->envname("REDIS_IDLE_TIMEOUT")
 		->option_text("<seconds>")
 		->group("Limits")
 		->check(CLI::NonNegativeNumber)
