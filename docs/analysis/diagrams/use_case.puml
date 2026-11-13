@@ -1,39 +1,85 @@
 @startuml
+title Use Cases - Redis-like Server
 left to right direction
 
-actor client
-actor admin
+actor Client
+actor Operator
 
 rectangle "Redis-like Server" {
-  usecase "Connect via TCP" as UC5
-  usecase "Store Key-Value Data" as UC1
-  usecase "Retrieve Key-Value Data" as UC2
-  usecase "Snapshot Data to Disk" as UC6
-  usecase "Configure Server Settings" as UC7
-  usecase "Extend System Features" as UC9
+  usecase "UC-006 Connect over TCP\n(RESP or inline)" as UC006
+  usecase "UC-005 Ping the server\n(PING, ECHO)" as UC005
+
+  package "Data" {
+    usecase "UC-002 Set a string\n(SET)" as UC002
+    usecase "UC-003 Get a string\n(GET)" as UC003
+    usecase "UC-007 Update strings and counters\n(MSET, MGET, APPEND, INCR...)" as UC007
+    usecase "UC-008 Store and read lists\n(LPUSH, LPOP, LRANGE...)" as UC008
+    usecase "UC-009 Store and read hashes\n(HSET, HGET, HGETALL...)" as UC009
+    usecase "UC-010 Store and read sets\n(SADD, SINTER, SPOP...)" as UC010
+    usecase "UC-004 Delete keys\n(DEL, FLUSHDB)" as UC004
+    usecase "UC-011 Expire keys\n(EXPIRE, TTL, PERSIST)" as UC011
+    usecase "UC-012 Inspect the keyspace\n(KEYS, TYPE, EXISTS, DBSIZE)" as UC012
+  }
+
+  package "Persistence" {
+    usecase "UC-001 Save a snapshot\n(SAVE, BGSAVE, LASTSAVE)" as UC001
+    usecase "UC-013 Rewrite the append-only file\n(BGREWRITEAOF)" as UC013
+  }
+
+  package "Administration" {
+    usecase "UC-014 Inspect the server\n(INFO, CONFIG GET)" as UC014
+    usecase "UC-015 Change the log level\n(CONFIG SET loglevel)" as UC015
+    usecase "UC-016 Configure and start the server\n(options, config file, environment)" as UC016
+    usecase "UC-017 Stop the server\n(SIGINT/SIGTERM: final save)" as UC017
+    usecase "UC-018 Watch the logs\n(watchdog warnings, crash reports)" as UC018
+    usecase "UC-019 Extend system features" as UC019
+  }
 }
 
-' Client interactions
-client --> UC1
-client --> UC2
-client --> UC5
-client --> UC6
+Client --> UC006
+Client --> UC005
+Client --> UC002
+Client --> UC003
+Client --> UC007
+Client --> UC008
+Client --> UC009
+Client --> UC010
+Client --> UC004
+Client --> UC011
+Client --> UC012
+Client --> UC001
+Client --> UC013
+Client --> UC014
+Client --> UC015
 
-' Admin interactions
-admin --> UC7
-admin --> UC9
+Operator --> UC016
+Operator --> UC017
+Operator --> UC018
+Operator --> UC019
 
-' Extend relationships
-UC1 --> UC6 : <<extend>>
+UC002 <.. UC011 : <<extend>>\nSET EX/PX
+UC016 ..> UC001 : <<include>>\nload snapshot
+UC017 ..> UC001 : <<include>>\nfinal save
 
-' Notes
-note right of UC6
-  Optional background save based on threshold or interval
+note right of UC006
+  Every client use case runs
+  over a connection made here.
 end note
 
-
-
-note right of UC9
-  BR-009:\nFor future features like Pub/Sub
+note bottom of UC013
+  With --appendonly, every write
+  (UC-002, UC-004, UC-007 to UC-011)
+  is logged before its reply.
 end note
+
+note right of UC015
+  Only with --enable-config-set:
+  there is no authentication.
+end note
+
+note right of UC019
+  BR-009: for future features
+  such as Pub/Sub
+end note
+
 @enduml
