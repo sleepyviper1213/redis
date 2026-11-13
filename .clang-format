@@ -3,7 +3,7 @@ Language: Cpp
 BasedOnStyle:  LLVM
 
 AccessModifierOffset: -4
-AlignAfterOpenBracket: Align
+AlignAfterOpenBracket: true
 # AlignArrayOfStructures: Left
 AlignConsecutiveAssignments: Consecutive
 AlignConsecutiveBitFields: Consecutive
@@ -52,7 +52,6 @@ BraceWrapping:
   SplitEmptyNamespace: false
 # BracedInitializerIndentWidth:
 BreakAfterAttributes: Leave
-BreakAfterJavaFieldAnnotations: false
 BreakArrays: false
 BreakBeforeBinaryOperators: None
 BreakBeforeBraces: Attach
@@ -110,7 +109,7 @@ IntegerLiteralSeparator:
   Binary: 4
   BinaryMinDigits: 7
   Decimal: 3
-  DecimalMinDigits: 8
+  DecimalMinDigits: 6
   Hex: 4
   HexMinDigits: 6
 KeepEmptyLinesAtTheStartOfBlocks: false
@@ -121,11 +120,6 @@ MacroBlockBegin: ''
 MacroBlockEnd:   ''
 MaxEmptyLinesToKeep: 2
 NamespaceIndentation: None
-ObjCBinPackProtocolList: Auto
-ObjCBlockIndentWidth: 2
-ObjCBreakBeforeNestedBlockParam: true
-ObjCSpaceAfterProperty: false
-ObjCSpaceBeforeProtocolList: true
 PackConstructorInitializers: NextLine
 PenaltyBreakAssignment: 2
 PenaltyBreakBeforeFirstCallParameter: 19
@@ -141,10 +135,10 @@ PointerAlignment: Right
 PPIndentWidth:   -1
 QualifierAlignment: Left
 ReferenceAlignment: Pointer
-ReflowComments:  true
+ReflowComments:  Always
 RemoveBracesLLVM: true
 # RemoveParentheses: ReturnStatement
-RemoveSemicolon: true
+RemoveSemicolon: false
 RequiresClausePosition: OwnLine
 RequiresExpressionIndentation: OuterScope
 SeparateDefinitionBlocks: Always
@@ -189,6 +183,8 @@ Standard:        Latest
 StatementAttributeLikeMacros:
   - Q_EMIT
 StatementMacros:
+  - BENCHMARK
+  - BENCHMARK_ADVANCED
   - Q_UNUSED
   - QT_REQUIRE_VERSION
 TabWidth:        4
