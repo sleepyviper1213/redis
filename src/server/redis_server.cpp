@@ -9,6 +9,7 @@
 #include "net/net_error.hpp"
 #include "services.hpp"
 
+#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <exec/asio/use_sender.hpp>
 #include <exec/start_detached.hpp>
@@ -185,6 +186,14 @@ std::expected<void, ServerError> RedisServer::run() {
 							   io_,
 							   stop_serving.get_token(),
 							   failure));
+
+	// io_.run() returns as soon as io_ has no work left, which is not the same
+	// as serve() having finished: at shutdown serve() waits for the watchdog,
+	// whose cancelled wait completes on the watchdog's own thread and is no
+	// work of io_'s. Returning then would destroy what serve() still uses (see
+	// the lifetime note above). So the loop runs until serve() stops it, which
+	// is the last thing serve() does.
+	const auto until_served = boost::asio::make_work_guard(io_);
 
 	log().info("Ready to accept connections");
 	{
