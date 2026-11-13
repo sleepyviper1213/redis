@@ -49,6 +49,9 @@ public:
 		Double,
 		/** Bulk error reply (RESP3), e.g. !<len>\r\n<msg>\r\n */
 		BulkError,
+		/** Null array reply (RESP2), *-1\r\n: what a command answers where it
+		 * would answer an array (LPOP key count on a missing key). */
+		NullArray,
 	};
 
 	/**
@@ -78,6 +81,9 @@ public:
 
 	/** \brief Create a RESP null value. */
 	static Value from_null();
+
+	/** \brief Create a RESP2 null array, encoded as *-1. */
+	static Value from_null_array();
 
 	/** \brief Create a RESP3 double value. */
 	static Value from_double(double d);
@@ -119,7 +125,7 @@ public:
 	 * \brief Safe queries for the active type.
 	 * @{
 	 */
-	/** \brief Returns true if the value is Null; false otherwise. */
+	/** \brief Returns true if the value is Null or NullArray; false otherwise. */
 	[[nodiscard]] bool is_null() const;
 
 	/** \brief Returns true if the value is a simple or bulk error; false

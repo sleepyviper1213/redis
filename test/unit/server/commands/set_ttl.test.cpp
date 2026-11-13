@@ -163,7 +163,10 @@ SCENARIO("Malformed requests get RESP error replies", "[commands]") {
 		WHEN("the command is unknown or has the wrong arity") {
 			THEN("the errors match Redis' wording") {
 				CHECK(server.run({"NOPE"}) ==
-					  "-ERR unknown command 'NOPE'\r\n");
+					  "-ERR unknown command 'NOPE', with args beginning with: \r\n");
+				CHECK(server.run({"NOPE", "a", "b"}) ==
+					  "-ERR unknown command 'NOPE', with args beginning with: "
+					  "'a' 'b' \r\n");
 				CHECK(server.run({"GET", "a", "b"}) ==
 					  "-ERR wrong number of arguments for 'get' command\r\n");
 			}
@@ -190,18 +193,35 @@ SCENARIO("Command names are matched without regard to case",
 
 		THEN("an unknown name is echoed back as the client sent it") {
 			CHECK(server.run({"NoSuchCmd"}) ==
-				  "-ERR unknown command 'NoSuchCmd'\r\n");
-			CHECK(server.run({""}) == "-ERR unknown command ''\r\n");
+				  "-ERR unknown command 'NoSuchCmd', with args beginning with: \r\n");
+			CHECK(server.run({""}) ==
+				  "-ERR unknown command '', with args beginning with: \r\n");
 		}
 
 		THEN("a name longer than any command is unknown, not truncated") {
 			const std::string longer(40, 'a');
 			CHECK(server.run({longer}) ==
-				  fmt::format("-ERR unknown command '{}'\r\n", longer));
+				  fmt::format("-ERR unknown command '{}', with args beginning "
+							  "with: \r\n",
+							  longer));
 			// A long name must not match a real command by prefix.
 			const std::string long_get = fmt::format("GET{}", std::string(40, 'x'));
 			CHECK(server.run({long_get}) ==
-				  fmt::format("-ERR unknown command '{}'\r\n", long_get));
+				  fmt::format("-ERR unknown command '{}', with args beginning "
+							  "with: \r\n",
+							  long_get));
+		}
+
+		THEN("the echoed name and arguments stop at 128 bytes, as in Redis") {
+			const std::string name(200, 'n');
+			const std::string arg(100, 'a');
+			// The second argument gets only what is left of the 128: 128 - 103.
+			CHECK(server.run({name, arg, arg, arg}) ==
+				  fmt::format("-ERR unknown command '{}', with args beginning "
+							  "with: '{}' '{}' \r\n",
+							  std::string(128, 'n'),
+							  arg,
+							  std::string(25, 'a')));
 		}
 	}
 }

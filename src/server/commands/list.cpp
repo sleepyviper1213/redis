@@ -54,7 +54,8 @@ Value pop(CommandContext &ctx, Args args) {
 		return reply::wrong_type();
 	}
 	if (*list == nullptr) {
-		return reply::nil();
+		// With a count the reply is an array, so its nil is the null array.
+		return count ? reply::nil_array() : reply::nil();
 	}
 
 	// Replies with the element at the end, then drops it.

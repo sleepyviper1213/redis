@@ -102,7 +102,20 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 
 	const auto it = commands_.find(upper_name(args[0], name_buf));
 	if (it == commands_.end()) {
-		return {.reply=reply::error("ERR unknown command '{}'", args[0]),
+		// Redis' wording: the name, then the first arguments, each quoted and
+		// followed by a space, until 128 bytes of them have been echoed.
+		constexpr size_t MAX_ECHOED = 128;
+		std::string echoed;
+		for (const std::string_view arg : args.subspan(1)) {
+			if (echoed.size() >= MAX_ECHOED) break;
+			fmt::format_to(std::back_inserter(echoed),
+						   "'{}' ",
+						   arg.substr(0, MAX_ECHOED - echoed.size()));
+		}
+		return {.reply=reply::error(
+					"ERR unknown command '{}', with args beginning with: {}",
+					args[0].substr(0, MAX_ECHOED),
+					echoed),
 				.ran=nullptr};
 	}
 

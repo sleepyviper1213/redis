@@ -61,6 +61,9 @@ inline resp::Value integer(int64_t n) { return resp::Value::from_integer(n); }
 
 inline resp::Value nil() { return resp::Value::from_null(); }
 
+/// Nil where an array was asked for: *-1, not $-1.
+inline resp::Value nil_array() { return resp::Value::from_null_array(); }
+
 inline resp::Value bulk(std::string_view text) {
 	return resp::Value::from_bulk_string(std::string(text));
 }

@@ -42,6 +42,11 @@ SCENARIO("Pushing to and popping from lists", "[commands][list]") {
 			THEN("the reply is nil") {
 				CHECK(server.run({"LPOP", "missing"}) == "$-1\r\n");
 			}
+
+			THEN("with a count, the reply is the null array, as in Redis") {
+				CHECK(server.run({"LPOP", "missing", "5"}) == "*-1\r\n");
+				CHECK(server.run({"RPOP", "missing", "0"}) == "*-1\r\n");
+			}
 		}
 	}
 }

@@ -61,7 +61,9 @@ const std::string &Value::as_string() const {
 	return std::get<std::string>(data_);
 }
 
-bool Value::is_null() const { return type_ == Type::Null; }
+bool Value::is_null() const {
+	return type_ == Type::Null || type_ == Type::NullArray;
+}
 
 bool Value::is_error() const {
 	return type_ == Type::SimpleError && is_string();
@@ -86,6 +88,8 @@ bool Value::is_array() const {
 Value::Value(Type type) : type_(type) {}
 
 Value Value::from_null() { return {Type::Null}; }
+
+Value Value::from_null_array() { return {Type::NullArray}; }
 
 Value Value::from_double(double d) { return {Type::Double, d}; }
 
@@ -159,7 +163,8 @@ auto fmt::formatter<Value>::format(const Value &value,
 			else it = fmt::format_to(it, "(array) {:?}", fmt::join(arr, " "));
 			break;
 		}
-		case Null: it = fmt::format_to(it, "(null)"); break;
+		case Null:
+		case NullArray: it = fmt::format_to(it, "(null)"); break;
 		case Double:
 			it = fmt::format_to(it, "(double) {}", value.as_double());
 			break;
@@ -190,6 +195,7 @@ auto fmt::formatter<Value>::format(const Value &value,
 		// RESP2 null bulk string. RESP3's "_" is only legal after a client
 		// negotiates protocol 3 with HELLO, which this server does not offer.
 		case Null: it = fmt::format_to(it, FMT_COMPILE("$-1\r\n")); break;
+		case NullArray: it = fmt::format_to(it, FMT_COMPILE("*-1\r\n")); break;
 		case Double:
 			it = fmt::format_to(it, FMT_COMPILE(",{}\r\n"), value.as_double());
 			break;
