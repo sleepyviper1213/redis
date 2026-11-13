@@ -16,7 +16,7 @@ Executor::Executor(bool threaded) {
 #ifndef NDEBUG
 	// Learn the worker's id by asking it, so stop() can tell its own thread.
 	// NOLINTBEGIN(bugprone-unchecked-optional-access): pool_ was emplaced above
-	const std::same_as<std::optional<std::tuple<std::thread::id>>> auto reported =
+	const std::optional<std::tuple<std::thread::id>> reported =
 		stdexec::sync_wait(
 			stdexec::schedule(pool_->get_scheduler()) |
 			stdexec::then([] { return std::this_thread::get_id(); }));
@@ -25,9 +25,7 @@ Executor::Executor(bool threaded) {
 #endif
 }
 
-Executor::~Executor() {
-	stop();
-}
+Executor::~Executor() { stop(); }
 
 void Executor::stop() {
 	// Called on the worker itself, this would wait for a task that only that
