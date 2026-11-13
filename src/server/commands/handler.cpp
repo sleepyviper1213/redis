@@ -1,14 +1,13 @@
 #include "handler.hpp"
 
-#include "server/log_channels.hpp"
-#include "common/resp/value.hpp"
-#include "core/chrono/elapsed_timer.hpp"
-#include "core/chrono/tick_clock.hpp"
-#include "core/utils/ascii.hpp"
 #include "command.hpp"
-#include "server/diagnostics/current_command.hpp"
-#include "server/persistence/append_only_file.hpp"
+#include "common/resp/value.hpp"
 #include "common/store/database.hpp"
+#include "core/chrono/tick_timer.hpp"
+#include "core/utils/ascii.hpp"
+#include "server/diagnostics/current_command.hpp"
+#include "server/log_channels.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/stats.hpp"
 
 #include <fmt/format.h>
@@ -18,7 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <new>
 #include <string>
@@ -35,7 +33,8 @@ spdlog::logger &log() {
 
 using resp::Value;
 
-CommandHandler::CommandHandler() : CommandHandler(std::span<const CommandInfo>{}) {}
+CommandHandler::CommandHandler()
+	: CommandHandler(std::span<const CommandInfo>{}) {}
 
 CommandHandler::CommandHandler(std::span<const CommandInfo> extra) {
 	for (const auto family : {string_commands(),
@@ -93,9 +92,10 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 													Args args) const {
 	if (args.empty()) {
-		return {.reply=reply::error("ERR Protocol error: expected a non-empty array of "
-							 "bulk strings"),
-				.ran=nullptr};
+		return {.reply = reply::error(
+					"ERR Protocol error: expected a non-empty array of "
+					"bulk strings"),
+				.ran = nullptr};
 	}
 
 	std::array<char, MAX_COMMAND_NAME> name_buf{};
@@ -112,11 +112,11 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 						   "'{}' ",
 						   arg.substr(0, MAX_ECHOED - echoed.size()));
 		}
-		return {.reply=reply::error(
+		return {.reply = reply::error(
 					"ERR unknown command '{}', with args beginning with: {}",
 					args[0].substr(0, MAX_ECHOED),
 					echoed),
-				.ran=nullptr};
+				.ran = nullptr};
 	}
 
 	const CommandInfo &info = it->second;
@@ -124,21 +124,24 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 	const bool arity_ok =
 		info.arity >= 0 ? argc == info.arity : argc >= -info.arity;
 	if (!arity_ok) {
-		return {.reply=reply::error("ERR wrong number of arguments for '{}' command",
-							 ascii_lowered(info.name)),
-				.ran=nullptr};
+		return {.reply = reply::error(
+					"ERR wrong number of arguments for '{}' command",
+					ascii_lowered(info.name)),
+				.ran = nullptr};
 	}
 	// Debug builds: the thread that runs commands owns the keyspace.
 	ctx.db.claim_owner();
-	// For a crash report: which command was running when the process died.
-	const diagnostics::CommandScope running{info.name, args.size()};
-	if (ctx.stats == nullptr) return {.reply=info.fn(ctx, args), .ran=&info};
-	// TickClock, not steady_clock: it is read twice per command, and on macOS
-	// steady_clock costs about a tenth of a pipelined SET.
-	const BasicElapsedTimer<TickClock> timer;
+	// Its start also tells the watchdog how long the command has been running.
+	const TickTimer timer;
+	// For a crash report and the watchdog: which command is running.
+	const diagnostics::CommandScope running{info.name,
+											args.size(),
+											timer.started()};
+	if (ctx.stats == nullptr)
+		return {.reply = info.fn(ctx, args), .ran = &info};
 	Value result = info.fn(ctx, args);
 	ctx.stats->command_ran(info.name, timer.duration_elapsed());
-	return {.reply=std::move(result), .ran=&info};
+	return {.reply = std::move(result), .ran = &info};
 }
 
 void CommandHandler::execute(CommandContext &ctx, Args args,
@@ -152,8 +155,8 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 				 args.size());
 
 	const size_t reply_start = out.size();
-	const CommandInfo *ran = nullptr;
-	bool failed            = false;
+	const CommandInfo *ran   = nullptr;
+	bool failed              = false;
 	try {
 		const auto [response, command] = dispatch(ctx, args);
 		fmt::format_to(std::back_inserter(out), "{:e}", response);
@@ -177,8 +180,9 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 	// logged anyway: replaying it is harmless, and telling the two apart
 	// would need every command to report it.
 	if (ctx.aof != nullptr) {
-		ctx.aof->command_ran(
-			ctx.db, ran != nullptr && ran->write && !failed, args);
+		ctx.aof->command_ran(ctx.db,
+							 ran != nullptr && ran->write && !failed,
+							 args);
 	}
 
 	logger.trace("Response: {} bytes", out.size() - reply_start);

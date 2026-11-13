@@ -13,6 +13,7 @@ add_library(
     commands/string.cpp
 
     diagnostics/current_command.cpp
+    diagnostics/command_watchdog.cpp
     net/detail/admission.cpp
     net/executor.cpp
     net/guard.cpp

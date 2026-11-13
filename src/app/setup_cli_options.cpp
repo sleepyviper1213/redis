@@ -1,5 +1,6 @@
 #include "setup_cli_options.hpp"
 
+#include "server/diagnostics/command_watchdog.hpp"
 #include "server/net/guard.hpp"
 #include "server/persistence/append_only_file.hpp"
 
@@ -85,8 +86,9 @@ CLI::App_p setup_cli_options() {
 		->group("Network")
 		->check(CLI::Range(1, 256))
 		->default_val(1);
-	app->add_option("--dump","Snapshot file, loaded at startup and written "
-							 "by SAVE, BGSAVE and on shutdown")
+	app->add_option("--dump",
+					"Snapshot file, loaded at startup and written "
+					"by SAVE, BGSAVE and on shutdown")
 		->envname("REDIS_DUMP_FILE")
 		->option_text("<file>")
 		->group("Persistence")
@@ -117,7 +119,7 @@ CLI::App_p setup_cli_options() {
 		->group("Network")
 		->check(CLI::PositiveNumber)
 		->default_val(6379);
-	
+
 	app->add_option("--maxclients", "Maximum number of simultaneous clients")
 		->envname("REDIS_MAXCLIENTS")
 		->option_text("<count>")
@@ -161,6 +163,15 @@ CLI::App_p setup_cli_options() {
 		->envname("REDIS_ENABLE_CONFIG_SET")
 		->group("Limits")
 		->default_val(false);
+
+	app->add_option("--watchdog-ms",
+					"Warn when one command runs this many milliseconds, "
+					"holding up every client; 0 never")
+		->envname("REDIS_WATCHDOG_MS")
+		->option_text("<ms>")
+		->group("Diagnostics")
+		->check(CLI::NonNegativeNumber)
+		->default_val(diagnostics::CommandWatchdogSettings{}.threshold.count());
 
 	app->add_option("--log-file", "Log file path")
 		->envname("REDIS_LOGFILE")

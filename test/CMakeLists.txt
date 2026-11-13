@@ -16,6 +16,8 @@ add_executable(redis_unit_test
     unit/core/chrono/date_time.test.cpp
     unit/core/chrono/deadline_timer.test.cpp
     unit/core/logging/lifecycle.test.cpp
+    unit/core/stdexec_ext/every.test.cpp
+    unit/core/stdexec_ext/watchdog.test.cpp
     unit/core/stdexec_ext/retry.test.cpp
     unit/core/stdexec_ext/supervise.test.cpp
     unit/core/stdexec_ext/task.test.cpp
@@ -32,6 +34,7 @@ add_executable(redis_unit_test
     unit/common/store/allocator.test.cpp
     unit/common/store/database.test.cpp
     unit/server/persistence/aof.test.cpp
+    unit/server/diagnostics/command_watchdog.test.cpp
     unit/server/commands/config.test.cpp
     unit/server/commands/handler.test.cpp
     unit/server/commands/hash.test.cpp

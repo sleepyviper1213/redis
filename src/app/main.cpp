@@ -1,6 +1,5 @@
-#include "server/log_channels.hpp"
 #include "server/diagnostics/crash.hpp"
-#include "server/persistence/append_only_file.hpp"
+#include "server/log_channels.hpp"
 #include "server/redis_server.hpp"
 #include "setup_cli_options.hpp"
 
@@ -8,6 +7,7 @@
 #include <fmt/base.h>
 #include <magic_enum/magic_enum.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -49,8 +49,8 @@ redis::NetLimits net_limits(const CLI::App &app) {
 			app.get_option("--client-query-buffer-limit")->as<size_t>(),
 		.max_output_buffer =
 			app.get_option("--client-output-buffer-limit")->as<size_t>(),
-		.idle_timeout =
-			std::chrono::seconds(app.get_option("--timeout")->as<int64_t>()),
+		.idle_timeout = std::chrono::seconds(
+			app.get_option("--timeout")->as<int64_t>()),
 		.request_timeout = std::chrono::seconds(
 			app.get_option("--request-timeout")->as<int64_t>()),
 	};
@@ -84,14 +84,16 @@ int run(int argc, char **argv) {
 
 	try {
 		redis::RedisServer server(redis::ServerConfig{
-			.host            = app->get_option("--host")->as<std::string>(),
-			.port            = app->get_option("--port")->as<uint16_t>(),
-			.dump_file       = app->get_option("--dump")->as<std::string>(),
-			.io_threads      = app->get_option("--io-threads")->as<unsigned>(),
-			.aof             = aof_config(*app),
-			.limits          = net_limits(*app),
+			.host       = app->get_option("--host")->as<std::string>(),
+			.port       = app->get_option("--port")->as<uint16_t>(),
+			.dump_file  = app->get_option("--dump")->as<std::string>(),
+			.io_threads = app->get_option("--io-threads")->as<unsigned>(),
+			.aof        = aof_config(*app),
+			.limits     = net_limits(*app),
 			.config_set_enabled =
 				app->get_option("--enable-config-set")->as<bool>(),
+			.watchdog = {.threshold = std::chrono::milliseconds(
+							 app->get_option("--watchdog-ms")->as<int64_t>())},
 		});
 		if (const auto ran = server.run(); !ran) {
 			log.critical("{}", ran.error());

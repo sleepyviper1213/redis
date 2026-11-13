@@ -1,10 +1,10 @@
 #include "redis_server.hpp"
+
 #include "core/error/failed.hpp"
 #include "core/stdexec_ext/supervise.hpp"
-
 #include "log_channels.hpp"
-#include "net/formatter.hpp"
 #include "net/detail/asio_context.hpp"
+#include "net/formatter.hpp"
 #include "net/listener.hpp"
 #include "net/net_error.hpp"
 #include "services.hpp"
@@ -13,8 +13,8 @@
 #include <exec/asio/use_sender.hpp>
 #include <exec/start_detached.hpp>
 #include <exec/when_any.hpp>
-#include <stdexec/execution.hpp>
 #include <fmt/format.h>
+#include <stdexec/execution.hpp>
 
 #include <algorithm>
 #include <csignal>
@@ -37,9 +37,9 @@ spdlog::logger &log() { return logging::logger_for(logging::channel::server); }
 std::string describe(const std::exception_ptr &error) {
 	try {
 		std::rethrow_exception(error);
-	} catch (const std::exception &e) {
-		return e.what();
-	} catch (...) { return "unknown exception"; }
+	} catch (const std::exception &e) { return e.what(); } catch (...) {
+		return "unknown exception";
+	}
 }
 
 std::string_view signal_name(int sig) {
@@ -92,7 +92,7 @@ private:
  *
  * Every reference must outlive the coroutine; see run().
  *
- * \param housekeeping RedisServer::cron(), not yet started.
+ * \param housekeeping RedisServer::housekeeping(), not yet started.
  * \param stop Ends the race from outside: an I/O thread that failed.
  */
 // The references are the point: these objects are run()'s, which outlives
@@ -100,12 +100,10 @@ private:
 // there), and copies of a listener or an io_context would not be the same
 // objects.
 // NOLINTBEGIN(cppcoreguidelines-avoid-reference-coroutine-parameters)
-stdexec_ext::InlineTask<void> serve(Listener &server,
-									stdexec_ext::InlineTask<void> housekeeping,
-									boost::asio::signal_set &signals,
-									boost::asio::io_context &io,
-									stdexec::inplace_stop_token stop,
-									FirstFailure &failure) {
+stdexec_ext::InlineTask<void>
+serve(Listener &server, stdexec_ext::InlineTask<void> housekeeping,
+	  boost::asio::signal_set &signals, boost::asio::io_context &io,
+	  stdexec::inplace_stop_token stop, FirstFailure &failure) {
 	// NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 	using stdexec_ext::FailPolicy;
 	using stdexec_ext::supervised;
@@ -117,15 +115,15 @@ stdexec_ext::InlineTask<void> serve(Listener &server,
 
 	try {
 		co_await (
-			exec::when_any(supervised<FailPolicy::FailFast>(
-							   server.run(),
-							   [](const std::exception_ptr &error) noexcept {
-								   log_error(
-									   {.kind   = ConnectionKind::AcceptLoopFailed,
-										.quoted = describe(error)});
-							   }),
-						   supervised<FailPolicy::FailFast>(std::move(housekeeping)),
-						   signalled) |
+			exec::when_any(
+				supervised<FailPolicy::FailFast>(
+					server.run(),
+					[](const std::exception_ptr &error) noexcept {
+						log_error({.kind   = ConnectionKind::AcceptLoopFailed,
+								   .quoted = describe(error)});
+					}),
+				supervised<FailPolicy::FailFast>(std::move(housekeeping)),
+				signalled) |
 			stdexec::write_env(stdexec::prop{stdexec::get_stop_token, stop})
 			// Stopped from outside is still an end: carry on to the shutdown
 			// below rather than have the frame destroyed.
@@ -148,30 +146,29 @@ RedisServer::RedisServer(ServerConfig config)
 	: config_(std::move(config)),
 	  io_(static_cast<int>(std::max(1U, config_.io_threads))),
 	  signals_(io_, SIGINT, SIGTERM),
-	  services_(std::make_shared<Services>(config_.dump_file,
-										   config_.io_threads > 1,
-										   config_.aof,
-										   config_.limits,
-										   config_.config_set_enabled)) {}
+	  command_watchdog_(diagnostics::ReportPolicy::Once, config_.watchdog),
+	  services_(std::make_shared<Services>(
+		  config_.dump_file, config_.io_threads > 1, config_.aof,
+		  config_.limits, config_.config_set_enabled)) {}
 
 std::expected<void, ServerError> RedisServer::run() {
 	// With an append-only file it is the source of truth: it holds everything
 	// since the last rewrite, which the snapshot does not.
-	const auto loaded = services_->aof
-							? services_->aof->load(services_->ctx,
-												   services_->handler)
-							: services_->persistence.load(services_->db);
+	const auto loaded =
+		services_->aof
+			? services_->aof->load(services_->ctx, services_->handler)
+			: services_->persistence.load(services_->db);
 	if (!loaded) {
 		// Refuse to start rather than serve an empty keyspace and later
 		// overwrite the unreadable files with it.
 		REDIS_FAILED(ServerError{.kind   = ServerKind::LoadFailed,
-										   .source = loaded.error()});
+								 .source = loaded.error()});
 	}
 
 	Listener server(io_.get_executor(), services_, config_.io_threads > 1);
 	if (auto listening = server.listen(config_.host, config_.port); !listening)
 		REDIS_FAILED(ServerError{.kind   = ServerKind::ListenFailed,
-										   .source = listening.error()});
+								 .source = listening.error()});
 
 	FirstFailure failure;
 	// Stops serve()'s tasks from outside them: an I/O thread that failed.
@@ -182,8 +179,12 @@ std::expected<void, ServerError> RedisServer::run() {
 	// (InlineTask has no scheduler affinity). That is safe only because this
 	// function destroys them after every I/O thread has been joined below, and
 	// the last thing serve() does is stop the loop those threads run.
-	exec::start_detached(serve(server, cron(), signals_, io_,
-							   stop_serving.get_token(), failure));
+	exec::start_detached(serve(server,
+							   housekeeping(),
+							   signals_,
+							   io_,
+							   stop_serving.get_token(),
+							   failure));
 
 	log().info("Ready to accept connections");
 	{
@@ -207,7 +208,7 @@ std::expected<void, ServerError> RedisServer::run() {
 	} // joins the workers: from here on, nothing else touches failure
 	if (auto &message = failure.message())
 		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
-										   .detail = std::move(*message)});
+								 .detail = std::move(*message)});
 
 	// A batch may still be executing: wait for it before reading the keyspace.
 	services_->keyspace.stop();
@@ -229,9 +230,18 @@ std::expected<void, ServerError> RedisServer::run() {
 	// rather than a clean shutdown that lost the data.
 	if (auto saved = services_->persistence.save(services_->db); !saved)
 		REDIS_FAILED(ServerError{.kind   = ServerKind::FinalSaveFailed,
-										   .source = saved.error()});
+								 .source = saved.error()});
 	log().info("Redis is now ready to exit, bye bye...");
 	return {};
+}
+
+stdexec_ext::InlineTask<void> RedisServer::housekeeping() {
+	// Neither ends on its own, so when_all ends when the race in serve() stops
+	// it, or when one fails, which stops the other. A watchdog with no
+	// threshold has nothing to do and completes at once, leaving cron().
+	// Started with the race, after the load in run(), so a long AOF replay is
+	// not reported as a stall; nor is the final save, which comes after.
+	co_await stdexec::when_all(cron(), command_watchdog_.run());
 }
 
 stdexec_ext::InlineTask<void> RedisServer::cron() {

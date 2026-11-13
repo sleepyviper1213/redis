@@ -1,5 +1,6 @@
 #pragma once
 #include "core/stdexec_ext/task.hpp"
+#include "diagnostics/command_watchdog.hpp"
 #include "net/net_limits.hpp"
 #include "persistence/aof_config.hpp"
 #include "server_error.hpp"
@@ -33,6 +34,8 @@ struct ServerConfig {
 	NetLimits limits;
 	/// Let clients change settings with CONFIG SET.
 	bool config_set_enabled = false;
+	/// Report a command that holds up the keyspace thread too long.
+	diagnostics::CommandWatchdogSettings watchdog;
 };
 
 /**
@@ -68,6 +71,10 @@ private:
 	/// collecting finished background saves. Runs until its scope is stopped.
 	stdexec_ext::InlineTask<void> cron();
 
+	/// What runs beside the clients for as long as they are served: cron()
+	/// and the watchdog. Ends when its scope is stopped, or when either fails.
+	stdexec_ext::InlineTask<void> housekeeping();
+
 	/// How often cron() runs, and how many keys one expiry cycle may remove.
 	static constexpr auto CRON_PERIOD = std::chrono::milliseconds(100);
 	static constexpr size_t EXPIRE_KEYS_PER_RUN = 1000;
@@ -75,6 +82,8 @@ private:
 	ServerConfig config_;
 	net::io_context io_;
 	net::signal_set signals_;
+	/// Reports a command holding up the keyspace thread; see housekeeping().
+	diagnostics::CommandWatchdog command_watchdog_;
 
 	/// Shared with the front end and every session; see Services.
 	std::shared_ptr<Services> services_;

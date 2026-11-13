@@ -180,6 +180,7 @@ scripts/run.sh linux-gcc Release -- --port 6379 --dump ./dump.snap
 | `--appendonly` | off | Enable the append-only file; write every command to it and replay at startup (`REDIS_APPENDONLY`) |
 | `--appendfsync` | `everysec` | AOF fsync policy: `always`, `everysec`, `no` (`REDIS_APPENDFSYNC`) |
 | `--appenddir` | `appendonlydir` | Directory for AOF files (`REDIS_APPENDDIR`) |
+| `--watchdog-ms` | `1000` | Warn while one command has been running this many milliseconds, holding up every client; `0` never (`REDIS_WATCHDOG_MS`) |
 | `--log-level` | `info` | `trace` … `critical`, or `off` (`REDIS_LOGLEVEL`) |
 | `--log-file` | `redis_server.log` | Log file in addition to stderr (`REDIS_LOGFILE`) |
 | `--config` | | Config file with any of the above (`REDIS_CONFIG_FILE`) |

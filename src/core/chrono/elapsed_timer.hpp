@@ -48,6 +48,9 @@ public:
 		return ms;
 	}
 
+	/// When the timer was last started.
+	[[nodiscard]] Clock::time_point started() const noexcept { return start_; }
+
 	[[nodiscard]] Duration duration_elapsed() const noexcept {
 		return Clock::now() - start_;
 	}
@@ -74,5 +77,6 @@ private:
 };
 
 using ElapsedTimer = BasicElapsedTimer<>;
+
 
 } // namespace redis
