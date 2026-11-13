@@ -83,9 +83,6 @@ SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 						.at   = 9,
 						.code = 1}) ==
 				  "x.snap has format version 9, expected 1");
-			CHECK(text({.kind = PersistKind::SnapshotValueType,
-						.path = "x.snap",
-						.at   = 7}) == "x.snap is corrupt: unknown value type 7");
 			CHECK(text({.kind   = PersistKind::SnapshotCorrupt,
 						.path   = "x.snap",
 						.quoted = "eof"}) == "x.snap is corrupt or truncated: eof");

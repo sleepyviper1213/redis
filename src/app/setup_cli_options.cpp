@@ -1,12 +1,12 @@
 #include "setup_cli_options.hpp"
 
+#include "core/utils/enum_name.hpp"
 #include "server/diagnostics/command_watchdog.hpp"
 #include "server/net/guard.hpp"
 #include "server/persistence/append_only_file.hpp"
 
 #include <CLI/CLI.hpp>
 #include <fmt/format.h>
-#include <magic_enum/magic_enum.hpp>
 
 #include <iterator>
 #include <memory>
@@ -52,7 +52,7 @@ struct MyFormatter : public CLI::Formatter {
 /// The values --appendfsync accepts: the enumerators' names.
 std::vector<std::string> fsync_policy_names() {
 	std::vector<std::string> names;
-	for (const std::string_view name : magic_enum::enum_names<FsyncPolicy>())
+	for (const std::string_view name : enum_names<FsyncPolicy>())
 		names.emplace_back(name);
 	return names;
 }
@@ -107,7 +107,7 @@ CLI::App_p setup_cli_options() {
 		->option_text("<policy>")
 		->group("Persistence")
 		->check(CLI::IsMember(fsync_policy_names()))
-		->default_val(magic_enum::enum_name(AofConfig{}.fsync));
+		->default_val(enum_name(AofConfig{}.fsync));
 	app->add_option("--appenddir", "Directory of the append-only files")
 		->envname("REDIS_APPENDDIR")
 		->option_text("<dir>")

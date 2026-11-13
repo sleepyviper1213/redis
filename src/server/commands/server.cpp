@@ -5,6 +5,7 @@
 #include "core/chrono/date_time.hpp"
 #include "server/log_channels.hpp"
 #include "core/utils/ascii.hpp"
+#include "core/utils/enum_name.hpp"
 #include "core/utils/glob.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "server/net/guard.hpp"
@@ -14,7 +15,6 @@
 #include "server/stats.hpp"
 
 #include <fmt/format.h>
-#include <magic_enum/magic_enum.hpp>
 #include <spdlog/logger.h>
 
 #include <algorithm>
@@ -116,8 +116,8 @@ Value config(CommandContext &ctx, Args args) {
 		parameters{{
 			{"appendonly", ctx.aof != nullptr ? "yes" : "no"},
 			{"appendfsync",
-			 magic_enum::enum_name(ctx.aof != nullptr ? ctx.aof->fsync_policy()
-													  : AofConfig{}.fsync)},
+			 enum_name(ctx.aof != nullptr ? ctx.aof->fsync_policy()
+										  : AofConfig{}.fsync)},
 			{"dbfilename", filename},
 			{"dir", dir},
 			{"loglevel", logging::level()},
@@ -250,7 +250,7 @@ Value info(CommandContext &ctx, Args args) {
 						   "aof_rewrite_in_progress:{}\r\n"
 						   "aof_fsync_policy:{}\r\n",
 						   ctx.aof->rewrite_in_progress() ? 1 : 0,
-						   magic_enum::enum_name(ctx.aof->fsync_policy()));
+						   enum_name(ctx.aof->fsync_policy()));
 	}
 	if (wants("keyspace")) {
 		begin("Keyspace");

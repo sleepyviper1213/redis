@@ -37,8 +37,7 @@ enum class PersistKind : std::uint8_t {
 	SnapshotEncode,  ///< [path, quoted = why; empty for a plain write failure]
 	NotASnapshot,    ///< [path]
 	SnapshotVersion, ///< [path, at = the version found, code = expected]
-	SnapshotValueType, ///< [path, at = the unknown type's number]
-	SnapshotCorrupt,   ///< [path, quoted = what the reader said]
+	SnapshotCorrupt, ///< [path, quoted = what the reader said]
 
 	// The manifest. [path = the manifest, quoted = the offending text]
 	ManifestBadBase,

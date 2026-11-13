@@ -1,10 +1,10 @@
 #pragma once
 
+#include "core/utils/enum_name.hpp"
 #include "display_debug.hpp"
 #include "failure.hpp"
 
 #include <fmt/format.h>
-#include <magic_enum/magic_enum.hpp>
 
 #include <cstddef>
 #include <string>
@@ -21,9 +21,8 @@ namespace redis {
 /// and with \p pretty one field to a line, indented.
 template <typename Kind>
 std::string debug_repr(const Failure<Kind> &error, bool pretty) {
-	std::string name = fmt::format("{}::", magic_enum::enum_type_name<Kind>());
-	if (const auto enumerator = magic_enum::enum_name(error.kind);
-		!enumerator.empty())
+	std::string name = fmt::format("{}::", enum_type_name<Kind>());
+	if (const auto enumerator = enum_name(error.kind); !enumerator.empty())
 		name += enumerator;
 	else name += fmt::format("{}", static_cast<std::size_t>(error.kind));
 

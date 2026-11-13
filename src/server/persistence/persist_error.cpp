@@ -98,10 +98,6 @@ std::string display(const PersistError &error) {
 						   path,
 						   error.at,
 						   error.code);
-	case SnapshotValueType:
-		return fmt::format("{} is corrupt: unknown value type {}",
-						   path,
-						   error.at);
 	case SnapshotCorrupt:
 		return fmt::format("{} is corrupt or truncated: {}",
 						   path,

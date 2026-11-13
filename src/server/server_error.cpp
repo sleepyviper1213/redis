@@ -1,7 +1,8 @@
 #include "server_error.hpp"
 
+#include "core/utils/enum_name.hpp"
+
 #include <fmt/format.h>
-#include <magic_enum/magic_enum.hpp>
 
 #include <type_traits>
 #include <variant>
@@ -45,7 +46,7 @@ std::string debug_repr(const ServerError &error, bool pretty) {
 	if (!error.detail.empty())
 		fields.emplace_back("detail", fmt::format("{:?}", error.detail));
 
-	const auto kind = magic_enum::enum_name(error.kind);
+	const auto kind = enum_name(error.kind);
 	return debug_struct(fmt::format("ServerKind::{}", kind), fields, pretty);
 }
 

@@ -5,11 +5,15 @@
     "boost-unordered",
     "abseil",
     "spdlog",
-    "cereal",
     "catch2",
     "hiredis",
-    "magic-enum",
     "fast-float",
+    {
+      "name": "reflectcpp",
+      "features": [
+        "cbor"
+      ]
+    },
     {
       "name": "stdexec",
       "features": [

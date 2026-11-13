@@ -43,8 +43,7 @@ endif()
 target_compile_definitions(redis_server_lib PUBLIC BOOST_ASIO_NO_DEPRECATED)
 target_link_libraries(redis_server_lib PUBLIC redis::common CLI11::CLI11
     STDEXEC::stdexec
-    Threads::Threads
-    PRIVATE cereal::cereal)
+    Threads::Threads)
 
 if(boost_asio_FOUND)
     target_link_libraries(redis_server_lib PUBLIC Boost::asio)

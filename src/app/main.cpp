@@ -1,3 +1,4 @@
+#include "core/utils/enum_name.hpp"
 #include "server/diagnostics/crash.hpp"
 #include "server/log_channels.hpp"
 #include "server/redis_server.hpp"
@@ -5,7 +6,6 @@
 
 #include <CLI/CLI.hpp>
 #include <fmt/base.h>
-#include <magic_enum/magic_enum.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -36,7 +36,7 @@ std::optional<redis::AofConfig> aof_config(const CLI::App &app) {
 	return redis::AofConfig{
 		.dir = app.get_option("--appenddir")->as<std::string>(),
 		// The option only accepts the enumerators' names.
-		.fsync = magic_enum::enum_cast<redis::FsyncPolicy>(
+		.fsync = redis::enum_cast<redis::FsyncPolicy>(
 					 app.get_option("--appendfsync")->as<std::string>())
 					 .value_or(redis::FsyncPolicy::everysec),
 	};

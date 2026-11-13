@@ -22,7 +22,7 @@ namespace redis::os {
  * successful commit() removes its temporary file and leaves the target as it
  * was.
  *
- * For a serializer that wants a std::ostream (cereal), stream() writes through
+ * For a serializer that wants a std::ostream, stream() writes through
  * a buffer straight into the file; write() is the same thing for a string.
  * Nothing is visible at the target before commit().
  */

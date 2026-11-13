@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <fmt/format.h>
 // clang-format on
-#include <magic_enum/magic_enum.hpp>
+#include "core/utils/enum_name.hpp"
 
 #ifndef ENUM_DEBUG_FORMATTER
 #define ENUM_DEBUG_FORMATTER(type)                                             \
@@ -12,8 +12,7 @@
 	struct fmt::formatter<type> : formatter<string_view> {                     \
 		constexpr auto format(type c, format_context &ctx) const               \
 			-> format_context::iterator {                                      \
-			return formatter<string_view>::format(magic_enum::enum_name(c),    \
-												  ctx);                        \
+			return formatter<string_view>::format(redis::enum_name(c), ctx);   \
 		}                                                                      \
 	};
 #endif

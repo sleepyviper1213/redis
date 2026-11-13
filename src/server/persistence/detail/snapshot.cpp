@@ -1,22 +1,23 @@
 #include "snapshot.hpp"
-#include "core/error/failed.hpp"
 
-#include "core/os/child_process.hpp"
-#include "core/chrono/deadline_timer.hpp"
-#include "common/store/object.hpp"
-#include "core/os/save_file.hpp"
 #include "common/store/database.hpp"
 #include "common/store/database_fwd.hpp"
+#include "common/store/object.hpp"
+#include "core/chrono/deadline_timer.hpp"
+#include "core/error/failed.hpp"
+#include "core/os/child_process.hpp"
+#include "core/os/save_file.hpp"
 
-#include <cereal/archives/portable_binary.hpp>
-#include <cereal/cereal.hpp>
-#include <cereal/details/helpers.hpp>
-#include <cereal/types/string.hpp> // IWYU pragma: keep (std::string serialization)
 #include <fmt/std.h>
+#include <rfl/Literal.hpp>
+#include <rfl/TaggedUnion.hpp>
+#include <rfl/Vectorstring.hpp>
+#include <rfl/cbor.hpp>
 
 #include <array>
+#include <bit>
 #include <cstdint>
-#include <exception>
+#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <fstream>
@@ -26,163 +27,188 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
-// File layout (cereal portable binary, little-endian):
+// File layout (integers little-endian):
 //
 //   magic     8 bytes   "RCPPSNAP"
 //   version   uint32    FORMAT_VERSION
 //   count     uint64    number of entries
-//   entries   count x { key: string, deadline_ms: int64 (-1 = none),
-//                       type: uint8, payload }
+//   entries   count x { size: uint64, record: size bytes of CBOR }
 //
-//   payload by type:  string  string
-//                     list    uint64 n, n x string (head to tail)
-//                     set     uint64 n, n x string
-//                     hash    uint64 n, n x (field: string, value: string)
+// Each record is a Record (below) encoded by reflect-cpp: a CBOR map with the
+// key, the deadline if there is one, and the value tagged by its type. Keys and
+// values are CBOR byte strings, since they need not be UTF-8. Records are
+// framed one by one so that saving holds one entry's copy at a time, not the
+// keyspace's, and a bad size cannot make loading allocate past the file.
 //
 // Bump FORMAT_VERSION on any change; loading rejects other versions rather
-// than misreading them.
-//
-// cereal reports a failed write or a short read by throwing. That is the only
-// exception here, and it ends at write_snapshot_file() and load_snapshot(),
-// which turn it into an error.
+// than misreading them. Version 1 was cereal's portable binary.
 namespace redis::persistence::detail {
 namespace {
 namespace fs = std::filesystem;
 
 constexpr std::array<char, 8> MAGIC{'R', 'C', 'P', 'P', 'S', 'N', 'A', 'P'};
-constexpr uint32_t FORMAT_VERSION = 1;
-constexpr int64_t NO_DEADLINE     = -1;
+constexpr uint32_t FORMAT_VERSION = 2;
 
-using OutArchive = cereal::PortableBinaryOutputArchive;
-using InArchive  = cereal::PortableBinaryInputArchive;
+/// Binary-safe bytes: reflect-cpp writes these as a CBOR byte string.
+using Bytes = rfl::Vectorstring;
 
-template <typename Range>
-void write_strings(OutArchive &out, const Range &range) {
-	out(static_cast<uint64_t>(std::size(range)));
-	for (const String &s : range) out(s);
-}
-
-/// Write \p s exactly as cereal writes a std::string: a size tag, then the
-/// bytes. Keys and embedded values have no std::string to hand cereal.
-void write_string(OutArchive &out, std::string_view s) {
-	out(cereal::make_size_tag(static_cast<cereal::size_type>(s.size())));
-	out(cereal::binary_data(s.data(), s.size()));
-}
-
-void write_object(OutArchive &out, const Object &object) {
-	out(static_cast<uint8_t>(object.type()));
-	object.visit([&out]<typename T>(const T &value) {
-		if constexpr (std::is_same_v<T, std::string_view>) {
-			write_string(out, value);
-		} else if constexpr (std::is_same_v<T, Hash>) {
-			out(static_cast<uint64_t>(value.size()));
-			for (const auto &[field, v] : value) out(field, v);
-		} else {
-			write_strings(out, value);
-		}
-	});
-}
-
-uint64_t read_size(InArchive &in) {
-	uint64_t n = 0;
-	in(n);
-	return n;
-}
-
-/// The number of a value type this version does not know.
-struct UnknownValueType {
-	uint8_t number;
+struct StringValue {
+	using Tag = rfl::Literal<"string">;
+	Bytes value;
 };
 
-/// The value at the archive's position, or why it is not one. (A short read
-/// still throws, from cereal.)
-std::expected<Object, UnknownValueType> read_object(InArchive &in) {
-	uint8_t type = 0;
-	in(type);
-	switch (type) {
-	case 0: {
-		String s;
-		in(s);
-		return Object(std::move(s));
+struct ListValue {
+	using Tag = rfl::Literal<"list">;
+	std::vector<Bytes> items; ///< head to tail
+};
+
+struct SetValue {
+	using Tag = rfl::Literal<"set">;
+	std::vector<Bytes> members;
+};
+
+struct HashValue {
+	using Tag = rfl::Literal<"hash">;
+	std::vector<std::pair<Bytes, Bytes>> fields;
+};
+
+using Value =
+	rfl::TaggedUnion<"type", StringValue, ListValue, SetValue, HashValue>;
+
+/// One key of the keyspace, as the file holds it.
+struct Record {
+	Bytes key;
+	std::optional<int64_t> deadline_ms; ///< absent without a TTL
+	Value value;
+};
+
+Bytes to_bytes(std::string_view s) { return {s.begin(), s.end()}; }
+
+String to_string(const Bytes &b) { return {b.data(), b.size()}; }
+
+/// A keyspace value as a record's Value.
+struct ToValue {
+	Value operator()(std::string_view s) const {
+		return StringValue{.value = to_bytes(s)};
 	}
-	case 1: {
+
+	Value operator()(const List &list) const {
+		ListValue out;
+		out.items.reserve(list.size());
+		for (const String &s : list) out.items.push_back(to_bytes(s));
+		return out;
+	}
+
+	Value operator()(const Set &set) const {
+		SetValue out;
+		out.members.reserve(set.size());
+		for (const String &s : set) out.members.push_back(to_bytes(s));
+		return out;
+	}
+
+	Value operator()(const Hash &hash) const {
+		HashValue out;
+		out.fields.reserve(hash.size());
+		for (const auto &[field, v] : hash)
+			out.fields.emplace_back(to_bytes(field), to_bytes(v));
+		return out;
+	}
+};
+
+/// A record's Value as a keyspace value.
+struct ToObject {
+	Object operator()(const StringValue &v) const {
+		return Object(to_string(v.value));
+	}
+
+	Object operator()(const ListValue &v) const {
 		List list;
-		for (auto n = read_size(in); n > 0; --n) in(list.emplace_back());
+		for (const Bytes &b : v.items) list.emplace_back(to_string(b));
 		return make_object(std::move(list));
 	}
-	case 2: {
+
+	Object operator()(const SetValue &v) const {
 		Set set;
-		for (auto n = read_size(in); n > 0; --n) {
-			String member;
-			in(member);
-			set.insert(std::move(member));
-		}
+		for (const Bytes &b : v.members) set.insert(to_string(b));
 		return make_object(std::move(set));
 	}
-	case 3: {
+
+	Object operator()(const HashValue &v) const {
 		Hash hash;
-		for (auto n = read_size(in); n > 0; --n) {
-			String field;
-			String value;
-			in(field, value);
-			hash.insert_or_assign(std::move(field), std::move(value));
-		}
+		for (const auto &[field, value] : v.fields)
+			hash.insert_or_assign(to_string(field), to_string(value));
 		return make_object(std::move(hash));
 	}
-	default: REDIS_FAILED(UnknownValueType{type});
-	}
+};
+
+template <typename T>
+void write_le(std::ostream &out, T value) {
+	if constexpr (std::endian::native == std::endian::big)
+		value = std::byteswap(value);
+	std::array<char, sizeof(T)> bytes{};
+	std::memcpy(bytes.data(), &value, sizeof(T));
+	out.write(bytes.data(), bytes.size());
+}
+
+/// The next \p T in \p in, or nothing on a short read.
+template <typename T>
+std::optional<T> read_le(std::istream &in) {
+	std::array<char, sizeof(T)> bytes{};
+	if (!in.read(bytes.data(), bytes.size())) return std::nullopt;
+	T value{};
+	std::memcpy(&value, bytes.data(), sizeof(T));
+	if constexpr (std::endian::native == std::endian::big)
+		value = std::byteswap(value);
+	return value;
 }
 
 struct Entry {
-	std::string key;
-	int64_t deadline_ms;
+	std::string_view key;
+	std::optional<int64_t> deadline_ms;
 	const Object *value;
 };
 
 /// Write every live key of \p db to \p stream, the file \p file is being
 /// replaced with.
-std::expected<void, PersistError> write_snapshot(const Database &db,
-												 const fs::path &file,
-												 std::ostream &stream) {
-	// What a failed write looks like; quoted is empty for a plain stream failure.
-	const auto failed = [&file](std::string reason) {
-		REDIS_FAILED(PersistError{.kind   = PersistKind::SnapshotEncode,
-											.path   = file,
-											.quoted = std::move(reason)});
-	};
-
+std::expected<void, PersistError>
+write_snapshot(const Database &db, const fs::path &file, std::ostream &stream) {
 	// Collect in one pass so the header count and the entry count always agree,
-	// even if keys expire between a count pass and a write pass.
+	// even if keys expire between a count pass and a write pass. The views stay
+	// valid: nothing writes to db meanwhile.
 	std::vector<Entry> entries;
 	db.for_each([&](std::string_view key,
 					const Object &value,
 					std::optional<Database::time_point>
 						deadline) {
-		entries.emplace_back(
-			std::string(key),
-			deadline ? deadline->to_msecs_since_epoch()
-					 : NO_DEADLINE,
-			&value);
+		entries.push_back(
+			{.key = key,
+			 .deadline_ms =
+				 deadline ? std::optional(deadline->to_msecs_since_epoch())
+						  : std::nullopt,
+			 .value = &value});
 	});
 
-	try {
-		OutArchive out(stream);
-		for (const char c : MAGIC) out(c);
-		out(FORMAT_VERSION);
-		out(static_cast<uint64_t>(entries.size()));
-		for (const Entry &e : entries) {
-			write_string(out, e.key);
-			out(e.deadline_ms);
-			write_object(out, *e.value);
-		}
-	} catch (const std::exception &e) { return failed(e.what()); }
+	stream.write(MAGIC.data(), MAGIC.size());
+	write_le(stream, FORMAT_VERSION);
+	write_le(stream, static_cast<uint64_t>(entries.size()));
+	for (const Entry &e : entries) {
+		const Record record{.key         = to_bytes(e.key),
+							.deadline_ms = e.deadline_ms,
+							.value       = e.value->visit(ToValue{})};
+		const std::vector<char> encoded = rfl::cbor::write(record);
+		write_le(stream, static_cast<uint64_t>(encoded.size()));
+		stream.write(encoded.data(),
+					 static_cast<std::streamsize>(encoded.size()));
+		if (!stream) break;
+	}
 
 	stream.flush();
-	if (!stream) return failed({});
+	if (!stream)
+		REDIS_FAILED(
+			PersistError{.kind = PersistKind::SnapshotEncode, .path = file});
 	return {};
 }
 } // namespace
@@ -208,13 +234,18 @@ std::expected<void, PersistError> save_snapshot(const Database &db,
 std::expected<void, PersistError>
 load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 	// What is wrong with this file, for the places below that find something.
-	const auto bad = [&file](PersistKind kind, std::uint64_t at = 0,
-							 std::int64_t code = 0, std::string quoted = {}) {
+	const auto bad = [&file](PersistKind kind,
+							 std::uint64_t at   = 0,
+							 std::int64_t code  = 0,
+							 std::string quoted = {}) {
 		REDIS_FAILED(PersistError{.kind   = kind,
-											.path   = file,
-											.at     = at,
-											.code   = code,
-											.quoted = std::move(quoted)});
+								  .path   = file,
+								  .at     = at,
+								  .code   = code,
+								  .quoted = std::move(quoted)});
+	};
+	const auto corrupt = [&bad](std::string why) {
+		return bad(PersistKind::SnapshotCorrupt, 0, 0, std::move(why));
 	};
 
 	std::ifstream stream(file, std::ios::binary);
@@ -222,43 +253,51 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 		if (!fs::exists(file)) return {};
 		return bad(PersistKind::CannotOpen);
 	}
+	std::error_code ec;
+	const std::uintmax_t file_size = fs::file_size(file, ec);
+	if (ec) return bad(PersistKind::CannotOpen);
 
-	try {
-		InArchive in(stream);
-		std::array<char, 8> magic{};
-		for (char &c : magic) in(c);
-		uint32_t version = 0;
-		in(version);
-		if (magic != MAGIC) return bad(PersistKind::NotASnapshot);
-		if (version != FORMAT_VERSION)
-			return bad(PersistKind::SnapshotVersion, version, FORMAT_VERSION);
+	std::array<char, 8> magic{};
+	if (!stream.read(magic.data(), magic.size()) || magic != MAGIC)
+		return bad(PersistKind::NotASnapshot);
+	const auto version = read_le<uint32_t>(stream);
+	if (!version) return bad(PersistKind::NotASnapshot);
+	if (*version != FORMAT_VERSION)
+		return bad(PersistKind::SnapshotVersion, *version, FORMAT_VERSION);
+	const auto count = read_le<uint64_t>(stream);
+	if (!count) return corrupt("truncated header");
 
-		// Load into a scratch keyspace so a corrupt file leaves db untouched.
-		Database loaded;
-		// Stores a deadline in the past instead of deleting its key.
-		loaded.set_expiry_enabled(!keep_expired);
-		const auto now = DateTime::current();
-		for (auto n = read_size(in); n > 0; --n) {
-			String key;
-			int64_t deadline_ms = 0;
-			in(key, deadline_ms);
-			auto value = read_object(in);
-			if (!value)
-				return bad(PersistKind::SnapshotValueType, value.error().number);
+	// Load into a scratch keyspace so a corrupt file leaves db untouched.
+	Database loaded;
+	// Stores a deadline in the past instead of deleting its key.
+	loaded.set_expiry_enabled(!keep_expired);
+	const auto now = DateTime::current();
+	std::vector<char> buffer;
+	for (uint64_t n = *count; n > 0; --n) {
+		const auto size = read_le<uint64_t>(stream);
+		if (!size) return corrupt("truncated entry");
+		const auto offset = static_cast<std::uintmax_t>(stream.tellg());
+		if (*size > file_size - offset) return corrupt("truncated entry");
+		buffer.resize(*size);
+		if (!stream.read(buffer.data(), static_cast<std::streamsize>(*size)))
+			return corrupt("truncated entry");
 
-			if (deadline_ms == NO_DEADLINE) {
-				loaded.set(key, std::move(*value));
-			} else if (const auto deadline = DateTime::from_msecs_since_epoch(deadline_ms);
-					   keep_expired || deadline > now) {
-				loaded.set(key, std::move(*value));
-				loaded.set_expiry(key, DeadlineTimer::at(deadline));
-			}
+		auto record = rfl::cbor::read<Record>(buffer);
+		if (!record) return corrupt(record.error().what());
+
+		const String key = to_string(record->key);
+		Object value     = record->value.visit(ToObject{});
+		if (!record->deadline_ms) {
+			loaded.set(key, std::move(value));
+		} else if (const auto deadline =
+					   DateTime::from_msecs_since_epoch(*record->deadline_ms);
+				   keep_expired || deadline > now) {
+			loaded.set(key, std::move(value));
+			loaded.set_expiry(key, DeadlineTimer::at(deadline));
 		}
-		loaded.set_expiry_enabled(true);
-		db = std::move(loaded);
-	} catch (const std::exception &e) {
-		return bad(PersistKind::SnapshotCorrupt, 0, 0, e.what());
 	}
+	loaded.set_expiry_enabled(true);
+	db = std::move(loaded);
 	return {};
 }
 

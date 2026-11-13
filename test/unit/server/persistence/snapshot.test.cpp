@@ -1,5 +1,6 @@
-#include "../commands/commands.fixture.hpp"
 #include "server/persistence/detail/snapshot.hpp"
+
+#include "../commands/commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,6 +10,7 @@
 
 using namespace redis;
 using namespace std::chrono_literals;
+using persistence::PersistKind;
 
 SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 	GIVEN("a keyspace with one key of each type and a TTL") {
@@ -21,9 +23,11 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 				"+OK\r\n");
 
 		WHEN("it is saved and loaded into a fresh server") {
-			REQUIRE(persistence::detail::save_snapshot(server.db, server.dump.path()));
+			REQUIRE(persistence::detail::save_snapshot(server.db,
+													   server.dump.path()));
 			test::Server restored;
-			REQUIRE(persistence::detail::load_snapshot(restored.db, server.dump.path()));
+			REQUIRE(persistence::detail::load_snapshot(restored.db,
+													   server.dump.path()));
 
 			THEN("every value comes back") {
 				CHECK(restored.run({"DBSIZE"}) == ":5\r\n");
@@ -44,16 +48,43 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 		}
 	}
 
+	GIVEN("keys and values that are not UTF-8") {
+		test::Server server;
+		const std::string key("k\xff\xfe", 3);
+		const std::string bytes("\x80\x00\xc3", 3);
+		REQUIRE(server.run({"SET", key, bytes}) == "+OK\r\n");
+		REQUIRE(server.run({"RPUSH", "l", bytes}) == ":1\r\n");
+		REQUIRE(server.run({"HSET", "h", bytes, bytes}) == ":1\r\n");
+
+		WHEN("they are saved and loaded") {
+			REQUIRE(persistence::detail::save_snapshot(server.db,
+													   server.dump.path()));
+			test::Server restored;
+			REQUIRE(persistence::detail::load_snapshot(restored.db,
+													   server.dump.path()));
+
+			THEN("every byte comes back") {
+				CHECK(restored.run({"GET", key}) == "$3\r\n" + bytes + "\r\n");
+				CHECK(restored.run({"LINDEX", "l", "0"}) ==
+					  "$3\r\n" + bytes + "\r\n");
+				CHECK(restored.run({"HGET", "h", bytes}) ==
+					  "$3\r\n" + bytes + "\r\n");
+			}
+		}
+	}
+
 	GIVEN("a key whose TTL passes after the snapshot is written") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "short", "v", "PX", "30"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
-		REQUIRE(persistence::detail::save_snapshot(server.db, server.dump.path()));
+		REQUIRE(
+			persistence::detail::save_snapshot(server.db, server.dump.path()));
 		std::this_thread::sleep_for(50ms);
 
 		WHEN("the snapshot is loaded") {
 			test::Server restored;
-			REQUIRE(persistence::detail::load_snapshot(restored.db, server.dump.path()));
+			REQUIRE(persistence::detail::load_snapshot(restored.db,
+													   server.dump.path()));
 
 			THEN("the expired key is not resurrected") {
 				CHECK(restored.run({"EXISTS", "short"}) == ":0\r\n");
@@ -71,7 +102,8 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 
 		WHEN("the snapshot file does not exist") {
 			const auto result =
-				persistence::detail::load_snapshot(server.db, server.dump.path());
+				persistence::detail::load_snapshot(server.db,
+												   server.dump.path());
 
 			THEN("loading succeeds and leaves the keyspace alone") {
 				CHECK(result.has_value());
@@ -82,7 +114,8 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 		WHEN("the file is not a snapshot") {
 			std::ofstream(server.dump.path()) << "definitely not a snapshot";
 			const auto result =
-				persistence::detail::load_snapshot(server.db, server.dump.path());
+				persistence::detail::load_snapshot(server.db,
+												   server.dump.path());
 
 			THEN("loading fails and the keyspace is untouched") {
 				CHECK_FALSE(result.has_value());
@@ -92,16 +125,58 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 
 		WHEN("a valid snapshot is truncated") {
 			REQUIRE(server.run({"RPUSH", "l", "a", "b", "c"}) == ":3\r\n");
-			REQUIRE(persistence::detail::save_snapshot(server.db, server.dump.path()));
+			REQUIRE(persistence::detail::save_snapshot(server.db,
+													   server.dump.path()));
 			const auto size = std::filesystem::file_size(server.dump.path());
 			std::filesystem::resize_file(server.dump.path(), size - 3);
 
 			test::Server restored;
 			const auto result =
-				persistence::detail::load_snapshot(restored.db, server.dump.path());
+				persistence::detail::load_snapshot(restored.db,
+												   server.dump.path());
 
 			THEN("loading fails instead of loading partial data") {
 				CHECK_FALSE(result.has_value());
+				CHECK(restored.run({"DBSIZE"}) == ":0\r\n");
+			}
+		}
+
+		WHEN("the file is a version 1 snapshot") {
+			std::ofstream out(server.dump.path(), std::ios::binary);
+			out.write("RCPPSNAP\x01\x00\x00\x00", 12);
+			out.close();
+			const auto result =
+				persistence::detail::load_snapshot(server.db,
+												   server.dump.path());
+
+			THEN("loading reports the version and leaves the keyspace alone") {
+				REQUIRE_FALSE(result.has_value());
+				CHECK(result.error().kind == PersistKind::SnapshotVersion);
+				CHECK(result.error().at == 1);
+				CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
+			}
+		}
+
+		WHEN("an entry's record is not valid CBOR for a record") {
+			REQUIRE(persistence::detail::save_snapshot(server.db,
+													   server.dump.path()));
+			// The first record starts after the 20-byte header and its 8-byte
+			// size; a CBOR "null" is not a map.
+			{
+				std::fstream file(server.dump.path(),
+								  std::ios::binary | std::ios::in |
+									  std::ios::out);
+				file.seekp(28);
+				file.put('\xf6');
+			}
+			test::Server restored;
+			const auto result =
+				persistence::detail::load_snapshot(restored.db,
+												   server.dump.path());
+
+			THEN("loading fails as corrupt") {
+				REQUIRE_FALSE(result.has_value());
+				CHECK(result.error().kind == PersistKind::SnapshotCorrupt);
 				CHECK(restored.run({"DBSIZE"}) == ":0\r\n");
 			}
 		}
@@ -150,8 +225,8 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 			// Up to 10 s: a forked child is slow under ThreadSanitizer (its
 			// shadow memory is copy-on-write) and the suite runs in parallel.
 			// A passing run leaves the loop as soon as the child is reaped.
-			for (int i = 0; i < 1000 &&
-							server.persistence.background_save_in_progress();
+			for (int i = 0;
+				 i < 1000 && server.persistence.background_save_in_progress();
 				 ++i) {
 				std::this_thread::sleep_for(10ms);
 				server.persistence.poll();
@@ -165,7 +240,7 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 
 				test::Server restored;
 				REQUIRE(persistence::detail::load_snapshot(restored.db,
-												   server.dump.path()));
+														   server.dump.path()));
 				CHECK(restored.run({"GET", "k"}) == "$1\r\nv\r\n");
 			}
 		}

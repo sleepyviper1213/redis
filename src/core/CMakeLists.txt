@@ -34,7 +34,7 @@ target_include_directories(
 # consumer formats with it. Declared here rather than left to spdlog's own link
 # list, which only carries it while spdlog is built against external fmt.
 target_link_libraries(redis_core PUBLIC fmt::fmt spdlog::spdlog
-    magic_enum::magic_enum)
+    reflectcpp::reflectcpp)
 target_link_libraries(redis_core PRIVATE FastFloat::fast_float)
 
 set_warnings(redis_core)

@@ -7,7 +7,7 @@ namespace redis {
 /**
  * \brief When the log is forced to disk, as Redis' appendfsync.
  *
- * The enumerators are spelled as the option values, so magic_enum converts
+ * The enumerators are spelled as the option values, so enum_name() converts
  * between them and the command line and CONFIG GET.
  */
 enum class FsyncPolicy : uint8_t {
