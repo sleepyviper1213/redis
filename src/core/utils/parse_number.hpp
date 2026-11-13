@@ -10,7 +10,9 @@ namespace redis {
  * \brief Parse a signed 64-bit integer from decimal ASCII.
  *
  * The whole of \p s must be the number: no spaces, no '+', no trailing
- * characters.
+ * characters, and no leading zeros ("007", "-0"; "0" itself is fine), as
+ * Redis' string2ll requires: a value stored as "07" is not an integer to
+ * INCR, and "-0" is not one either.
  * \return The value; invalid_argument for malformed input (empty included),
  * result_out_of_range for a value outside int64.
  */

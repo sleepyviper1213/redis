@@ -35,10 +35,22 @@ SCENARIO("Parsing decimal integers", "[parse][integer]") {
 		}
 	}
 
-	THEN("values outside int64 are out of range") {
+	THEN("leading zeros are invalid, as in Redis, except for 0 itself") {
+		// The differential test's case: a stored "09223372036854775807" is not
+		// an integer to DECRBY, so it must not overflow either.
 		for (const std::string_view s :
-			 {"9223372036854775808", "-9223372036854775809",
-			  "99999999999999999999"}) {
+			 {"00", "007", "-0", "-07", "09223372036854775807"}) {
+			INFO("input " << s);
+			const auto result = parse_integer(s);
+			REQUIRE(!result);
+			CHECK(result.error() == std::errc::invalid_argument);
+		}
+	}
+
+	THEN("values outside int64 are out of range") {
+		for (const std::string_view s : {"9223372036854775808",
+										 "-9223372036854775809",
+										 "99999999999999999999"}) {
 			INFO("input " << s);
 			const auto result = parse_integer(s);
 			REQUIRE(!result);
