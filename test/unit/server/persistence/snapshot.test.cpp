@@ -36,7 +36,9 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 			}
 
 			THEN("the TTL is kept as an absolute deadline") {
-				CHECK(restored.run({"TTL", "s"}) == ":100\r\n");
+				// 99 once a second has passed since the SET, on a slow machine.
+				const auto ttl = restored.run({"TTL", "s"});
+				CHECK((ttl == ":100\r\n" || ttl == ":99\r\n"));
 				CHECK(restored.run({"TTL", "l"}) == ":-1\r\n");
 			}
 		}

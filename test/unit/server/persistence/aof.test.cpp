@@ -250,9 +250,12 @@ SCENARIO("A replay does not depend on when it runs", "[aof]") {
 			AofServer server(dir.path(), snapshot.path());
 			REQUIRE(server.start().has_value());
 			// k is alive for the INCR and then made permanent; by the time of
-			// the restart its original deadline has long passed.
-			server.run({"SET", "k", "5", "PX", "30"});
-			server.run({"INCR", "k"});
+			// the restart its original deadline has passed. The deadline is
+			// generous so a loaded machine (TSan, parallel tests) still runs the
+			// INCR before it.
+			const auto k_set_at = std::chrono::steady_clock::now();
+			server.run({"SET", "k", "5", "PX", "500"});
+			REQUIRE(server.run({"INCR", "k"}) == ":6\r\n");
 			server.run({"PERSIST", "k"});
 			// gone is found expired by a read, which logs a DEL; INCR then
 			// starts over from 1.
@@ -260,7 +263,7 @@ SCENARIO("A replay does not depend on when it runs", "[aof]") {
 			std::this_thread::sleep_for(20ms);
 			CHECK(server.run({"GET", "gone"}) == "$-1\r\n");
 			CHECK(server.run({"INCR", "gone"}) == ":1\r\n");
-			std::this_thread::sleep_for(50ms);
+			std::this_thread::sleep_until(k_set_at + 600ms);
 		}
 
 		WHEN("the files are replayed after the deadlines") {
