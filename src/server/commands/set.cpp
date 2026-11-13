@@ -81,13 +81,17 @@ Value sismember(CommandContext &ctx, Args args) {
 Value sinter(CommandContext &ctx, Args args) {
 	std::vector<const Set *> sets;
 	sets.reserve(args.size() - 1);
+	bool any_missing = false;
 	for (const std::string_view key : args.subspan(1)) {
 		const auto set = ctx.db.find_as<Set>(key);
+		// Every key is type-checked, as in Redis: a wrong type after a missing
+		// key is still an error.
 		if (!set) return reply::wrong_type();
-		// A missing key is an empty set, so the intersection is empty.
-		if (*set == nullptr) return reply::array({});
-		sets.push_back(*set);
+		if (*set == nullptr) any_missing = true;
+		else sets.push_back(*set);
 	}
+	// A missing key is an empty set, so the intersection is empty.
+	if (any_missing) return reply::array({});
 
 	// Probe from the smallest set: O(min size * number of sets). The array
 	// header needs the count, so the members are collected before they are

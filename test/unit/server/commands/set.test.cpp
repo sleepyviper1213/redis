@@ -50,6 +50,16 @@ SCENARIO("Intersecting sets", "[commands][set]") {
 			THEN("the intersection is empty") {
 				CHECK(server.run({"SINTER", "x", "missing"}) == "*0\r\n");
 			}
+
+			AND_WHEN("a later key holds another type") {
+				REQUIRE(server.run({"SET", "str", "v"}) == "+OK\r\n");
+
+				THEN("every key is still type-checked, as in Redis") {
+					CHECK(server.run({"SINTER", "missing", "str"}) ==
+						  "-WRONGTYPE Operation against a key holding the wrong "
+						  "kind of value\r\n");
+				}
+			}
 		}
 	}
 }

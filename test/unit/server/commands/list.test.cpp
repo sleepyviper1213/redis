@@ -75,6 +75,16 @@ SCENARIO("Reading list ranges and indexes", "[commands][list]") {
 			CHECK(server.run({"LINDEX", "l", "5"}) == "$-1\r\n");
 		}
 
+		THEN("LINDEX looks at the key before the index, as in Redis") {
+			CHECK(server.run({"LINDEX", "missing", "x"}) == "$-1\r\n");
+			REQUIRE(server.run({"SET", "str", "v"}) == "+OK\r\n");
+			CHECK(server.run({"LINDEX", "str", "x"}) ==
+				  "-WRONGTYPE Operation against a key holding the wrong kind "
+				  "of value\r\n");
+			CHECK(server.run({"LINDEX", "l", "x"}) ==
+				  "-ERR value is not an integer or out of range\r\n");
+		}
+
 		THEN("non-integer indexes are rejected") {
 			CHECK(server.run({"LRANGE", "l", "a", "1"}) ==
 				  "-ERR value is not an integer or out of range\r\n");

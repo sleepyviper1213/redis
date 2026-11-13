@@ -132,17 +132,19 @@ Value lrange(CommandContext &ctx, Args args) {
 }
 
 Value lindex(CommandContext &ctx, Args args) {
-	const auto index_arg = parse_integer(args[2]);
-	if (!index_arg) {
-		return reply::not_integer();
-	}
-
+	// The key before the index, as in Redis: a missing key is nil and a wrong
+	// type an error whatever the index says.
 	const auto list = ctx.db.find_as<List>(args[1]);
 	if (!list) {
 		return reply::wrong_type();
 	}
 	if (*list == nullptr) {
 		return reply::nil();
+	}
+
+	const auto index_arg = parse_integer(args[2]);
+	if (!index_arg) {
+		return reply::not_integer();
 	}
 
 	const auto size  = static_cast<int64_t>((*list)->size());

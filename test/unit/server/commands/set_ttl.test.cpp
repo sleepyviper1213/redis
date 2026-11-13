@@ -103,6 +103,32 @@ SCENARIO("SET option validation", "[commands][set]") {
 					  "-ERR invalid expire time in 'set' command\r\n");
 			}
 		}
+
+		WHEN("an option is repeated") {
+			THEN("it is allowed and the last expiry wins, as in Redis") {
+				CHECK(server.run({"SET", "k", "v", "EX", "100000", "EX", "0"}) ==
+					  "-ERR invalid expire time in 'set' command\r\n");
+				CHECK(server.run({"SET", "k", "v", "EX", "0", "EX", "100"}) ==
+					  "+OK\r\n");
+				const auto pttl = [&] {
+					return std::stoll(server.run({"PTTL", "k"}).substr(1));
+				};
+				CHECK(pttl() > 90000);
+				CHECK(pttl() <= 100000);
+				CHECK(server.run({"SET", "k", "w", "KEEPTTL", "KEEPTTL"}) ==
+					  "+OK\r\n");
+				CHECK(pttl() > 90000);
+			}
+		}
+
+		WHEN("a syntax error follows a bad expire time") {
+			THEN("the syntax error is reported, as in Redis") {
+				CHECK(server.run({"SET", "k", "v", "EX", "0", "BOGUS"}) ==
+					  "-ERR syntax error\r\n");
+				CHECK(server.run({"SET", "k", "v", "EX", "abc", "KEEPTTL"}) ==
+					  "-ERR syntax error\r\n");
+			}
+		}
 	}
 }
 

@@ -70,9 +70,15 @@ enum class SetError : std::uint8_t {
 };
 
 // Parses SET's options. On failure returns why.
+//
+// As in Redis, an option may be repeated (the last expiry wins) but not
+// combined with one it excludes, and the expiry's value is checked only once
+// every option has been read: a syntax error anywhere comes first.
 std::expected<SetOptions, SetError> parse_set_options(Args args) {
 	SetOptions opts;
-	bool has_expiry = false; // EX, PX, EXAT, PXAT or KEEPTTL seen
+	// The expiry option given (EX, PX, EXAT or PXAT), and its last value.
+	const ExpiryOption *chosen = nullptr;
+	std::string_view chosen_time;
 
 	for (size_t i = 3; i < args.size(); ++i) {
 		// Looked up before the loop variable moves on to the option's value.
@@ -91,21 +97,26 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 			opts.xx = true;
 		} else if (iequals(arg, "GET")) {
 			opts.get = true;
-		} else if (iequals(arg, "KEEPTTL") && !has_expiry) {
-			has_expiry = opts.keep_ttl = true;
-		} else if (expiry != EXPIRY_OPTIONS.end() && !has_expiry &&
+		} else if (iequals(arg, "KEEPTTL") && chosen == nullptr) {
+			opts.keep_ttl = true;
+		} else if (expiry != EXPIRY_OPTIONS.end() && !opts.keep_ttl &&
+				   (chosen == nullptr || chosen == &*expiry) &&
 				   i + 1 < args.size()) {
-			has_expiry      = true;
-			const auto time = parse_integer(args[++i]);
-			if (!time) REDIS_FAILED(SetError::NotInteger);
-			const auto timer =
-				*time > 0 ? detail::expire_time(*time, expiry->unit, expiry->base)
-						  : std::nullopt;
-			if (!timer) REDIS_FAILED(SetError::InvalidExpire);
-			opts.deadline = timer->deadline();
+			chosen      = &*expiry;
+			chosen_time = args[++i];
 		} else {
 			REDIS_FAILED(SetError::Syntax);
 		}
+	}
+
+	if (chosen != nullptr) {
+		const auto time = parse_integer(chosen_time);
+		if (!time) REDIS_FAILED(SetError::NotInteger);
+		const auto timer =
+			*time > 0 ? detail::expire_time(*time, chosen->unit, chosen->base)
+					  : std::nullopt;
+		if (!timer) REDIS_FAILED(SetError::InvalidExpire);
+		opts.deadline = timer->deadline();
 	}
 	return opts;
 }
