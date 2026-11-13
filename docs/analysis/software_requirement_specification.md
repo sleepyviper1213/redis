@@ -53,7 +53,8 @@
     * [3.5.4 Deployment Diagram](#354-deployment-diagram)
     * [3.5.5 Activity Diagrams](#355-activity-diagrams)
     * [3.5.6 Use Case Diagram](#356-use-case-diagram)
-    * [3.5.7 Sequence Diagram](#357-sequence-diagram)
+    * [3.5.7 Sequence Diagrams](#357-sequence-diagrams)
+    * [3.5.8 Concurrency Model](#358-concurrency-model)
 * [4. Appendix](#4-appendix)
 <!-- TOC -->
 
@@ -61,62 +62,96 @@
 
 # Document information
 
-| Date       | Revision | Author             |
-|------------|----------|--------------------|
-| 7 Aug 2025 | 3        | Khac Truong Nguyen |
+| Date        | Revision | Author             | Change                                                        |
+|-------------|----------|--------------------|---------------------------------------------------------------|
+| 7 Aug 2025  | 3        | Khac Truong Nguyen |                                                               |
+| 13 Nov 2026 | 4        | Khac Truong Nguyen | Brought in line with the implementation; requirement statuses |
+| 13 Nov 2026 | 5        | Khac Truong Nguyen | References in IEEE style; links to the design, test, user and benchmark documents; use cases split into one file each |
 
 ---
 # 1. Introduction
 
 ## 1.1 Purpose
 
-This document specifies the software requirements for a custom-built Redis-compatible in-memory data store developed in
-C++ using Boost.Asio and a custom RESP protocol parser. It targets educational use, experimentation, and potential
-optimization studies.
+This document specifies the software requirements for a Redis-compatible in-memory data store written from scratch in
+C++23, with Boost.Asio for networking, stdexec senders for its asynchronous control flow and its own RESP parser. It
+targets educational use, experimentation and performance studies.
+
+Each functional requirement in section 3.3 carries a status: **Implemented** requirements describe what the server does
+today; **Planned** ones are kept for the record and are not available.
 
 ## 1.2 Scope
 
 ### 1.2.1 In Scope
 
-* Core Redis commands (`SET`, `GET`, `DEL`, `EXISTS`, etc.).
-* Custom RESP command parser.
-* Snapshot persistence to disk (RDB-like).
-* Simple client-server model using TCP sockets via Boost.Asio.
-* Sequence of logs for testing and debugging.
+* 46 Redis commands across strings, lists, hashes, sets, the keyspace and the server (section 3.3).
+* RESP2 over TCP, plus inline commands as sent by telnet and redis-benchmark; pipelined requests.
+* Per-key expiry, both on access and by a periodic sweep.
+* Persistence through snapshots (`SAVE`, `BGSAVE`, on shutdown) and an optional append-only file.
+* Many concurrent clients on one or more network threads, with per-client limits.
+* Structured logging, crash reports and a watchdog for long-running commands.
 
 ### 1.2.2 Out of Scope
 
-* Advanced Redis features such as clustering, pub/sub, Lua scripting.
-* Full Redis protocol compatibility (e.g., RESP3).
-* GUI or external tools integration.
+* Clustering, replication, Pub/Sub, transactions (`MULTI`/`EXEC`) and Lua scripting.
+* RESP3 and Redis' RDB snapshot format.
+* Authentication and access control (`AUTH`, ACLs).
+* A GUI or HTTP interface.
 
 ## 1.3 Definitions, Acronyms, and Abbreviations
 
-| Term         | Definition                            |
-|--------------|---------------------------------------|
-| RESP         | Redis Serialization Protocol          |
-| RDB          | Redis Database file (snapshot format) |
-| SRS          | Software Requirements Specification   |
-| HTTP         | HyperText Transfer Protocol           |
-| CLI          | Command Line Interface                |
-| FR           | Functional Requirement                |
-| NFR          | Non-functional Requirement            |
-| Snapshotting |                                       |
-| CRLF         |                                       |
-| GUI          | Graphical user interface              |
-
+| Term         | Definition                                                                                   |
+|--------------|----------------------------------------------------------------------------------------------|
+| RESP         | Redis Serialization Protocol; this server speaks version 2                                   |
+| Inline command | A request sent as one line of space-separated words, without RESP framing (telnet)         |
+| Pipelining   | Sending several requests without waiting for the replies; they are answered in order        |
+| Batch        | The requests one read delivered, executed together and answered in one write                |
+| AOF          | Append-only file: a log of every write command, replayed at startup                         |
+| RDB          | Redis' own snapshot format; this server uses its own format instead                         |
+| Snapshotting | Writing the whole keyspace to one file at a point in time                                   |
+| Keyspace     | All keys and their values, with their expiry deadlines                                      |
+| Keyspace thread | The one thread that executes commands when `--io-threads` is above 1                     |
+| CRLF         | Carriage return followed by line feed (`\r\n`), RESP's line terminator                      |
+| SRS          | Software Requirements Specification                                                          |
+| CLI          | Command Line Interface                                                                       |
+| FR / NFR     | Functional / Non-functional Requirement                                                      |
+| GUI          | Graphical User Interface                                                                     |
 
 ## 1.4 References
 
-* Redis Documentation: https://redis.io/docs/
-* IEEE 830-1998: Recommended Practice for Software Requirements Specifications
-* Boost.Asio: https://www.boost.org/doc/libs/release/doc/html/boost_asio.html
-* Build Redis from scratch: https://build-your-own.org/redis/
+[1] *IEEE Recommended Practice for Software Requirements Specifications*, IEEE Std 830-1998, 1998. (Superseded by
+ISO/IEC/IEEE 29148:2018; the section structure of this document follows IEEE 830.)
+
+[2] *Systems and software engineering—Life cycle processes—Requirements engineering*, ISO/IEC/IEEE Std 29148:2018,
+2018.
+
+[3] Redis Ltd., "Redis documentation," https://redis.io/docs/.
+
+[4] Redis Ltd., "Redis serialization protocol specification,"
+https://redis.io/docs/latest/develop/reference/protocol-spec/.
+
+[5] C. M. Kohlhoff, "Boost.Asio," https://www.boost.org/doc/libs/release/doc/html/boost_asio.html.
+
+[6] NVIDIA, "stdexec: `std::execution` reference implementation," https://github.com/NVIDIA/stdexec.
+
+[7] "Build your own Redis with C/C++," https://build-your-own.org/redis/.
+
+[8] K. T. Nguyen, "Use Case Descriptions," [use_cases/README.md](use_cases/README.md), 2026.
+
+[9] K. T. Nguyen, "Software Design Description," [../design/software_design_document.md](../design/software_design_document.md), 2026.
+
+[10] K. T. Nguyen, "Master Test Plan and Level Test Report," [../test/test_plan_and_report.md](../test/test_plan_and_report.md), 2026.
+
+[11] K. T. Nguyen, "User and Installation Guide," [../user/user_guide.md](../user/user_guide.md), 2026.
+
+[12] K. T. Nguyen, "Benchmark and Evaluation Report," [../evaluation/benchmark_report.md](../evaluation/benchmark_report.md), 2026.
+
+[13] K. T. Nguyen, "Directory Layout," [../directory_layout.md](../directory_layout.md), 2026.
 
 ## 1.5 Overview
 
-Section 2 provides a high-level overview, while Section 3 details functional and non-functional requirements. Section 4
-includes appendices and supporting diagrams.
+Section 2 gives a high-level overview; section 3 details the interfaces, design constraints, functional and
+non-functional requirements and the design models; section 4 lists the supporting documents.
 
 ---
 
@@ -126,111 +161,114 @@ includes appendices and supporting diagrams.
 
 ### 2.1.1 Business Case and Operational Concept
 
-This project aims to develop a lightweight, high-performance in-memory key-value data store, inspired by the Redis
-architecture. The system is designed to support a subset of the Redis protocol with core functionalities such as `GET`,
-`SET`, `DEL`, and snapshotting through a custom RESP command parser. The primary use case is to support educational,
-research, and prototyping environments where a simplified Redis server can be deployed and extended easily.
+The project is a lightweight, high-performance in-memory key-value store modelled on Redis. It implements a subset of
+the Redis command set closely enough that standard clients (redis-cli, hiredis, redis-benchmark) work against it
+unchanged, and its replies are checked against a real Redis server by a differential test. It serves education,
+research and prototyping, where a small server that can be read end to end and changed easily is worth more than
+Redis' full feature set.
 
-The operational concept centers around a server application that listens for commands over a TCP or HTTP interface.
-Users, either via scripts or client applications, send commands to store, retrieve, or delete key-value data. The system
-ensures persistence through periodic snapshots (RDB-like) saved to disk.
+A single server process listens on a TCP port. Clients send commands to store, read, expire and delete data; the
+server keeps everything in memory and persists it to disk on demand (`SAVE`, `BGSAVE`), on shutdown, and, when the
+append-only file is enabled, by logging every write.
 
-This project also serves as a hands-on learning platform for exploring system-level programming, concurrent I/O with
-Boost.Asio, memory management, and software architecture for high-performance servers.
+The project is also a platform for studying system-level programming: asynchronous I/O with Boost.Asio, sender-based
+concurrency with stdexec, memory layout of the keyspace, and the architecture of a server whose commands run on one
+thread while its network I/O runs on several.
 
 ### 2.1.2 System Context and Fit
 
-The proposed system fits into the broader context of distributed systems and cloud-native applications where
-lightweight, embeddable, and portable in-memory storage components are valuable. While not intended to replace
-production-grade systems like Redis, it can be integrated into:
+The system is not meant to replace Redis in production. It fits:
 
-* Development environments where Redis is too heavyweight or not customizable
-* Embedded systems with limited compute where a minimal footprint is necessary
-* Educational use cases in operating systems, networking, or database systems courses
+* Development and test environments that need a small, readable Redis-compatible server
+* Teaching operating systems, networking and database courses
+* Performance experiments, through its benchmark and profiling workflows
 
-It operates independently but may interface with monitoring tools or lightweight web dashboards. In larger systems, it
-may serve as a local cache or volatile storage component.
+It operates on its own: it has no dependency on other services, and other programs reach it only through the Redis
+protocol. In a larger system it may serve as a local cache or volatile store.
 
 ## 2.2 Product Functions
 The system provides the following high-level functionalities:
 
-| **ID** | **Requirement**                       | **Description**                                                                             | **Priority** |
-|--------|---------------------------------------|---------------------------------------------------------------------------------------------|--------------|
-| BR-001 | Fast Key-Value Data Storage           | The system must allow clients to store and retrieve key-value data with minimal latency.    | High         |
-| BR-002 | In-Memory Performance                 | Data must be kept in memory to ensure real-time speed for read/write operations.            | High         |
-| BR-003 | Command-Based Interface               | Users must interact with the server using a simple text-based command protocol (like RESP). | High         |
-| BR-004 | Snapshot Persistence                  | The system must support snapshotting to persist data to disk at specific intervals.         | Medium       |
-| BR-005 | Basic Data Types Support              | Support must be provided for common data types: strings, lists, sets, hashes.               | Medium       |
-| BR-006 | Multi-Client Access                   | The system must handle multiple concurrent client connections via TCP.                      | High         |
-| BR-007 | Minimal Resource Footprint            | The solution should be lightweight and suitable for constrained environments.               | Medium       |
-| BR-008 | Configurable Settings                 | Admins should be able to configure server parameters (e.g., port, persistence frequency).   | Low          |
-| BR-009 | Extensibility for Additional Features | The system design must support adding new features such as Pub/Sub or replication later.    | Medium       |
-| BR-010 | Cross-Platform Compatibility          | The server should be buildable and runnable on major OS platforms (Linux, macOS).           | Low          |
+| **ID** | **Requirement**                       | **Description**                                                                                  | **Priority** | **Status**  |
+|--------|---------------------------------------|--------------------------------------------------------------------------------------------------|--------------|-------------|
+| BR-001 | Fast Key-Value Data Storage           | Clients store and retrieve key-value data with minimal latency.                                  | High         | Implemented |
+| BR-002 | In-Memory Performance                 | Data is kept in memory for real-time reads and writes.                                           | High         | Implemented |
+| BR-003 | Command-Based Interface               | Clients use the Redis protocol (RESP2), or inline commands for manual use.                       | High         | Implemented |
+| BR-004 | Persistence                           | Snapshots on demand and on shutdown; an optional append-only file logs every write.              | Medium       | Implemented |
+| BR-005 | Basic Data Types Support              | Strings, lists, sets and hashes, each with optional expiry.                                      | Medium       | Implemented |
+| BR-006 | Multi-Client Access                   | Many concurrent client connections over TCP, on one or more network threads.                     | High         | Implemented |
+| BR-007 | Minimal Resource Footprint            | Lightweight enough for constrained environments; per-client limits bound memory use.             | Medium       | Implemented |
+| BR-008 | Configurable Settings                 | Operators configure the server by command line, configuration file or environment.               | Low          | Implemented |
+| BR-009 | Extensibility for Additional Features | The design admits new features such as Pub/Sub or replication later.                             | Medium       | Planned     |
+| BR-010 | Cross-Platform Compatibility          | Builds and runs on Linux and macOS, both built and tested in CI. Windows is not supported.        | Low          | Implemented |
 
-Diagram: Use Case Diagram (use_case.puml)
+Diagram: Use Case Diagram ([use_case.puml](diagrams/use_case.puml))
+
 ## 2.3 User Characteristics
 
-| User Type | Characteristics                                      |
-|-----------|------------------------------------------------------|
-| Developer | C++ programmers testing key-value systems            |
-| Tester    | Uses Python clients or Redis-CLI to test GET/SET/DEL |
-| Student   | Learns about protocol parsing, async IO              |
+| User Type | Characteristics                                                                          |
+|-----------|------------------------------------------------------------------------------------------|
+| Developer | C++ programmers studying or extending a key-value server                                 |
+| Tester    | Uses redis-cli, hiredis clients or redis-benchmark against the server                    |
+| Operator  | Starts and stops the server, sets its options, reads its logs                            |
+| Student   | Learns protocol parsing, asynchronous I/O and concurrency from the code                  |
 
 ## 2.4 Constraints
 
-* **Memory Constraints**: The system maintains all key-value pairs in memory. As such, the maximum dataset size is
-  limited by available RAM. No paging or overflow mechanism is implemented in this version.
+* **Memory Constraints**: all keys and values are held in memory, so the dataset is limited by available RAM. There is
+  no eviction policy (`maxmemory`) and no paging.
 * **Operational Constraints**:
-  * Single-node operation: This version does not support clustering or replication.
-  * Snapshot creation may temporarily pause command processing depending on implementation.
-  * The system assumes a reliable filesystem for persistence. Unexpected shutdowns between snapshots may lead to data
-    loss.
-  * Interface to be used with the Internet.
-  * Servers must be able to serve queries concurrently.
-  * The system must maintain 99.9% uptime to support 24/7 user access.
-  * The system will be designed according to a client/server model.
-
+  * Single-node operation: no clustering or replication.
+  * Commands execute one at a time, on a single thread, as in Redis: one slow command (for example `KEYS` on a large
+    keyspace) holds up every client until it ends. The watchdog reports such commands (FR-016).
+  * `SAVE` blocks every client while it writes; `BGSAVE` forks a child and does not.
+  * Without the append-only file, writes since the last snapshot are lost if the process is killed; with it, at most
+    the writes of the last second are lost under the default `appendfsync everysec`.
+  * The server follows a client/server model over TCP.
 * **Site Adaptation Constraints**:
-
-  * The system is developed and tested on POSIX-compliant systems (e.g., Linux, macOS). Windows is not supported.
-  * Adaptation to constrained environments (e.g., IoT or embedded Linux) may require recompilation and fine-tuning of
-    memory usage.
-  * No built-in support for container orchestration (e.g., Kubernetes) is provided but can be adapted via custom
-    deployment scripts.
+  * Supported on Linux and macOS, where continuous integration builds the server and runs every test suite.
+  * Windows is not supported: no CI job builds or tests it, so nothing shows that the server works there. The code has
+    Windows branches (no `fork`, so no background saves), but they are unverified.
+  * Adapting to constrained environments may require recompiling with other keyspace map settings.
+  * No built-in container orchestration support; the server is a single executable with file-based state.
 
 ## 2.5 Assumptions and Dependencies
 
-* All commands are ASCII-based and terminated by CRLF
-* Users will not send binary payloads
-* Server runs on localhost for development and testing with sufficient disk space (>1GB).
+* Commands and replies follow RESP2; lines end with CRLF. Values in RESP bulk strings are binary-safe; inline commands
+  are not, and are meant for manual use.
+* The server runs on a trusted network or on localhost: it has no authentication (it listens on `127.0.0.1` by default).
+* The working directory holds enough disk space for the snapshot and the append-only file, which can each be about as
+  large as the dataset.
+* The filesystem honours `fsync` and atomic `rename`, on which snapshot and append-only file safety rely.
 
 ## 2.6 Risk Analysis
 
-This section identifies potential risks in developing and operating the Redis-like in-memory data store, their impacts,
-likelihood, and mitigation strategies to ensure project success.
+This section identifies the risks in developing and operating the server, their impact and likelihood, and how they
+are mitigated.
 
-| Risk ID | Risk Description                                             | Impact                                                          | Likelihood | Mitigation Strategy                                                                                                                                    |
-|---------|--------------------------------------------------------------|-----------------------------------------------------------------|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| R-001   | Snapshot file corruption during save or load                 | High: Data loss or inability to restore database                | Low        | Implement checksums (e.g., CRC32) for snapshot validation; log errors and revert to `redis.snap.bak` if corruption detected (FR-007, FR-008, NFR-003). |
-| R-002   | Boost.Asio dependency issues (e.g., version incompatibility) | Medium: Build failures or portability issues across macOS/Linux | Medium     | Use a fixed Boost version (e.g., 1.85); document fallback libraries (e.g., standard C++ networking); test on target platforms (NFR-007).               |
-| R-003   | Performance bottlenecks under concurrent connections         | High: Failure to meet ≤1ms GET/SET latency (NFR-001)            | Medium     | Optimize command parser and database store; use asynchronous I/O with Boost.Asio; benchmark with tools like JMeter (FR-016, planned).                  |
-| R-004   | Malformed RESP commands causing server crashes               | High: System instability or downtime                            | Low        | Implement robust command validation and error handling; reject malformed commands with structured errors (FR-006, FR-013, NFR-002).                    |
-| R-005   | Inadequate error logging for debugging                       | Medium: Difficulty diagnosing issues during testing             | Low        | Ensure comprehensive logging of commands, errors, and metrics using spdlog; verify logs in test scenarios (FR-004, FR-012, NFR-003).                   |
-| R-006   | Limited developer expertise in C++23 or Boost.Asio           | Medium: Delays in implementation or poor code quality           | Medium     | Provide training resources; use modular design for easier onboarding; leverage online documentation (NFR-006).                                         |
-| R-007   | Snapshot save blocking client operations                     | High: Temporary unavailability during SAVE (NFR-005)            | High       | Plan for background snapshotting in future iterations; minimize blocking time with efficient serialization (FR-007, NFR-001).                          |
-| R-008   | Unhandled client input                                       | Medium: May crash the server                                    | High       | Add robust input validation and logging                                                                                                                |
-
-- Risks are prioritized based on impact and likelihood, with high-impact risks (e.g., R-001, R-003, R-004, R-007)
-  addressed in core requirements (FR-001, FR-006, FR-007, NFR-001, NFR-003).
-- Mitigation strategies leverage existing functional and non-functional requirements where possible.
-- Future enhancements (e.g., background snapshotting, FR-016) may reduce risks like R-007.
+| Risk ID | Risk Description                                           | Impact                                                    | Likelihood | Mitigation                                                                                                                                                                                                     |
+|---------|------------------------------------------------------------|-----------------------------------------------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| R-001   | Snapshot file corrupted during save or load                | High: data loss, or no restore                            | Low        | Write to a temporary file, `fsync`, `rename`, then `fsync` the directory, so readers see the old file or the new one, never a partial one; a magic number and format version are checked on load; the server refuses to start rather than serve an empty keyspace (FR-011). A checksum is planned. |
+| R-002   | Dependency issues (versions, platforms)                    | Medium: build failures                                    | Medium     | Dependencies pinned through a vcpkg baseline; CMake presets per toolchain; CI builds on Linux (GCC, Clang) and macOS (NFR-007).                                                                                 |
+| R-003   | Performance bottlenecks under many connections             | High: latency targets missed (NFR-001)                    | Medium     | Asynchronous I/O; several network threads; replies of a batch sent in one write; benchmarked against Redis with redis-benchmark in CI.                                                                          |
+| R-004   | Malformed requests crashing the server                     | High: instability or downtime                             | Low        | Bounded parser (declared lengths checked); protocol errors answered then the client closed; query and output buffer limits (FR-010, FR-014); sanitizer and stress runs in CI.                                   |
+| R-005   | Too little logging to diagnose issues                      | Medium: slow debugging                                    | Low        | Logging channels per module; crash reports with the running command and a backtrace (FR-015, FR-016).                                                                                                          |
+| R-006   | Limited expertise in C++23, Boost.Asio or stdexec          | Medium: delays, poor code quality                         | Medium     | Modular design, documented in the code and in [directory_layout.md](../directory_layout.md); static analysis in CI (NFR-006).                                                                                  |
+| R-007   | Snapshot saving blocking clients                           | High: unavailability during `SAVE` (NFR-005)              | Medium     | `BGSAVE` saves in a forked child while the server keeps serving (POSIX); `SAVE` still blocks, as in Redis.                                                                                                     |
+| R-008   | Unhandled client input                                     | Medium: crash or wrong replies                            | Low        | Typed lookups return `WRONGTYPE`; integers parsed as Redis does; differential test against Redis; property-style stress test.                                                                                   |
+| R-009   | One long-running command stalling every client             | High: the whole server appears hung                       | Medium     | The command watchdog logs a command running past `--watchdog-ms` while it is still running (FR-016).                                                                                                            |
 
 ## 2.7 Acceptance Criteria
 
-* Unit tests shall cover at least 80% of the core logic (e.g., command dispatching, snapshotting).
-* Integration tests must demonstrate correct behavior under real client connections.-
-* Architecture, use cases, and system behavior must be documented using UML diagrams.
-* A README file must include build instructions, usage examples, and configuration guidance.
+* Unit tests cover the core logic: parsing, command execution, persistence, sessions and the concurrency helpers.
+* Integration tests drive a running server through hiredis, with one and with four network threads.
+* A stress test checks every reply against a model and races clients on shared keys.
+* A differential test sends the same random commands to this server and to Redis and compares the replies.
+* All of the above pass under ThreadSanitizer in CI; AddressSanitizer and UndefinedBehaviorSanitizer presets are
+  available for local runs.
+* Architecture, use cases, concurrency and behaviour are documented with UML diagrams (section 3.5).
+* The README gives build instructions, usage examples and every server option.
+
 ---
 
 # 3. Specific Requirements
@@ -239,138 +277,136 @@ likelihood, and mitigation strategies to ensure project success.
 
 ### 3.1.1 User Interfaces
 
-* Command-line interface via Python client or HTTP tools
+* No GUI. Users interact through any Redis client (redis-cli, hiredis-based programs) or telnet with inline commands.
+* The server itself is configured through its command-line interface (`redis_server --help`), a configuration file
+  (`--config`) or `REDIS_*` environment variables.
 
 ### 3.1.2 Hardware Interfaces
 
-* None required; runs on general-purpose CPU with 512MB+ RAM
+* None required: a general-purpose 64-bit CPU and enough RAM for the dataset.
 
 ### 3.1.3 Software interfaces
 
-* Operating systems: macOS, Linux
-* Compiler: Clang++, GCC 14+
-* Build System: CMake 3.20+
-* Dependencies:
-    * Boost.Asio for networking
-    * cereal for serialisation/deserialisation
-    * spdlog for logging
+* Operating systems: Linux, macOS (Windows is not supported; see section 2.4)
+* Compilers: GCC or Clang with C++23 support (CI uses GCC 16 and LLVM 22; Homebrew LLVM on macOS)
+* Language: ISO C++23
+* Build system: CMake 3.28+ with presets; dependencies through vcpkg
+* Libraries:
+    * Boost.Asio for networking, Boost.Unordered and Abseil for the keyspace hash maps
+    * stdexec (with its Asio integration) for senders and coroutines
+    * spdlog and {fmt} for logging and formatting
+    * CLI11 for options, magic_enum for enum names, fast_float for number parsing
+    * cereal for the snapshot's portable binary encoding
+    * Catch2 for unit tests, hiredis for integration tests
 
 ### 3.1.4 Communication interfaces
 
-* TCP-based RESP communication
+* TCP, by default on `127.0.0.1:6379` (`--host`, `--port`).
+* RESP2 requests (arrays of bulk strings) or inline commands; RESP2 replies.
+* Pipelined requests are answered in order; the replies to the requests one read delivered are sent in one write.
 
-Diagram: Client Connection State Machine
+Diagram: Client Connection State Machine ([state_connection_lifecycle.puml](diagrams/state_connection_lifecycle.puml))
 
-The state machine diagram describes the lifecycle of a client connection, transitioning from Disconnected to Connected, Authenticated (if required), Processing, and Closed states. It captures events like TCP connection acceptance, authentication success/failure, and command processing.
+The state machine follows one client connection: admission (refused past `--maxclients`), waiting for a request,
+parsing, executing, writing, and every way a connection closes: the client closing it, a protocol error, a buffer
+limit, the idle or request timeout, or server shutdown.
 
-[See state_connection_lifecycle.puml in Appendix B for the diagram.]
-Diagram: Sequence Diagram for Client-Server Interaction
+Diagram: Client-Server Interaction ([sequence_client_server_interaction.puml](diagrams/sequence_client_server_interaction.puml))
 
-The sequence diagram illustrates a client-server interaction, showing a client connecting via TCP, sending a RESP command (e.g., GET key), the server parsing and executing the command, and returning a response (e.g., value). It also shows connection cleanup on disconnect.
-
-[See sequence_client_server_interaction.puml in Appendix B for the diagram.]
+The sequence diagram shows a client connecting, sending two pipelined requests in one write, the server executing
+both and answering in one write, a `WRONGTYPE` error, and the connection ending.
 
 ## 3.2 Design Constraints
 
 ### 3.2.1 Standard Compliance
 
-The system must comply with the following technical and platform standards:
-
 * **RESP Protocol Specification**
-  The Redis-like server shall fully comply with the **RESP version 2** protocol, ensuring compatibility with standard Redis clients. This includes correct formatting of bulk strings, arrays, errors, and integers.
+  The server complies with **RESP version 2** for requests and replies, so standard Redis clients work unchanged:
+  simple strings, errors, integers, bulk strings and arrays, including null bulk strings and null arrays. Error texts
+  follow Redis' wording, checked by the differential test.
 
 * **ISO C++ Standards**
-  The implementation shall follow **ISO/IEC 14882:2024 (C++23)** or later. Code must avoid undefined behavior and adhere to safe memory and concurrency practices.
+  The implementation follows **ISO/IEC 14882:2024 (C++23)**. Code avoids undefined behaviour and data races; CI runs the
+  sanitizers and static analysis (clang-tidy, cppcheck).
 
-* **POSIX Compliance**
-  File I/O, process signals, and error handling shall be compatible with **POSIX** to support deployment on Unix-based systems.
+* **POSIX**
+  Background saves, crash reports and file durability use POSIX (`fork`, `waitpid`, signals, `fsync`), which the
+  supported platforms provide.
 
 * **Filesystem Access**
-  Filesystem operations shall use compatible abstraction for cross-platform snapshot storage.
-* No **external database** or file-based storage engine other than snapshots
-* No use of Redis source code; all components must be implemented from scratch.
+  File paths go through `std::filesystem`; snapshots and the append-only file are written so a crash never leaves a
+  partial file in place.
+
+* No external database or storage engine other than the snapshot and the append-only file.
+* No Redis source code: every component is implemented from scratch.
 
 ### 3.2.2 Accounting & Auditing Procedures
 
-The server shall implement logging and traceability mechanisms to support debugging, usage analytics, and post-mortem analysis.
+The server logs enough to support debugging and post-mortem analysis, without recording client data.
 
-* **Command Logging**
-  All incoming commands (excluding volatile or noisy ones like `PING`) shall be logged with:
-
-  * Timestamp
-  * Client connection identifier (IP, port)
-  * Command name and sanitized parameters
-  * Execution result (success/failure)
-
-* **Snapshot Logging**
-  Each snapshot event must be logged with:
-
-  * Snapshot trigger source (manual, timer, threshold)
-  * Number of keys serialized
-  * Output file path
-  * Timestamp and hash digest (e.g., SHA-256)
-
-* **Authentication Logging**
-  All authentication attempts (successful or failed) must include:
-
-  * Client IP
-  * Time of attempt
-  * Status (OK/Fail)
-  * Lockout flag if repeated failures exceed threshold
-
-* **Retention & Archiving**
-  All logs shall be retained for a minimum of **30 days**. Old logs may be archived (e.g., GZIP-compressed) automatically based on configurable policy.
-
-* **Audit Readability**
-  Log files shall be stored in a **human-readable** format (e.g., newline-delimited JSON or plain text) for ease of inspection.
+* **Logging channels**: `server`, `net`, `commands` and `persistence`, at levels `trace` to `critical`
+  (`--log-level`), to stderr and to `--log-file`. Logging is asynchronous, so writing a log line never waits for disk.
+* **Commands**: at `trace` level, each command's name and argument count, never its arguments or reply, since those
+  are the clients' data.
+* **Connections**: every limit a client breaks (too many clients, a buffer limit, an idle or request timeout) is
+  logged with the client's address and counted for `INFO`.
+* **Persistence**: every save, background save, rewrite and append-only file problem is logged with its outcome and
+  file.
+* **Crashes**: a fatal signal or uncaught exception writes a report with the command that was running and a backtrace
+  (POSIX).
+* **Long-running commands**: the watchdog logs the command name and how long it has run (FR-016).
+* **Audit readability**: logs are plain text, one line per event. Retention and rotation are left to the operator.
 
 ---
 
 ### 3.2.3 Legal & Data Privacy Constraints
 
 * **User Data Protection**
-  Any sensitive data (e.g., authentication credentials) must never be logged in plaintext. Authentication data should be handled in memory only and never persisted to disk.
+  Keys, values and command arguments are never written to the log. There are no credentials to protect: the server has
+  no authentication (see NFR-002). The append-only file and its directory are created readable by their owner only.
 
 * **Third-party Library Licensing**
-  All third-party libraries (e.g., Boost, nlohmann/json) must be used in compliance with their respective licenses (e.g., MIT, Boost Software License 1.0). The project must not integrate non-permissive or GPL-incompatible dependencies without explicit approval.
-
+  All third-party libraries are used under permissive licences (Boost Software License, MIT, BSD, Apache 2.0). No GPL or
+  other copyleft dependency is used.
 
 ### 3.2.4 Resource Constraints
 
-* The server must be lightweight and runnable on machines with:
-
-  * CPU: 2-core minimum
-  * RAM: ≤ 128 MB for small datasets
-  * Disk: Must not write more than 1 snapshot per 5 seconds
+* The server must stay lightweight:
+  * CPU: one core suffices; `--io-threads` uses more for network I/O
+  * RAM: the dataset plus per-client buffers, bounded by `--client-query-buffer-limit` and `--client-output-buffer-limit`
+  * Disk: snapshots are written only on request (`SAVE`, `BGSAVE`) and at shutdown; there is no automatic interval
 
 ---
 
-
-
 ## 3.3 Functional Requirements
 
-| ID     | Requirement                          | Description                                                         | Priority |
-|--------|--------------------------------------|---------------------------------------------------------------------|----------|
-| FR-01  | Execute Redis commands               | Support GET, SET, DEL for key-value operations                      | High     |
-| FR-02  | TCP server setup                     | Establish TCP listener for client connections                       | High     |
-| FR-03  | Configuration loading                | Load settings (e.g., port, snapshot interval) from config file      | Low      |
-| FR-04  | Logging system initialization        | Set up spdlog for command and error logging                         | High     |
-| FR-05  | INFO                                 | Return statistics such as uptime, number of keys, and memory usage. | Low      |
-| FR-06  | Invalid Command Handling             | Detect and reject unsupported or malformed commands.                | Low      |
-| FR-07  | Snapshot File                        | Save all key-value pairs to a file (`redis.snap`).                  | Low      |
-| FR-08  | Backup on Save                       | Rename previous snapshot to `redis.snap.bak` before overwriting.    | Low      |
-| FR-09  | Snapshot restoration                 | Reload `redis.snap` on if present.                                  | Low      |
-| FR-011 | Concurrent Clients                   | Support multiple simultaneous HTTP client connections.              | Low      |
-| FR-012 | Log Requests                         | Log command execution, client IP, and response time.                | Low      |
-| FR-013 | Error Responses                      | Return well-structured errors on bad input or system issues.        | Low      |
-| FR-014 | Background monitoring                | Monitor system metrics (e.g., memory, connections) in background    | Low      |
-| FR-016 | Benchmarking (Planned)               | Record throughput and latency under load.                           | Low      |
-| FR-017 | Authentication or client permissions | Support client authentication (optional, planned)                   | Low      |
-| FR-018 | Pub/Sub                              | Support publish/subscribe messaging (planned)                       | Low      |
-| FR-019 | Transactions                         | Support multi-command transactions (planned)                        | Low      |
-| FR-020 | Lua scripting                        | Support Lua script execution (planned)                              | Low      |
-| FR-021 | Clustering or replication            | Support distributed setups (planned)                                | Low      |
-
+| ID     | Requirement                    | Description                                                                                                                                                                                 | Priority | Status      |
+|--------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|-------------|
+| FR-001 | String commands                | `SET` (with `EX`, `PX`, `EXAT`, `PXAT`, `KEEPTTL`, `NX`, `XX`, `GET`), `GET`, `MSET`, `MGET`, `APPEND`, `STRLEN`, `INCR`, `DECR`, `INCRBY`, `DECRBY`.                                                    | High     | Implemented |
+| FR-002 | List commands                  | `LPUSH`, `RPUSH`, `LPOP`, `RPOP` (with a count), `LLEN`, `LRANGE`, `LINDEX`.                                                                                                                 | High     | Implemented |
+| FR-003 | Hash commands                  | `HSET`, `HGET`, `HMGET`, `HDEL`, `HGETALL`, `HLEN`, `HEXISTS`.                                                                                                                               | Medium   | Implemented |
+| FR-004 | Set commands                   | `SADD`, `SREM`, `SCARD`, `SMEMBERS`, `SISMEMBER`, `SINTER`, `SPOP`.                                                                                                                          | Medium   | Implemented |
+| FR-005 | Keyspace commands              | `DEL`, `EXISTS`, `KEYS` (glob patterns), `TYPE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE`.                                                                                              | High     | Implemented |
+| FR-006 | Key expiry                     | A key with a deadline disappears once it passes: on access, and by a sweep every 100 ms that removes up to 1000 expired keys, oldest deadline first.                                       | High     | Implemented |
+| FR-007 | Server commands                | `PING`, `ECHO`, `INFO` (sections `server`, `clients`, `memory`, `persistence`, `stats`, `commandstats`, `keyspace`), `CONFIG GET <pattern>`, `CONFIG SET loglevel`.                           | Medium   | Implemented |
+| FR-008 | TCP server and protocol        | Listen on `--host`:`--port`; parse RESP2 arrays and inline commands; handle requests split across reads and pipelined requests in one read.                                                | High     | Implemented |
+| FR-009 | Concurrent clients             | Serve many clients at once with asynchronous I/O on `--io-threads` threads; above one, commands execute on a single keyspace thread, so they never run concurrently.                        | High     | Implemented |
+| FR-010 | Error replies                  | Redis' errors for an unknown command, wrong arity, `WRONGTYPE`, a value that is not an integer, overflow and syntax errors; a protocol error is answered, then the connection is closed.    | High     | Implemented |
+| FR-011 | Snapshots                      | `SAVE`, `BGSAVE` (forked child, POSIX), `LASTSAVE`; written atomically to `--dump` (default `dump.snap`) in this project's format; loaded at startup; saved at shutdown.                    | Medium   | Implemented |
+| FR-012 | Append-only file               | `--appendonly` logs every write to `--appenddir` (manifest, base snapshot, incremental log); `--appendfsync always/everysec/no`; `BGREWRITEAOF` compacts it; it is replayed at startup.    | Medium   | Implemented |
+| FR-013 | Configuration                  | Every option settable on the command line, in a `--config` file or through `REDIS_*` environment variables; see the README for the list.                                                    | Low      | Implemented |
+| FR-014 | Client limits                  | `--maxclients`, `--client-query-buffer-limit`, `--client-output-buffer-limit`, `--idle-timeout`, `--request-timeout`; a client past a limit is disconnected and the event counted in `INFO`. | Medium   | Implemented |
+| FR-015 | Logging                        | Asynchronous logging by channel to stderr and `--log-file`; level set by `--log-level`, or at run time by `CONFIG SET loglevel` when `--enable-config-set` is given.                      | High     | Implemented |
+| FR-016 | Diagnostics                    | Crash reports with the running command and a backtrace (POSIX); a watchdog that logs a command running past `--watchdog-ms` (default 1000 ms) while it still runs.                         | Medium   | Implemented |
+| FR-017 | Graceful shutdown              | On `SIGINT` or `SIGTERM`: stop accepting, finish or drop pending work, save a final snapshot; exit non-zero if that save fails.                                                              | High     | Implemented |
+| FR-018 | Startup safety                 | Refuse to start when the snapshot or append-only file cannot be read, rather than serve an empty keyspace and overwrite the files later.                                                   | High     | Implemented |
+| FR-019 | Benchmarking                   | Throughput and latency measured with redis-benchmark against this server and Redis, in CI (`bench/` branches).                                                                              | Low      | Implemented |
+| FR-020 | Authentication and permissions | `AUTH` and client permissions.                                                                                                                                                             | Low      | Planned     |
+| FR-021 | Pub/Sub                        | Publish/subscribe messaging.                                                                                                                                                               | Low      | Planned     |
+| FR-022 | Transactions                   | `MULTI`, `EXEC`, `WATCH`.                                                                                                                                                                  | Low      | Planned     |
+| FR-023 | Lua scripting                  | `EVAL` and script execution.                                                                                                                                                               | Low      | Planned     |
+| FR-024 | Clustering or replication      | Distributed setups.                                                                                                                                                                        | Low      | Planned     |
+| FR-025 | Memory limit and eviction      | `maxmemory` with an eviction policy.                                                                                                                                                       | Low      | Planned     |
 
 ---
 
@@ -378,93 +414,104 @@ The server shall implement logging and traceability mechanisms to support debugg
 
 ### [NFR-001] Performance
 
-* GET/SET latency: ≤1ms under 1,00 concurrent connections
-* Snapshot SAVE latency: ≤100ms blocking
-* Throughput: ≥10,00 ops/sec on 4-core Apple Silicon CPU
-* Cold start: ≤500ms with <10MB snapshot
-* RESP parsing: <5ms per command
-* Snapshot write: ≥1MB/s
+Targets, measured with redis-benchmark (FR-019):
+
+* `GET`/`SET` latency: ≤ 1 ms at 1,000 concurrent connections
+* Throughput: ≥ 10,000 operations per second on a 4-core CPU
+* Cold start: ≤ 500 ms with a snapshot under 10 MB
+* Parsing: well under 5 ms per request; pipelined requests answered in one write per batch
+* `SAVE` blocking time: ≤ 100 ms for small datasets; `BGSAVE` does not block
+* Per-command overhead of diagnostics: a few memory stores (the watchdog's heartbeat)
 
 ### [NFR-002] Security
 
-* Reject malformed/unknown commands
-* Ensure snapshot backup (`redis.snap.bak`) before overwrite
+* Malformed and unknown commands are rejected with an error; a protocol error closes the connection.
+* Declared lengths are bounded, and per-client buffer limits stop a client from exhausting memory.
+* Listens on `127.0.0.1` by default; there is no authentication, so it must not be exposed to untrusted networks.
+* `CONFIG SET` is disabled unless `--enable-config-set` is given.
+* Files are replaced atomically; the append-only file is private to its owner.
 
 ### [NFR-003] Reliability
 
-* Crash recovery via the latest snapshot
-* Fail-safe snapshot rotation
-* Log all commands and errors
+* Recovery after a crash from the latest snapshot, or from the append-only file when enabled.
+* Snapshots and append-only file rewrites never leave a partial file in place.
+* The server refuses to start on unreadable persistence files (FR-018), and fails loudly when the final save fails.
+* Correctness is checked by unit, integration, stress and differential tests in CI, including under ThreadSanitizer.
 
 ### [NFR-004] Application Affinity and Compatibility
 
-* Compatible with RESP test clients
-* Potential Redis CLI compatibility via wrapper
+* Works with standard Redis clients: redis-cli, redis-benchmark, hiredis and libraries built on it.
+* Replies, including error texts, match Redis for the implemented commands, as the differential test checks.
 
 ### [NFR-005] Availability
 
-* Remain operational during snapshot saves
+* Keeps serving clients during `BGSAVE` and `BGREWRITEAOF`, which run in forked children (POSIX).
+* A client that misbehaves is disconnected without affecting others (FR-014).
+* A long-running command is reported while it runs (FR-016), though it still holds up every client, as in Redis.
 
 ### [NFR-006] Maintainability
 
-* Modular structure: `command/`, `storage/`, `core/`
-* Separate parser, logic, and transport layers
+* One library per directory: `core` (no networking, no server state), `common` (RESP, keyspace), `server` (`net`,
+  `commands`, `persistence`, `diagnostics`), `app`; dependencies point one way only.
+* Parsing, command logic, transport and persistence are separate layers.
+* Static analysis (clang-tidy, cppcheck) and formatting rules (clang-format) are part of CI.
 
 ### [NFR-007] Portability
 
-* Compile/run on macOS and Linux with CMake
+* Builds with CMake presets on Linux (GCC, Clang) and macOS (Homebrew LLVM); CI builds and tests both.
+* Platform-specific code (`fork`, signals, crash reports) is isolated, so another platform could be added; Windows is
+  not supported until CI builds and tests it.
 
 ### [NFR-008] Extensibility
 
-* Modular design for new commands/features (e.g., AOF)
-* Stubbed Pub/Sub module
+* Commands are table-driven: a new command is one function and one entry in its family's `CommandInfo` list.
+* Reusable stdexec algorithms (`retry`, `supervised`, `every`, `watchdog`) for new background work.
 
 ### [NFR-009] Reusability
 
-* Reusable modules: command parser, snapshot handler
-* Self-contained logging, error, and HTTP layers
-
-Thanks for sharing your diagrams! Based on your uploaded `.puml` files, here’s a **completed and well-written section 3.5 – Object Oriented Models** for your Software Requirements Specification (SRS):
+* `core` and `common` (RESP parser and encoder, typed keyspace, logging, sender algorithms) are self-contained libraries
+  usable outside the server.
 
 ---
 
 ## 3.5 Object-Oriented Models
 
-This section presents the design models that describe the structure, behavior, and deployment of the Redis-like server system using object-oriented analysis. Each diagram file is maintained in the `diagrams/` folder and written using PlantUML syntax.
+This section presents the design models that describe the structure, behaviour, concurrency and deployment of the
+server. Each diagram is kept in the [`diagrams/`](diagrams/) folder as PlantUML.
 
 ---
 
 ### 3.5.1 Architecture Specification
 
-The overall component-based system architecture is defined in:
+* [`components.puml`](diagrams/components.puml)
 
- [`components.puml`](diagrams/components.puml)
+The component diagram shows the libraries and their main parts:
 
-This diagram describes major system components, including:
-
-* Command Parser
-* In-Memory Store
-* Snapshot Manager
-* File System
-* TCP Listener
-* Admin and Client actors
-
-It shows how responsibilities are separated and how components interact over TCP and file I/O.
+* `net`: the listener (accept loop, admission), sessions (read, parse, write), the executor (keyspace thread) and the
+  client limits
+* `commands`: the command handler (lookup, arity, dispatch) and the six command families
+* `persistence`: the snapshot manager and the append-only file
+* `diagnostics`: the command watchdog and the crash handler
+* `common`: the RESP parser and encoder, and the typed keyspace
+* `core`: sender algorithms, logging, time, OS and utility code
 
 ---
 
 ### 3.5.2 Data Flow Diagrams
 
-The system’s data flow is modeled using three levels:
+The data flow is modelled at three levels:
 
 * [`dfd_context.puml`](diagrams/dfd_context.puml)
-  Provides a high-level context of external entities (Client, File System) and their data exchanges with the system.
-
-* [`dfd_execute.puml`](diagrams/dfd_execute.puml)
-  Focuses on how commands flow through parsing, dispatching, execution, and storage.
+  Level 0: the server with its external entities (client, operator) and its data stores (snapshot, append-only file,
+  log file).
 
 * [`dfd_subprocess.puml`](diagrams/dfd_subprocess.puml)
-  Breaks down the snapshot subprocess into data interactions between the in-memory store and the file system.
+  Level 1: reading and parsing, dispatching, executing, persisting and housekeeping, with the keyspace, files and
+  statistics they read and write.
+
+* [`dfd_execute.puml`](diagrams/dfd_execute.puml)
+  Level 2: process 3.0, executing a command, broken down by command family, with the typed lookups each one uses and
+  what each writes to the append-only file.
 
 ---
 
@@ -472,7 +519,8 @@ The system’s data flow is modeled using three levels:
 
 * [`state_connection_lifecycle.puml`](diagrams/state_connection_lifecycle.puml)
 
-This state diagram models the lifecycle of a client connection, from TCP handshake through authentication, command parsing, execution, and connection closure. It helps identify valid transitions and error conditions in network sessions.
+The lifecycle of one client connection, from admission through waiting, parsing, executing and writing, to every way it
+closes, including where each timeout applies.
 
 ---
 
@@ -480,26 +528,20 @@ This state diagram models the lifecycle of a client connection, from TCP handsha
 
 * [`deployment.puml`](diagrams/deployment.puml)
 
-This diagram shows how the Redis-like server is deployed in a real-world environment. It includes:
-
-* Server binary running on Linux
-* Snapshot storage on disk
-* External clients connecting over TCP
-* Optional admin tools
-
-It is helpful to understand infrastructure and networking setup.
+The server process on Linux or macOS; the clients that reach it over TCP; its files (`dump.snap`,
+`appendonlydir/`, the log); and the child process that background saves fork.
 
 ---
 
 ### 3.5.5 Activity Diagrams
 
 * [`activity_command_execution_pipeline.puml`](diagrams/activity_command_execution_pipeline.puml)
-  Describes the internal flow from when a command is received to when the result is sent back.
+  One connection's rounds: reading, parsing a batch, executing each request with its checks, logging writes and
+  answering in one write, and where each limit closes the connection.
 
 * [`activity_startup.puml`](diagrams/activity_startup.puml)
-  Models the startup sequence: loading configuration, initializing components, opening sockets, etc.
-
-These diagrams emphasize internal operational logic and system behavior.
+  Startup and shutdown: options, logging, loading persistence (or refusing to start), listening, the concurrent tasks
+  while serving, and the shutdown order down to the final save.
 
 ---
 
@@ -507,36 +549,49 @@ These diagrams emphasize internal operational logic and system behavior.
 
 * [`use_case.puml`](diagrams/use_case.puml)
 
-This diagram models the primary use cases for both **client** and **admin** actors, including:
-
-* Store and retrieve key-value pairs
-* Configure settings (admin)
-* Trigger snapshots
-* Optional authentication
-* Extensibility hooks for future features like Pub/Sub
-
+The use cases of the client (storing and reading data, expiry, persistence, inspecting the server) and of the operator
+(configuring, stopping the server, watching the logs), with the future extension point for features such as Pub/Sub.
+Each has its own description, indexed in [use_cases/README.md](use_cases/README.md).
 
 ---
 
-### 3.5.7 Sequence Diagram
+### 3.5.7 Sequence Diagrams
 
 * [`sequence_client_server_interaction.puml`](diagrams/sequence_client_server_interaction.puml)
+  A full interaction: admission, two pipelined requests answered in one write, a `WRONGTYPE` error, disconnection.
 
-This diagram represents a full client-server interaction sequence:
+* [`sequence_connection_ping_pong.puml`](diagrams/sequence_connection_ping_pong.puml)
+  `PING` and its replies, with the idle timeout and the client limit.
 
-* TCP connection established
-* RESP command sent
-* Parsed and dispatched
-* Response returned
+---
 
-It is useful for visualizing protocol flow and latency hotspots.
+### 3.5.8 Concurrency Model
+
+* [`concurrency_threads.puml`](diagrams/concurrency_threads.puml)
+  Every thread and child process: what each runs, when it exists, what it hands to which, and the state they share
+  (the lock-free keyspace with one owning thread, the watchdog's heartbeat).
+
+* [`sequence_threads_request_and_shutdown.puml`](diagrams/sequence_threads_request_and_shutdown.puml)
+  One request crossing from a network thread to the keyspace thread and back, and the order in which the threads stop
+  at shutdown.
 
 ---
 
 # 4. Appendix
 
-* A. Use Case Description
-  Use case descriptions are maintained in a separate document for clarity and modularity. See [use_case_descriptions.md](use_case_descriptions.md)
+* A. Use Case Descriptions
+  One file per use case, indexed in [use_cases/README.md](use_cases/README.md)
 
-* B. Test Plan Checklist
-  See [TEST_CHECKLIST.md](../test/TEST_CHECKLIST.md)
+* B. Test Plan and Report
+  See [test_plan_and_report.md](../test/test_plan_and_report.md) (this replaces the unchecked
+  [TEST_CHECKLIST.md](../test/TEST_CHECKLIST.md))
+
+* C. Software Design Description
+  See [software_design_document.md](../design/software_design_document.md); module layout and request path:
+  [directory_layout.md](../directory_layout.md)
+
+* D. User and Installation Guide
+  See [user_guide.md](../user/user_guide.md)
+
+* E. Benchmark and Evaluation Report
+  See [benchmark_report.md](../evaluation/benchmark_report.md)

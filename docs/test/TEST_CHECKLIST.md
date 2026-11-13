@@ -1,5 +1,9 @@
 # ✅ Redis Server Testing Checklist
 
+> **Superseded.** The test plan, the requirement-to-test traceability and the latest results are in
+> [test_plan_and_report.md](test_plan_and_report.md). This list is kept as the original set of ideas; its boxes are
+> not maintained.
+
 ## 1. Connection
 - [ ] Server accepts a TCP client connection
 - [ ] Handles multiple clients simultaneously

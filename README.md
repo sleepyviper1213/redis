@@ -139,7 +139,7 @@ with the same toolchain (see
 [cmake/toolchains/homebrew-llvm.cmake](cmake/toolchains/homebrew-llvm.cmake));
 set `HOMEBREW_LLVM_PREFIX` if LLVM is not at `/opt/homebrew/opt/llvm`.
 
-Dependencies (Boost.Asio, spdlog, fmt, CLI11, cereal, Catch2, hiredis, ...)
+Dependencies (Boost.Asio, spdlog, fmt, CLI11, reflect-cpp, Catch2, hiredis, ...)
 are declared in [vcpkg.json](vcpkg.json) and installed by the configure step.
 
 ```sh
@@ -206,13 +206,23 @@ redis-benchmark -p 6379 -q -P 16 \
   -t set,get,incr,lpush,rpush,lpop,rpop,sadd,hset,spop,mset
 ```
 
+## Demo video
+
+<!-- Replace VIDEO_ID with the id of the YouTube video (the part after "v=" in its address), then delete this comment. -->
+[![Demo: a Redis-compatible server in C++23](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=VIDEO_ID)
+
 ## Documentation
 
-- [Directory layout and request path](docs/directory_layout.md)
-- [Software requirements specification](docs/analysis/software_requirement_specification.md)
-- [Use case descriptions](docs/analysis/use_case_descriptions.md)
-- [Design diagrams (PlantUML)](docs/analysis/diagrams/)
-- [Test checklist](docs/test/TEST_CHECKLIST.md)
+| Document | Standard | Contents |
+|----------|----------|----------|
+| [Software requirements specification](docs/analysis/software_requirement_specification.md) | IEEE 830-1998 | What the server must do; FR and NFR |
+| [Use case descriptions](docs/analysis/use_cases/README.md) | Appendix of the SRS | 19 use cases, one file each |
+| [Software design description](docs/design/software_design_document.md) | IEEE 1016-2009 | Architecture, data structures, concurrency, persistence, design decisions |
+| [Master test plan and level test report](docs/test/test_plan_and_report.md) | IEEE 829-2008 | Test strategy, traceability, results and open anomalies |
+| [User and installation guide](docs/user/user_guide.md) | ISO/IEC/IEEE 26514 | Build, run, configure, commands, troubleshooting |
+| [Benchmark and evaluation report](docs/evaluation/benchmark_report.md) | After IEEE 829-2008 | Method, results and validity of the performance comparison with Redis |
+| [Directory layout and request path](docs/directory_layout.md) | | Module map and what a client can rely on |
+| [Design diagrams (PlantUML)](docs/analysis/diagrams/) | UML | Use case, component, sequence, activity, state, deployment, data flow |
 
 ## License
 

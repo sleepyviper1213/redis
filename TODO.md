@@ -321,3 +321,52 @@ One command thread means one slow command stalls every client.
   (`cmake/Dependencies.cmake`). `test/support/crash_report_windows.cpp` makes
   such bugs report themselves: a crash prints its stack, and strict handle
   checking faults on the first invalid handle.
+
+## Documentation and submission
+
+What is left to do by hand for the graduation project. The documents are in
+`docs/` (SRS, use cases, design, test, user guide, benchmark report); anomaly
+IDs (A-n, B-n) refer to the test plan and the benchmark report.
+
+- [ ] **Demo video.** Record it, upload it to YouTube, and replace `VIDEO_ID`
+  (twice) in the "Demo video" section of `README.md`. Suggested order: build
+  and start the server; `redis-cli` session (strings, lists, expiry); `INFO`;
+  `BGSAVE`, kill the server, restart, data is back; `--appendonly` and
+  `BGREWRITEAOF`; `redis-benchmark` against this server and Redis; stress test
+  and CI. `BGSAVE` needs Linux or macOS: it does not work on Windows.
+- [ ] **Run the levels that were not run for the test report** (integration,
+  stress, differential; `--io-threads 1` and `4`) on Linux through CI, then
+  fill in section 15.2 of `docs/test/test_plan_and_report.md` with the real
+  results and tick the exit criteria in section 17.3.
+- [ ] **Close the test anomalies.** A-5 first (integration `save` tests
+  TC-001 to TC-006 carry the hidden tag `[.]`, so they never run: confirm,
+  then run or fix them), then A-2 (option parsing and config precedence), A-6
+  (`SIGTERM`: final save and exit status) and A-4 (re-enable `linux-gcc-asan`).
+  Add A-1's fix (wider margins in the `watchdog` and `every` tests). Update the
+  traceability table when a gap closes.
+- [ ] **Rerun the benchmarks and republish the figures.** With the current
+  `bench.yml` defaults, `RUNS=7`: report the median and the range next to the
+  best (B-1, B-2), record the Redis version (B-6), and rerun the Clang
+  pipelined and `bigget` rows with longer runs (B-10). Then update the tables
+  in `README.md` and `docs/evaluation/benchmark_report.md` together.
+- [ ] **Fix the README benchmark label (B-3).** The fourth row says
+  "Large-value `GET`" but the scenario is `GET` over 2,000,000 random keys.
+  Rename it, or add a real large-value scenario.
+- [ ] **Check the option precedence** (command line, `REDIS_*` environment,
+  `--config` file) by running the server, then state it in section 4.2 of
+  `docs/user/user_guide.md` and in UC-016. The documents deliberately do not
+  claim an order yet.
+- [ ] **Update `docs/directory_layout.md`.** It still shows `server/storage`
+  and `core/resp`; the code has `common/store` and `common/resp`.
+- [ ] **Check the format against your school's template.** The documents are
+  structured after IEEE 830 (SRS), 1016 (design), 829 (test, benchmark) and
+  ISO/IEC/IEEE 26514 (user guide), not certified. Add what the template asks
+  for that they lack: a title page, student and supervisor names, a
+  declaration, an abstract, page numbers. If it wants one file, export with
+  pandoc.
+- [ ] **Render the diagrams** (`docs/analysis/diagrams/*.puml`), look at
+  `use_case.puml` after the redraw, and decide whether the SRS should embed
+  images (the SVGs were removed from the repository).
+- [ ] **Review the written claims once.** The use cases, design and guide were
+  written from the code and a few runs, not by running every command. Skim them
+  against the server; `QUIT` is not supported, which the guide notes.
