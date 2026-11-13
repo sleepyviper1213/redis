@@ -143,6 +143,12 @@ struct StartWatch {
  * timer armed and cancelled, and is never reported. A stop request reaches
  * \p work as it would without the watchdog.
  *
+ * It does not complete where \p work does, though: when_all completes where
+ * its last branch does, which is usually the monitor, and a timed scheduler
+ * such as timed_thread_scheduler completes a cancelled wait on its own
+ * thread. A caller that must carry on in a context of its own adds
+ * continues_on() after the watchdog.
+ *
  * \p on_stall runs on \p scheduler's thread while \p work is still running
  * elsewhere, so whatever it touches must be safe to touch from there. Under
  * ReportPolicy::Once it is called at most once; under EveryPeriod, every

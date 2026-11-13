@@ -47,7 +47,10 @@ concept TimedScheduler =
  * \tparam Duration The period's type, one the scheduler takes.
  * \tparam Step What is called every period: no arguments, returning nothing,
  *         and not throwing.
- * \return A sender; its type is deduced. It completes only as stopped.
+ * \return A sender; its type is deduced. It completes only as stopped, on
+ *         the scheduler's thread when the stop came from elsewhere (as a
+ *         timed_thread_scheduler completes a cancelled wait): add
+ *         continues_on() to carry on anywhere else.
  */
 template <class Scheduler, class Duration, std::invocable Step>
 	requires TimedScheduler<Scheduler, Duration> &&

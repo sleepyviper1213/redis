@@ -241,7 +241,18 @@ stdexec_ext::InlineTask<void> RedisServer::housekeeping() {
 	// threshold has nothing to do and completes at once, leaving cron().
 	// Started with the race, after the load in run(), so a long AOF replay is
 	// not reported as a stall; nor is the final save, which comes after.
-	co_await stdexec::when_all(cron(), command_watchdog_.run());
+	//
+	// The watchdog completes on its own thread: a stop request from another
+	// thread is handed to that thread, which completes the wait it cancels.
+	// when_all completes where its last child does, and so would serve(),
+	// which carries on with the shutdown (stopping the listener, draining the
+	// sessions) that must run on the event loop. Hence the hop back to it, as
+	// cron() hops back from the keyspace thread. The event loop still runs
+	// then: serve() stops it only after this has completed.
+	detail::AsioContext back(io_.get_executor());
+	co_await stdexec::when_all(cron(),
+							   command_watchdog_.run() |
+								   stdexec::continues_on(back.get_scheduler()));
 }
 
 stdexec_ext::InlineTask<void> RedisServer::cron() {

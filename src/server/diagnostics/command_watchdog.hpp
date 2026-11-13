@@ -104,7 +104,8 @@ public:
 	 * the detector it judges with is its own.
 	 *
 	 * \return A sender; its type is deduced. Enabled, it completes only as
-	 *         stopped.
+	 *         stopped, and on the watchdog's own thread (see every()), so
+	 *         whoever must carry on elsewhere hops back with continues_on().
 	 */
 	[[nodiscard]] stdexec::sender auto run() REDIS_LIFETIMEBOUND {
 		// Named once, so the type below and the sender returned agree: every
