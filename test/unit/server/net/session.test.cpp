@@ -3,6 +3,7 @@
 #include "server/net/detail/sessions.hpp"
 #include "server/services.hpp"
 #include "support/loopback.hpp"
+#include "support/sanitizer.hpp"
 #include "support/temp_file.hpp"
 
 #include <boost/asio/ip/tcp.hpp>
@@ -250,7 +251,9 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 			fixture.client.send(gets);
 
 			THEN("the server abandons the write, hangs up and counts it") {
-				fixture.drain_within(6s);
+				// The limit is 1s; this only bounds a hang. Under TSan, making
+				// and writing 128 MiB of replies alone can take longer than 6s.
+				fixture.drain_within(REDIS_TSAN ? 20s : 6s);
 				CHECK(fixture.guard().count(Violation::RequestTimeout) == 1);
 			}
 		}
