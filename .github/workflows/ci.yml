@@ -155,9 +155,18 @@ jobs:
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }}
 
   macos:
-    name: macos-arm64-llvm-debug
+    name: ${{ matrix.preset }}
     runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: macos-arm64-llvm-debug, config: Debug }
+          - { preset: macos-arm64-llvm-tsan,  config: ThreadSanitizer }
     env:
+      # TSan's shadow memory leaves the nano allocator no room; it warns at
+      # every start otherwise.
+      MallocNanoZone: 0
       # Compiler objects are cached across runs: after a small edit only the
       # changed files recompile.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -185,15 +194,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-macos-${{ github.sha }}
-          restore-keys: ccache-macos-
+          key: ccache-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.preset }}-
       - name: Configure, build and unit test
-        run: cmake --workflow --preset macos-arm64-llvm-debug
+        run: cmake --workflow --preset ${{ matrix.preset }}
       - name: Compiler cache statistics
         if: always()
         run: ccache --show-stats
+      - name: One unwinder only
+        # Homebrew's libunwind next to libSystem's breaks exceptions; see
+        # cmake/toolchains/homebrew-llvm.cmake. Its libc++abi must not bring it
+        # back either.
+        run: |
+          set -euo pipefail
+          libcxxabi="$(brew --prefix llvm)/lib/c++/libc++abi.1.dylib"
+          tests="$(find build/macos-arm64-llvm -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
+          otool -L "$libcxxabi" "$tests"
+          ! otool -L "$libcxxabi" "$tests" | grep -q 'libunwind\.1\.dylib'
+      - name: Sanitizer options for the server
+        if: matrix.config == 'ThreadSanitizer'
+        run: echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$GITHUB_WORKSPACE/test/tsan.supp" >> "$GITHUB_ENV"
       - name: Integration test
-        run: scripts/test_server.sh macos-arm64-llvm Debug
+        run: scripts/test_server.sh macos-arm64-llvm ${{ matrix.config }}
 
   analysis:
     name: Static analysis (clang-tidy, cppcheck)

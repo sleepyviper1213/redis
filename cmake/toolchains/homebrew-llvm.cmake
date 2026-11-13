@@ -1,7 +1,7 @@
 # Homebrew LLVM toolchain for Apple Silicon.
 #
-# Pins the C/C++ compiler to Homebrew's LLVM and links against *its* libc++ /
-# libunwind rather than AppleClang's, so C++23 library features (std::expected,
+# Pins the C/C++ compiler to Homebrew's LLVM and links against *its* libc++
+# rather than AppleClang's, so C++23 library features (std::expected,
 # ranges) and the standard-library ABI are the same across the project and its
 # vcpkg dependencies. AppleClang's libc++ lags upstream LLVM.
 #
@@ -30,11 +30,13 @@ endif()
 set(CMAKE_C_COMPILER "${HOMEBREW_LLVM_PREFIX}/bin/clang" CACHE FILEPATH "Homebrew LLVM clang" FORCE)
 set(CMAKE_CXX_COMPILER "${HOMEBREW_LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "Homebrew LLVM clang++" FORCE)
 
-# Use the LLVM toolchain's own runtime libraries and bake an rpath so binaries
-# find them at run time. Mirrors the `brew info llvm` caveats.
+# Use the LLVM toolchain's own libc++ and bake an rpath so binaries find it at
+# run time. Not its libunwind: libSystem's unwinder is in every process anyway,
+# and a second one breaks unwinding wherever the two meet (__gcc_personality_v0,
+# which TSan's cleanups use, lives in libSystem and calls libSystem's
+# _Unwind_GetIP on the other's context: a SIGTRAP). One unwinder, the system's.
 set(_hb_llvm_link
-    "-L${HOMEBREW_LLVM_PREFIX}/lib/c++ -Wl,-rpath,${HOMEBREW_LLVM_PREFIX}/lib/c++ \
--L${HOMEBREW_LLVM_PREFIX}/lib/unwind -lunwind")
+    "-L${HOMEBREW_LLVM_PREFIX}/lib/c++ -Wl,-rpath,${HOMEBREW_LLVM_PREFIX}/lib/c++")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "${_hb_llvm_link}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "${_hb_llvm_link}")
 set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_hb_llvm_link}")
