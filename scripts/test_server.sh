@@ -32,6 +32,17 @@ trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 echo "Running $TESTS against $SERVER on port $PORT ${SERVER_ARGS:-}"
 if ! REDIS_TEST_PORT="$PORT" "$TESTS" --order rand; then
     echo "Integration tests failed. Server log: $WORKDIR/redis_server.log" >&2
+    # A sanitizer reports on the server's stderr, and a crash ends the server:
+    # without these the failure says only that the connection was refused.
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "The server is still running." >&2
+    else
+        echo "The server has exited." >&2
+    fi
+    echo "--- server stderr ---" >&2
+    tail -n 80 "$WORKDIR/server.stderr" >&2 || true
+    echo "--- server log ---" >&2
+    tail -n 30 "$WORKDIR/redis_server.log" >&2 || true
     exit 1
 fi
 stop_server "$WORKDIR"
