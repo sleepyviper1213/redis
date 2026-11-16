@@ -17,11 +17,15 @@ const mach_timebase_info_data_t timebase = [] {
 }();
 } // namespace
 
+// mach_absolute_time() reads a counter from the commpage: no lock, no syscall,
+// but the SDK header cannot say so.
+REDIS_TRUSTED_NONBLOCKING_BEGIN
 TickClock::time_point TickClock::now() noexcept REDIS_NONBLOCKING {
 	// No overflow for about a century of uptime at 24 MHz ticks.
 	const auto ticks = static_cast<rep>(mach_absolute_time());
 	return time_point(duration(ticks * timebase.numer / timebase.denom));
 }
+REDIS_TRUSTED_NONBLOCKING_END
 #else
 // steady_clock::now() is clock_gettime: the vDSO on Linux, QPC on Windows. It
 // reads a counter and takes no lock, but the library cannot say so.
