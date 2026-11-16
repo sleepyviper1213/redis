@@ -212,10 +212,14 @@ SCENARIO("escalate() reports slow work, then abandons it",
 													   .cancel_after = 50ms};
 
 	GIVEN("work that ends between the two limits") {
+		// Wide apart: on a loaded CI runner a thread can wait tens of
+		// milliseconds to run, and the work must still end before the second.
+		const Escalation<std::chrono::milliseconds> patient{.report_after = 5ms,
+															.cancel_after = 5s};
 		const auto [value] =
-			ex::sync_wait(escalate<ReportPolicy::Once>(slow(work_on, 20ms),
+			ex::sync_wait(escalate<ReportPolicy::Once>(slow(work_on, 100ms),
 													   watch_on,
-													   limits,
+													   patient,
 													   on_stall,
 													   on_expiry))
 				.value();
