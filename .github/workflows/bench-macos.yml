@@ -29,9 +29,16 @@ on:
       rounds:
         description: times each revision is benchmarked, alternating
         default: "3"
+      ipo:
+        description: LTO for the Release link (REDIS_ENABLE_IPO)
+        default: "OFF"
 
 env:
   BASE: ${{ inputs.base || 'da674d4' }}
+  # The Release link with LTO stalled this runner (about 7 GB, 3 cores) at the
+  # last targets of either revision's build; ci.yml never links a Release
+  # build on macOS. Off for the comparison: both sides alike.
+  IPO: ${{ inputs.ipo || 'OFF' }}
   MallocNanoZone: 0
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
@@ -82,8 +89,16 @@ jobs:
           CMAKE_CXX_COMPILER_LAUNCHER: ""
         run: |
           set -o pipefail
+          # What the build is doing, for when it stalls: the biggest processes
+          # and the memory, every 30 s.
+          ( while sleep 30; do
+              date +%T; ps -axo pid,rss,etime,args | sort -k2 -nr | head -4 | cut -c1-160
+              vm_stat | grep -E 'free|swapped|compressor' | head -3
+            done ) &
+          monitor=$!
+          trap 'kill $monitor 2>/dev/null' EXIT
           cd ../redis-new
-          cmake --preset macos-arm64-llvm
+          cmake --preset macos-arm64-llvm -DREDIS_ENABLE_IPO="$IPO"
           /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-new.txt"
       - name: Build the base revision, timed
         # The runner has about 7 GB, and the base compiles a file that took
@@ -96,8 +111,16 @@ jobs:
           CMAKE_CXX_COMPILER_LAUNCHER: ""
         run: |
           set -o pipefail
+          # What the build is doing, for when it stalls: the biggest processes
+          # and the memory, every 30 s.
+          ( while sleep 30; do
+              date +%T; ps -axo pid,rss,etime,args | sort -k2 -nr | head -4 | cut -c1-160
+              vm_stat | grep -E 'free|swapped|compressor' | head -3
+            done ) &
+          monitor=$!
+          trap 'kill $monitor 2>/dev/null' EXIT
           cd ../redis-base
-          cmake --preset macos-arm64-llvm
+          cmake --preset macos-arm64-llvm -DREDIS_ENABLE_IPO="$IPO"
           /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
       - name: Build report
         if: always()
