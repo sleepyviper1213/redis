@@ -1,0 +1,123 @@
+name: Benchmark (macOS)
+
+# Builds two revisions on one macOS runner and benchmarks them with
+# scripts/bench_server.sh, alternating between them, so that the host's noise
+# lands on both alike: only the gap between the two means anything, not the
+# absolute numbers (shared VMs). The compile time and peak memory of each build
+# are printed too.
+#
+# Push any commit to a bench-mac/ branch to compare it with BASE:
+#   git push origin HEAD:bench-mac/<name>
+
+on:
+  push:
+    branches: ["bench-mac/**"]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: revision to compare against
+        default: da674d4
+      threads:
+        description: redis-benchmark threads (THREADS)
+        default: "2"
+      requests:
+        description: requests per scenario (REQUESTS)
+        default: "200000"
+      runs:
+        description: repeats per scenario (RUNS)
+        default: "5"
+      rounds:
+        description: times each revision is benchmarked, alternating
+        default: "3"
+
+env:
+  BASE: ${{ inputs.base || 'da674d4' }}
+  MallocNanoZone: 0
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 500M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  bench:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both revisions are needed.
+          fetch-depth: 0
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+      - name: Install toolchain and Redis
+        # Homebrew LLVM, not AppleClang: see cmake/toolchains/homebrew-llvm.cmake.
+        # redis brings redis-benchmark and the reference redis-server.
+        run: brew install llvm ninja cmake ccache redis
+      - name: Bootstrap vcpkg
+        run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-macos-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-macos-
+      - name: Make the cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+      - name: Check out both revisions
+        run: |
+          git worktree add ../redis-base "$BASE"
+          git worktree add ../redis-new "$GITHUB_SHA"
+          git -C ../redis-base log --oneline -1
+          git -C ../redis-new log --oneline -1
+      - name: Build both, timed
+        # /usr/bin/time -l: wall time, and the peak resident set size of the
+        # build's largest process tree member is under "maximum resident set
+        # size". No ccache here: the point is the compile time.
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ""
+          CMAKE_CXX_COMPILER_LAUNCHER: ""
+        run: |
+          for side in base new; do
+            echo "::group::build $side"
+            ( cd "../redis-$side" &&
+              cmake --preset macos-arm64-llvm &&
+              /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release \
+                --target redis_server ) 2>&1 | tee "build-$side.txt"
+            echo "::endgroup::"
+          done
+          {
+            echo '```'
+            for side in base new; do
+              echo "build $side: $(grep -E 'real|maximum resident' "build-$side.txt" | tr -s ' ' | tr '\n' ';')"
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Benchmark, alternating
+        env:
+          REF_SERVER: redis-server
+          THREADS: ${{ inputs.threads || '2' }}
+          REQUESTS: ${{ inputs.requests || '200000' }}
+          RUNS: ${{ inputs.runs || '5' }}
+        run: |
+          mkdir -p bench
+          rounds="${{ inputs.rounds || '3' }}"
+          for i in $(seq "$rounds"); do
+            for side in base new; do
+              echo "== $side (round $i) ==" | tee -a bench/macos.txt
+              ( cd "../redis-$side" &&
+                bash scripts/bench_server.sh macos-arm64-llvm Release ) |
+                tee -a bench/macos.txt
+            done
+          done
+          { echo '```'; cat bench/macos.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-macos
+          path: |
+            bench/macos.txt
+            build-base.txt
+            build-new.txt
+          if-no-files-found: warn
