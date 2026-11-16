@@ -46,17 +46,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { preset: linux-gcc-debug,   configure: linux-gcc,   config: Debug,            image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          - { preset: linux-gcc-release, configure: linux-gcc,   config: Release,          image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          - { preset: linux-clang-debug, configure: linux-clang, config: Debug,            image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          # Every sanitizer, on both compilers; coverage is left out.
+          - { preset: linux-gcc-debug, configure: linux-gcc, config: Debug, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: linux-gcc-release, configure: linux-gcc, config: Release, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: linux-clang-debug, configure: linux-clang, config: Debug, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          - { preset: linux-gcc-asan, configure: linux-gcc, config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: linux-gcc-ubsan, configure: linux-gcc, config: UndefinedSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: linux-gcc-tsan, configure: linux-gcc, config: ThreadSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++, options: --privileged }
+          - { preset: linux-clang-asan, configure: linux-clang, config: AddressSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          - { preset: linux-clang-ubsan, configure: linux-clang, config: UndefinedSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          - { preset: linux-clang-tsan, configure: linux-clang, config: ThreadSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++, options: --privileged }
           # RealtimeSanitizer aborts when a [[clang::nonblocking]] region (the
           # request parser) allocates, frees or blocks. Clang only.
           - { preset: linux-clang-rtsan, configure: linux-clang, config: RealtimeSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
-          # linux-gcc-asan is off: GCC 16.2 rejects stdexec's let_value under
-          # -fsanitize=address,undefined ("__mtypeid_v ... is not a constant
-          # expression" in session.cpp). Re-enable once that is fixed.
-          - { preset: linux-gcc-asan,    configure: linux-gcc,   config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          - { preset: linux-gcc-tsan,    configure: linux-gcc,   config: ThreadSanitizer,  image: "gcc:16.2",        cc: gcc,   cxx: g++, options: --privileged }
     env:
       # vcpkg builds the dependencies with the same compiler as the project.
       CC: ${{ matrix.cc }}
@@ -175,7 +177,7 @@ jobs:
           - { preset: macos-arm64-llvm-asan,     configure: macos-arm64-llvm,          config: AddressSanitizer }
           - { preset: macos-arm64-llvm-tsan,     configure: macos-arm64-llvm,          config: ThreadSanitizer }
           - { preset: macos-arm64-llvm-ubsan,    configure: macos-arm64-llvm,          config: UndefinedSanitizer }
-          - { preset: macos-arm64-llvm-rtsan,    configure: macos-arm64-llvm,          config: Debug }
+          - { preset: macos-arm64-llvm-rtsan,    configure: macos-arm64-llvm,          config: RealtimeSanitizer }
     env:
       # TSan's shadow memory leaves the nano allocator no room; it warns at
       # every start otherwise.
