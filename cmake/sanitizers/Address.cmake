@@ -84,6 +84,16 @@ else()
     message(STATUS "sanitizers: AddressSanitizer instruments with ASan+UBSan")
 endif()
 
+# Abseil turns on "generations" in its hash tables when it is compiled under
+# ASan: a counter in every table and iterator, to catch use after invalidation.
+# The vcpkg build of Abseil is not instrumented, so the library's own
+# EmptyGeneration() returns null, which our instrumented code then reads: an
+# ODR mismatch, reported by UBSan as a load of a null GenerationType and fatal
+# under -fno-sanitize-recover. NDEBUG_SANITIZER is Abseil's switch for exactly
+# this ("performance is important"): generations stay off, as in the library.
+# Defined for every compiler, MSVC included, as the library is the same.
+add_compile_definitions("$<$<CONFIG:AddressSanitizer>:NDEBUG_SANITIZER>")
+
 # Put the AddressSanitizer runtime next to @p target's executable.
 #
 # Only MSVC needs this. Its ASan runtime is a DLL that the loader must find
