@@ -43,6 +43,8 @@ env:
 jobs:
   bench:
     runs-on: macos-15
+    # Nothing here should run for hours: a build that thrashes is cut off.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,29 +72,50 @@ jobs:
           git worktree add ../redis-new "$GITHUB_SHA"
           git -C ../redis-base log --oneline -1
           git -C ../redis-new log --oneline -1
-      - name: Build both, timed
-        # /usr/bin/time -l: wall time, and the peak resident set size of the
-        # build's largest process tree member is under "maximum resident set
-        # size". No ccache here: the point is the compile time.
+      - name: Build the new revision, timed
+        # /usr/bin/time -l: wall time, and "maximum resident set size" is the
+        # peak memory of the build's largest process. No ccache here: the point
+        # is the compile time.
+        timeout-minutes: 40
         env:
           CMAKE_C_COMPILER_LAUNCHER: ""
           CMAKE_CXX_COMPILER_LAUNCHER: ""
         run: |
-          for side in base new; do
-            echo "::group::build $side"
-            ( cd "../redis-$side" &&
-              cmake --preset macos-arm64-llvm &&
-              /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release \
-                --target redis_server ) 2>&1 | tee "build-$side.txt"
-            echo "::endgroup::"
-          done
+          set -o pipefail
+          cd ../redis-new
+          cmake --preset macos-arm64-llvm
+          /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-new.txt"
+      - name: Build the base revision, timed
+        # The runner has about 7 GB, and the base compiles a file that took
+        # 8 GB on a Mac: it may thrash instead of finishing. Bounded, and
+        # allowed to fail, so that the new revision still gets its numbers.
+        timeout-minutes: 30
+        continue-on-error: true
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ""
+          CMAKE_CXX_COMPILER_LAUNCHER: ""
+        run: |
+          set -o pipefail
+          cd ../redis-base
+          cmake --preset macos-arm64-llvm
+          /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
+      - name: Build report
+        if: always()
+        run: |
           {
             echo '```'
-            for side in base new; do
-              echo "build $side: $(grep -E 'real|maximum resident' "build-$side.txt" | tr -s ' ' | tr '\n' ';')"
+            for side in new base; do
+              f="build-$side.txt"
+              if [[ -f "$f" ]]; then
+                echo "build $side: $(grep -E ' real|maximum resident' "$f" | tr -s ' ' | paste -sd ';' -)"
+              else
+                echo "build $side: no output"
+              fi
+              ls "../redis-$side/build/macos-arm64-llvm/src/app/Release/redis_server" >/dev/null 2>&1 ||
+                echo "  ($side has no redis_server: the build did not finish)"
             done
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Benchmark, alternating
         env:
           REF_SERVER: redis-server
@@ -104,6 +127,10 @@ jobs:
           rounds="${{ inputs.rounds || '3' }}"
           for i in $(seq "$rounds"); do
             for side in base new; do
+              # A side that did not build is skipped: the reference server
+              # still gives the new one something to be compared with.
+              [[ -x "../redis-$side/build/macos-arm64-llvm/src/app/Release/redis_server" ]] ||
+                continue
               echo "== $side (round $i) ==" | tee -a bench/macos.txt
               ( cd "../redis-$side" &&
                 bash scripts/bench_server.sh macos-arm64-llvm Release ) |
