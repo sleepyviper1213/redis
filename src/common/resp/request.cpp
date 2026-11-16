@@ -1,6 +1,7 @@
 #include "request.hpp"
-#include "core/error/failed.hpp"
 
+#include "core/error/failed.hpp"
+#include "core/utils/realtime.hpp"
 #include "parser.hpp"
 
 #include <algorithm>
@@ -39,7 +40,7 @@ parse_inline(std::string_view data, size_t &pos,
 		while (i < line.size() && std::ranges::contains(BLANKS, line[i])) ++i;
 		const size_t start = i;
 		while (i < line.size() && !std::ranges::contains(BLANKS, line[i])) ++i;
-		if (i > start) args.push_back(line.substr(start, i - start));
+		if (i > start) push_back_growing(args, line.substr(start, i - start));
 	}
 
 	return args.size() == before ? RequestKind::Blank : RequestKind::Command;
@@ -100,7 +101,7 @@ bool parse_bulk_array(std::string_view data, size_t &pos,
 		if (data.size() - p < size + 2 || data[p + size] != '\r' ||
 			data[p + size + 1] != '\n')
 			return give_up();
-		args.push_back(data.substr(p, size));
+		push_back_growing(args, data.substr(p, size));
 		p += size + 2;
 	}
 	pos = p;
@@ -119,6 +120,8 @@ parse_request(std::string_view data, size_t &pos,
 
 	// The generic parser advances `pos` as it reads, even when it then fails
 	// for lack of bytes; restore it so an error consumes nothing.
+	// Decoding builds Values on the heap: not what the fast path is for.
+	const RealtimeExemption generic;
 	const size_t start = pos;
 	auto value         = Parser::parse_recursive(data, pos);
 	if (!value) {

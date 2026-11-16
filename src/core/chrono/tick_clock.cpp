@@ -17,16 +17,21 @@ const mach_timebase_info_data_t timebase = [] {
 }();
 } // namespace
 
-TickClock::time_point TickClock::now() noexcept {
+TickClock::time_point TickClock::now() noexcept REDIS_NONBLOCKING {
 	// No overflow for about a century of uptime at 24 MHz ticks.
 	const auto ticks = static_cast<rep>(mach_absolute_time());
 	return time_point(duration(ticks * timebase.numer / timebase.denom));
 }
 #else
-TickClock::time_point TickClock::now() noexcept {
+// steady_clock::now() is clock_gettime: the vDSO on Linux, QPC on Windows. It
+// reads a counter and takes no lock, but the library cannot say so.
+REDIS_TRUSTED_NONBLOCKING_BEGIN
+TickClock::time_point TickClock::now() noexcept REDIS_NONBLOCKING {
 	return time_point(std::chrono::duration_cast<duration>(
 		std::chrono::steady_clock::now().time_since_epoch()));
 }
+
+REDIS_TRUSTED_NONBLOCKING_END
 #endif
 
 } // namespace redis

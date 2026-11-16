@@ -46,6 +46,9 @@ jobs:
           - { preset: linux-gcc-debug,   configure: linux-gcc,   config: Debug,            image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: linux-gcc-release, configure: linux-gcc,   config: Release,          image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: linux-clang-debug, configure: linux-clang, config: Debug,            image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          # RealtimeSanitizer aborts when a [[clang::nonblocking]] region (the
+          # request parser) allocates, frees or blocks. Clang only.
+          - { preset: linux-clang-rtsan, configure: linux-clang, config: RealtimeSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
           # linux-gcc-asan is off: GCC 16.2 rejects stdexec's let_value under
           # -fsanitize=address,undefined ("__mtypeid_v ... is not a constant
           # expression" in session.cpp). Re-enable once that is fixed.

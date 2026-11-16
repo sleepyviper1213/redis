@@ -9,13 +9,13 @@
         {
             "name": "linux-clang",
             "displayName": "Linux Clang",
-            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "linux-clang-toolchain"
             ],
             "cacheVariables": {
-                "REDIS_SANITIZER": "Address;Thread;Undefined"
+                "REDIS_SANITIZER": "Address;Thread;Undefined;Realtime"
             }
         },
         {
@@ -75,6 +75,11 @@
             "name": "linux-clang-ubsan",
             "configurePreset": "linux-clang",
             "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "linux-clang-rtsan",
+            "configurePreset": "linux-clang",
+            "configuration": "RealtimeSanitizer"
         }
     ],
     "testPresets": [
@@ -113,6 +118,12 @@
             "inherits": "ubsan-test-base",
             "configurePreset": "linux-clang",
             "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "linux-clang-rtsan",
+            "inherits": "rtsan-test-base",
+            "configurePreset": "linux-clang",
+            "configuration": "RealtimeSanitizer"
         }
     ],
     "workflowPresets": [
@@ -228,6 +239,23 @@
                 {
                     "type": "test",
                     "name": "linux-clang-ubsan"
+                }
+            ]
+        },
+        {
+            "name": "linux-clang-rtsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "linux-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "linux-clang-rtsan"
+                },
+                {
+                    "type": "test",
+                    "name": "linux-clang-rtsan"
                 }
             ]
         }

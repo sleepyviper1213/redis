@@ -8,6 +8,8 @@
 //   ckd_add family, for callers that must report an overflow rather than clamp
 //   (INCR answers "increment or decrement would overflow", as Redis does).
 
+#include "core/utils/attributes.hpp"
+
 #include <concepts>
 #include <limits>
 #include <type_traits>
@@ -34,25 +36,28 @@ concept SaturatingInteger =
 /// Store \p a + \p b in \p result. \return true if it overflowed; \p result
 /// then holds the value wrapped to \p T.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr bool add_overflow(T a, T b, T *result) noexcept {
+[[nodiscard]] constexpr bool
+add_overflow(T a, T b, T *result) noexcept REDIS_NONBLOCKING {
 	return __builtin_add_overflow(a, b, result);
 }
 
 /// Store \p a - \p b in \p result. \return true if it overflowed.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr bool sub_overflow(T a, T b, T *result) noexcept {
+[[nodiscard]] constexpr bool
+sub_overflow(T a, T b, T *result) noexcept REDIS_NONBLOCKING {
 	return __builtin_sub_overflow(a, b, result);
 }
 
 /// Store \p a * \p b in \p result. \return true if it overflowed.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr bool mul_overflow(T a, T b, T *result) noexcept {
+[[nodiscard]] constexpr bool
+mul_overflow(T a, T b, T *result) noexcept REDIS_NONBLOCKING {
 	return __builtin_mul_overflow(a, b, result);
 }
 
 /// \p a + \p b, clamped to the range of \p T.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr T add_sat(T a, T b) noexcept {
+[[nodiscard]] constexpr T add_sat(T a, T b) noexcept REDIS_NONBLOCKING {
 #ifdef __cpp_lib_saturation_arithmetic
 	return std::add_sat(a, b);
 #else
@@ -66,7 +71,7 @@ template <SaturatingInteger T>
 
 /// \p a - \p b, clamped to the range of \p T.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr T sub_sat(T a, T b) noexcept {
+[[nodiscard]] constexpr T sub_sat(T a, T b) noexcept REDIS_NONBLOCKING {
 #ifdef __cpp_lib_saturation_arithmetic
 	return std::sub_sat(a, b);
 #else
@@ -82,7 +87,7 @@ template <SaturatingInteger T>
 
 /// \p a * \p b, clamped to the range of \p T.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr T mul_sat(T a, T b) noexcept {
+[[nodiscard]] constexpr T mul_sat(T a, T b) noexcept REDIS_NONBLOCKING {
 #ifdef __cpp_lib_saturation_arithmetic
 	return std::mul_sat(a, b);
 #else
@@ -98,7 +103,7 @@ template <SaturatingInteger T>
 
 /// \p a / \p b, clamped to the range of \p T. \pre \p b is not 0.
 template <SaturatingInteger T>
-[[nodiscard]] constexpr T div_sat(T a, T b) noexcept {
+[[nodiscard]] constexpr T div_sat(T a, T b) noexcept REDIS_NONBLOCKING {
 #ifdef __cpp_lib_saturation_arithmetic
 	return std::div_sat(a, b);
 #else
@@ -112,7 +117,7 @@ template <SaturatingInteger T>
 
 /// \p x converted to \p R, clamped to the range of \p R.
 template <SaturatingInteger R, SaturatingInteger T>
-[[nodiscard]] constexpr R saturate_cast(T x) noexcept {
+[[nodiscard]] constexpr R saturate_cast(T x) noexcept REDIS_NONBLOCKING {
 #ifdef __cpp_lib_saturation_arithmetic
 	return std::saturate_cast<R>(x);
 #else

@@ -68,7 +68,7 @@ stop_server() {
     if [ "$status" -ne 0 ]; then
         echo "error: the server did not shut down cleanly (status $status)." >&2
     fi
-    if grep -q -E "WARNING: ThreadSanitizer|ERROR: (Address|Leak|ThreadSanitizer|UndefinedBehavior)Sanitizer|runtime error:" \
+    if grep -q -E "WARNING: ThreadSanitizer|ERROR: (Address|Leak|ThreadSanitizer|UndefinedBehavior|Realtime)Sanitizer|runtime error:" \
         "$workdir/server.stderr"; then
         echo "error: a sanitizer reported a problem in the server." >&2
         status=1

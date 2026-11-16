@@ -133,6 +133,14 @@ function(set_warnings target)
             endif()
         endif()
 
+        # Checks [[clang::nonblocking]] / [[clang::nonallocating]] (clang 20+);
+        # off by default. A broken real-time promise is never a warning.
+        _redis_warning_flag_supported(-Werror=function-effects _has_effects)
+        if(_has_effects)
+            list(APPEND _rd_warnings -Wfunction-effects
+                                     -Werror=function-effects)
+        endif()
+
         _redis_warning_flag_supported(-Werror=dangling _has_dangling)
         if(_has_dangling)
             list(APPEND _rd_warnings -Werror=dangling)

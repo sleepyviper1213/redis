@@ -4,6 +4,8 @@
 #include "common/resp/request.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.size(), db.prefetch())
 #include "common/store/database_fwd.hpp"
+#include "core/utils/attributes.hpp"
+#include "core/utils/realtime.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
 #include "server/net/net_error.hpp"
@@ -11,17 +13,43 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <string_view>
 
 namespace redis::detail {
 
-void parse_pending(std::string_view pending, ParsedBatch &batch) {
-	batch.args.clear();
-	batch.ends.clear();
-	batch.owned.clear();
-	batch.protocol_error.clear();
+namespace {
+// Most entries reserved ahead of a parse: a client cannot make the session
+// hold more memory than this by sending bare newlines. A batch that needs more
+// grows as it parses, which is correct, only not free.
+constexpr size_t MAX_BATCH_RESERVE = size_t{1} << 14;
+
+// Makes room for what \p pending can hold, so cutting it into requests
+// allocates nothing in the usual case. Every RESP argument takes two lines and
+// every request at least one, so the line count bounds both vectors; only an
+// inline command with many words on one line can need more.
+void reserve_batch(std::string_view pending, ParsedBatch &batch) {
+	const auto lines = static_cast<size_t>(std::ranges::count(pending, '\n'));
+	const size_t want = std::min(lines, MAX_BATCH_RESERVE);
+	const auto grow   = [want](auto &vec) {
+		if (vec.capacity() < want)
+			vec.reserve(std::max(want, vec.capacity() * 2));
+	};
+	grow(batch.args);
+	grow(batch.ends);
+}
+
+// The cutting itself. It runs in a real-time context: under RealtimeSanitizer
+// anything here that allocates, frees or blocks aborts, unless it sits inside
+// a RealtimeExemption (the generic parser, the protocol-error reply, a vector
+// that outgrew its reserve). clang's static check cannot see through the
+// std::expected and vector internals below, so it is told to trust this
+// function and the sanitizer vouches for it instead.
+REDIS_TRUSTED_NONBLOCKING_BEGIN
+void cut_requests(std::string_view pending,
+				  ParsedBatch &batch) REDIS_NONBLOCKING {
 	size_t consumed = 0;
 
 	while (consumed < pending.size()) {
@@ -30,6 +58,8 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 			resp::parse_request(pending, pos, batch.args, batch.owned);
 		if (!found) {
 			if (resp::Parser::is_incomplete(found.error())) break;
+			// A broken stream ends the connection; its one reply may allocate.
+			[[maybe_unused]] const RealtimeExemption closing;
 			// The wording is ConnectionError's; the "ERR" is the protocol's.
 			fmt::format_to(
 				std::back_inserter(batch.protocol_error),
@@ -43,9 +73,23 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 		}
 		consumed = pos;
 		if (*found != resp::RequestKind::Blank)
-			batch.ends.push_back(batch.args.size());
+			push_back_growing(batch.ends, batch.args.size());
 	}
 	batch.consumed = consumed;
+}
+
+REDIS_TRUSTED_NONBLOCKING_END
+} // namespace
+
+void parse_pending(std::string_view pending, ParsedBatch &batch) {
+	// Clearing frees the strings the previous batch decoded, and reserving may
+	// allocate: both stay outside the real-time part.
+	batch.args.clear();
+	batch.ends.clear();
+	batch.owned.clear();
+	batch.protocol_error.clear();
+	reserve_batch(pending, batch);
+	cut_requests(pending, batch);
 }
 
 namespace {
