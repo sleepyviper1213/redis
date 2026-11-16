@@ -51,14 +51,14 @@ lock_directory(const fs::path &dir) {
 	auto lock           = os::DurableFile::open_append(path);
 	if (!lock)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotOpen,
-							.cause = lock.error(),
-							.path  = path});
+								  .cause = lock.error(),
+								  .path  = path});
 	if (const auto busy = lock->try_lock()) {
 		if (busy == std::errc::resource_unavailable_try_again)
 			REDIS_FAILED(PersistError{.kind = PersistKind::InUse, .path = dir});
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotLock,
-							.cause = busy,
-							.path  = path});
+								  .cause = busy,
+								  .path  = path});
 	}
 	return std::move(*lock);
 }
@@ -68,8 +68,8 @@ std::expected<void, PersistError> create_empty(const fs::path &path) {
 	const auto created = os::DurableFile::open_append(path);
 	if (!created)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotCreate,
-							.cause = created.error(),
-							.path  = path});
+								  .cause = created.error(),
+								  .path  = path});
 	return {};
 }
 
@@ -129,8 +129,8 @@ AppendOnlyFile::read_manifest(const fs::path &file) {
 	// What is wrong with this manifest; quoted is the text that is.
 	const auto bad = [&file](PersistKind kind, std::string quoted = {}) {
 		REDIS_FAILED(PersistError{.kind   = kind,
-							.path   = file,
-							.quoted = std::move(quoted)});
+								  .path   = file,
+								  .quoted = std::move(quoted)});
 	};
 
 	std::ifstream in(file);
@@ -202,10 +202,10 @@ AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 							 std::uint64_t at      = 0,
 							 std::int64_t code     = 0) {
 		REDIS_FAILED(PersistError{.kind  = kind,
-							.cause = cause,
-							.path  = file,
-							.at    = at,
-							.code  = code});
+								  .cause = cause,
+								  .path  = file,
+								  .at    = at,
+								  .code  = code});
 	};
 
 	// Opened once: what is read, and what is cut below, is the same file
@@ -261,8 +261,8 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	const bool created = fs::create_directories(config_.dir, ec);
 	if (ec)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotCreate,
-							.cause = ec,
-							.path  = config_.dir});
+								  .cause = ec,
+								  .path  = config_.dir});
 	// A directory the server makes is the server's alone. One it was pointed at
 	// keeps the permissions its owner gave it.
 	if (created) {
@@ -329,7 +329,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 		// included.
 		db.set_expiry_enabled(false);
 		size_t commands = 0;
-		CommandContext replaying{.db=ctx.db, .persistence=ctx.persistence};
+		CommandContext replaying{.db = ctx.db, .persistence = ctx.persistence};
 		for (size_t i = 0; i < manifest_.incr.size(); ++i) {
 			// No exists() first: replay() opens the file and says why when it
 			// cannot, which is the only check that cannot go stale.
@@ -361,15 +361,15 @@ std::expected<void, PersistError> AppendOnlyFile::open_for_append() {
 	auto opened = os::DurableFile::open_append(incr_path_);
 	if (!opened)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotOpenForAppend,
-							.cause = opened.error(),
-							.path  = incr_path_});
+								  .cause = opened.error(),
+								  .path  = incr_path_});
 	// Asked of the open file, not of the name: it is this file's end that
 	// good_size_ stands for.
 	const auto size = opened->size();
 	if (!size)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotSize,
-							.cause = size.error(),
-							.path  = incr_path_});
+								  .cause = size.error(),
+								  .path  = incr_path_});
 	good_size_ = *size;
 	auto file  = std::make_shared<os::DurableFile>(std::move(*opened));
 	{
@@ -377,8 +377,8 @@ std::expected<void, PersistError> AppendOnlyFile::open_for_append() {
 		out_ = std::move(file);
 	}
 	if (config_.fsync == FsyncPolicy::everysec && !syncer_.joinable())
-		syncer_ =
-			std::jthread([this](const std::stop_token &stop) { sync_loop(stop); });
+		syncer_ = std::jthread(
+			[this](const std::stop_token &stop) { sync_loop(stop); });
 	return {};
 }
 
@@ -424,7 +424,7 @@ void AppendOnlyFile::write_out() {
 						cut.message());
 		// Cap the pending buffer so a sustained disk error cannot exhaust
 		// memory.
-		constexpr size_t MAX_PENDING = size_t{64} * 1024 * 1024;
+		constexpr size_t MAX_PENDING = 64z * 1024 * 1024;
 		if (buf_.size() > MAX_PENDING) {
 			log().critical(
 				"AOF pending buffer exceeded {}MB; discarding {} bytes",
@@ -502,7 +502,8 @@ void AppendOnlyFile::close() {
 
 std::expected<void, PersistError>
 AppendOnlyFile::start_rewrite(const Database &db) {
-	if (child_) REDIS_FAILED(PersistError{.kind = PersistKind::RewriteInProgress});
+	if (child_)
+		REDIS_FAILED(PersistError{.kind = PersistKind::RewriteInProgress});
 
 	// Everything so far belongs to the old files: land it there, then log to a
 	// new file, which is what the new base will not contain.
@@ -531,7 +532,7 @@ AppendOnlyFile::start_rewrite(const Database &db) {
 		// one. The next rewrite will merge them.
 		log().error("Can't fork for AOF rewrite: {}", child.error().message());
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotFork,
-							.cause = child.error()});
+								  .cause = child.error()});
 	}
 	child_.emplace(std::move(*child));
 	log().info("Background AOF rewriting started by pid {}", child_->pid());
@@ -544,7 +545,8 @@ void AppendOnlyFile::poll() {
 }
 
 void AppendOnlyFile::finish_rewrite(const os::ChildResult &result) {
-	// NOLINTNEXTLINE(bugprone-unchecked-optional-access): only called while a child runs
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access): only called while a
+	// child runs
 	const os::pid_type pid = child_->pid();
 	child_.reset();
 	if (!result.success) {
@@ -576,7 +578,8 @@ void AppendOnlyFile::finish_rewrite(const os::ChildResult &result) {
 
 void AppendOnlyFile::cancel_rewrite() {
 	if (!child_) return;
-	// NOLINTNEXTLINE(bugprone-unchecked-optional-access): only called while a child runs
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access): only called while a
+	// child runs
 	const os::pid_type pid = child_->pid();
 	log().warn("Killing the AOF rewrite child {}", pid);
 	os::kill_child(pid);

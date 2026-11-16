@@ -26,7 +26,7 @@ namespace {
 // Most entries reserved ahead of a parse: a client cannot make the session
 // hold more memory than this by sending bare newlines. A batch that needs more
 // grows as it parses, which is correct, only not free.
-constexpr size_t MAX_BATCH_RESERVE = size_t{1} << 14;
+constexpr size_t MAX_BATCH_RESERVE = 1z << 14;
 
 // Makes room for what \p pending can hold, so cutting it into requests
 // allocates nothing in the usual case. Every RESP argument takes two lines and
@@ -106,7 +106,7 @@ void parse_pending(std::string_view pending, ParsedBatch &batch) {
 namespace {
 // Below this many keys the table fits in the CPU caches and a lookup does not
 // miss, so prefetching would only hash every key twice.
-constexpr size_t PREFETCH_MIN_KEYS = size_t{1} << 16;
+constexpr size_t PREFETCH_MIN_KEYS = 1z << 16;
 
 // Start loading the table memory of every request's first argument (the key,
 // for the commands that take one) before running any of them, so the cache

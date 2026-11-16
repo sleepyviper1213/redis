@@ -240,7 +240,7 @@ SCENARIO("A session closes clients whose requests are not answered in time",
 	// do stall it.
 	GIVEN("a one second request limit, and a stored 4 MiB value") {
 		SessionFixture fixture(NetLimits{.request_timeout = 1s});
-		const std::string value(size_t{4} << 20, 'x');
+		const std::string value(4z << 20, 'x');
 		fixture.client.send(
 			fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
 						value.size(),
@@ -284,7 +284,7 @@ SCENARIO("A session stalled on a client that does not read still stops",
 		 "[net][session][shutdown]") {
 	GIVEN("no request limit, and a stored 4 MiB value") {
 		SessionFixture fixture;
-		const std::string value(size_t{4} << 20, 'x');
+		const std::string value(4z << 20, 'x');
 		fixture.client.send(
 			fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
 						value.size(),
@@ -313,7 +313,7 @@ SCENARIO("A reply larger than the socket buffer arrives whole",
 		 "[net][session]") {
 	GIVEN("a connected client that stored a 4 MiB value") {
 		SessionFixture fixture;
-		const std::string value(size_t{4} << 20, 'x');
+		const std::string value(4z << 20, 'x');
 		fixture.client.send(
 			fmt::format("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${}\r\n{}\r\n",
 						value.size(),

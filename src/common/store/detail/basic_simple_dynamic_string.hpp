@@ -38,9 +38,8 @@ namespace redis::detail {
 template <typename Char, typename Allocator = std::allocator<Char>>
 class BasicSimpleDynamicString {
 	using allocator_traits = std::allocator_traits<Allocator>;
-	using char_allocator =
-		allocator_traits::template rebind_alloc<Char>;
-	using char_traits = std::allocator_traits<char_allocator>;
+	using char_allocator   = allocator_traits::template rebind_alloc<Char>;
+	using char_traits      = std::allocator_traits<char_allocator>;
 
 	static_assert(std::is_same_v<typename char_traits::pointer, Char *>,
 				  "fancy pointers are not supported");
@@ -203,10 +202,10 @@ private:
 
 	/// The smallest header for \p length, as Redis's sdsReqType picks it.
 	[[nodiscard]] static constexpr Type type_for(std::size_t length) noexcept {
-		if (length < (std::size_t{1} << 5)) return TYPE_5;
-		if (length < (std::size_t{1} << 8)) return TYPE_8;
-		if (length < (std::size_t{1} << 16)) return TYPE_16;
-		if (length < (std::uint64_t{1} << 32)) return TYPE_32;
+		if (length < (1z << 5)) return TYPE_5;
+		if (length < (1z << 8)) return TYPE_8;
+		if (length < (1z << 16)) return TYPE_16;
+		if (length < (1uz << 32)) return TYPE_32;
 		return TYPE_64;
 	}
 

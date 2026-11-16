@@ -14,7 +14,8 @@ SCENARIO("Changing the log level at runtime", "[commands][config]") {
 		REQUIRE(logging::set_level("info"));
 
 		WHEN("CONFIG SET loglevel names a level") {
-			const auto reply = server.run({"CONFIG", "SET", "loglevel", "debug"});
+			const auto reply =
+				server.run({"CONFIG", "SET", "loglevel", "debug"});
 
 			THEN("it applies to the default logger and every channel") {
 				CHECK(reply == "+OK\r\n");
@@ -31,7 +32,8 @@ SCENARIO("Changing the log level at runtime", "[commands][config]") {
 		}
 
 		WHEN("the level is not one") {
-			const auto reply = server.run({"CONFIG", "SET", "loglevel", "loud"});
+			const auto reply =
+				server.run({"CONFIG", "SET", "loglevel", "loud"});
 
 			THEN("it is refused and nothing changes") {
 				CHECK(reply.starts_with("-ERR Invalid argument 'loud'"));
@@ -60,7 +62,8 @@ SCENARIO("CONFIG SET is off unless the operator enables it",
 		REQUIRE(logging::set_level("info"));
 
 		WHEN("a client tries to change the log level") {
-			const auto reply = server.run({"CONFIG", "SET", "loglevel", "trace"});
+			const auto reply =
+				server.run({"CONFIG", "SET", "loglevel", "trace"});
 
 			THEN("it is refused and nothing changes") {
 				CHECK(reply.starts_with("-ERR CONFIG SET is disabled"));
