@@ -9,13 +9,13 @@
         {
             "name": "macos-arm64-llvm",
             "displayName": "macOS arm64 Homebrew LLVM",
-            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "macos-llvm-toolchain"
             ],
             "cacheVariables": {
-                "REDIS_SANITIZER": "Address;Thread;Undefined",
+                "REDIS_SANITIZER": "Address;Thread;Undefined;Realtime",
                 "CMAKE_MAKE_PROGRAM": "/opt/homebrew/bin/ninja"
             }
         },
@@ -76,6 +76,11 @@
             "name": "macos-arm64-llvm-ubsan",
             "configurePreset": "macos-arm64-llvm",
             "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "macos-arm64-llvm-rtsan",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "RealtimeSanitizer"
         }
     ],
     "testPresets": [
@@ -114,6 +119,12 @@
             "inherits": "ubsan-test-base",
             "configurePreset": "macos-arm64-llvm",
             "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "macos-arm64-llvm-rtsan",
+            "inherits": "rtsan-test-base",
+            "configurePreset": "macos-arm64-llvm",
+            "configuration": "RealtimeSanitizer"
         }
     ],
     "workflowPresets": [
@@ -229,6 +240,23 @@
                 {
                     "type": "test",
                     "name": "macos-arm64-llvm-ubsan"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-llvm-rtsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-llvm-rtsan"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-arm64-llvm-rtsan"
                 }
             ]
         }
