@@ -21,5 +21,65 @@
       ]
     },
     "cli11"
+  ],
+  "overrides": [
+    {
+      "name": "abseil",
+      "version": "20260107.1",
+      "port-version": 3
+    },
+    {
+      "name": "boost-asio",
+      "version": "1.92.0"
+    },
+    {
+      "name": "boost-unordered",
+      "version": "1.92.0"
+    },
+    {
+      "name": "catch2",
+      "version": "3.16.1"
+    },
+    {
+      "name": "cli11",
+      "version": "2.7.2"
+    },
+    {
+      "name": "ctre",
+      "version": "3.11.0"
+    },
+    {
+      "name": "enchantum",
+      "version": "0.5.0"
+    },
+    {
+      "name": "fast-float",
+      "version": "8.3.3"
+    },
+    {
+      "name": "hiredis",
+      "version": "1.5.0"
+    },
+    {
+      "name": "jsoncons",
+      "version": "1.9.0"
+    },
+    {
+      "name": "reflectcpp",
+      "version": "0.27.1"
+    },
+    {
+      "name": "spdlog",
+      "version": "1.17.0",
+      "port-version": 1
+    },
+    {
+      "name": "stdexec",
+      "version": "2026-11-02"
+    },
+    {
+      "name": "yyjson",
+      "version": "0.13.0"
+    }
   ]
 }
