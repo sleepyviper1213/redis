@@ -98,6 +98,19 @@ function(set_warnings target)
     # if(MSVC) is true for clang-cl as well — that frontend wants MSVC flags.
     if(MSVC)
         set(_rd_warnings ${REDIS_WARNINGS_MSVC})
+        # clang-cl takes clang's -W flags next to the MSVC ones. Checks
+        # [[clang::nonblocking]] / [[clang::nonallocating]]; off by default.
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # clang-cl's preprocessor is already conforming and ignores this
+            # one with "argument unused during compilation".
+            list(REMOVE_ITEM _rd_warnings /Zc:preprocessor)
+            _redis_warning_flag_supported(-Werror=function-effects
+                                          _has_effects_cl)
+            if(_has_effects_cl)
+                list(APPEND _rd_warnings -Wfunction-effects
+                                         -Werror=function-effects)
+            endif()
+        endif()
         if(REDIS_WARNINGS_AS_ERRORS)
             list(APPEND _rd_warnings /WX)
         endif()
