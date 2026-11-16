@@ -22,6 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # ccache passes every compile straight through, reading and writing nothing:
+  # each job builds from scratch. Remove this line to cache objects again.
+  CCACHE_DISABLE: "1"
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   # Built dependencies live in this directory (vcpkg's default "files" binary
   # cache), saved and restored by actions/cache below. vcpkg removed x-gha.
@@ -52,7 +55,7 @@ jobs:
           # linux-gcc-asan is off: GCC 16.2 rejects stdexec's let_value under
           # -fsanitize=address,undefined ("__mtypeid_v ... is not a constant
           # expression" in session.cpp). Re-enable once that is fixed.
-          # - { preset: linux-gcc-asan,    configure: linux-gcc,   config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: linux-gcc-asan,    configure: linux-gcc,   config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: linux-gcc-tsan,    configure: linux-gcc,   config: ThreadSanitizer,  image: "gcc:16.2",        cc: gcc,   cxx: g++, options: --privileged }
     env:
       # vcpkg builds the dependencies with the same compiler as the project.
@@ -158,12 +161,21 @@ jobs:
   macos:
     name: ${{ matrix.preset }}
     runs-on: macos-15
+    # A build that thrashes the runner (about 7 GB, 3 cores) must not run for
+    # the default six hours.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
+        # Every workflow preset of macos-arm64-llvm. configure is the tree the
+        # preset builds in; the sanitizers and Release share one.
         include:
-          - { preset: macos-arm64-llvm-debug, config: Debug }
-          - { preset: macos-arm64-llvm-tsan,  config: ThreadSanitizer }
+          - { preset: macos-arm64-llvm-debug,    configure: macos-arm64-llvm,          config: Debug }
+          - { preset: macos-arm64-llvm-release,  configure: macos-arm64-llvm,          config: Release }
+          - { preset: macos-arm64-llvm-asan,     configure: macos-arm64-llvm,          config: AddressSanitizer }
+          - { preset: macos-arm64-llvm-tsan,     configure: macos-arm64-llvm,          config: ThreadSanitizer }
+          - { preset: macos-arm64-llvm-ubsan,    configure: macos-arm64-llvm,          config: UndefinedSanitizer }
+          - { preset: macos-arm64-llvm-rtsan,    configure: macos-arm64-llvm,          config: Debug }
     env:
       # TSan's shadow memory leaves the nano allocator no room; it warns at
       # every start otherwise.
@@ -203,12 +215,13 @@ jobs:
         if: always()
         run: ccache --show-stats
       - name: The unwinder libc++abi uses
+        if: ${{ !matrix.analysis }}
         # Homebrew's libc++abi unwinds with Homebrew's libunwind; the binary's
         # own _Unwind_* calls must go there too, not to libSystem's copy. See
         # cmake/toolchains/homebrew-llvm.cmake.
         run: |
           set -euo pipefail
-          tests="$(find build/macos-arm64-llvm -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
+          tests="$(find build/${{ matrix.configure }} -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
           otool -L "$tests"
           nm -m "$tests" | grep -E '_Unwind_|_personality_v0' || true
           otool -L "$tests" | grep -q 'libunwind\.1\.dylib'
@@ -217,7 +230,8 @@ jobs:
         if: matrix.config == 'ThreadSanitizer'
         run: echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$GITHUB_WORKSPACE/test/tsan.supp" >> "$GITHUB_ENV"
       - name: Integration test
-        run: scripts/test_server.sh macos-arm64-llvm ${{ matrix.config }}
+        if: ${{ !matrix.analysis }}
+        run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }}
 
   analysis:
     name: Static analysis (clang-tidy, cppcheck)
