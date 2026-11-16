@@ -14,6 +14,7 @@ add_library(
 
     diagnostics/current_command.cpp
     diagnostics/command_watchdog.cpp
+    net/detail/accept_loop.cpp
     net/detail/admission.cpp
     net/executor.cpp
     net/guard.cpp

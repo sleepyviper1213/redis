@@ -1,5 +1,6 @@
 #include "server/net/listener.hpp"
 
+#include "core/stdexec_ext/erased.hpp"
 #include "core/stdexec_ext/supervise.hpp"
 #include "server/net/detail/listener_impl.tpp" // instantiates the failing one
 #include "server/services.hpp"
@@ -12,7 +13,6 @@
 #include <boost/asio/strand.hpp>
 #include <boost/system/system_error.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <exec/variant_sender.hpp>
 #include <stdexec/execution.hpp>
 
 #include <atomic>
@@ -56,31 +56,34 @@ public:
 					std::shared_ptr<FaultPlan> plan)
 		: tcp::acceptor(std::move(strand)), plan_(std::move(plan)) {}
 
+	/// What async_accept sends: one concrete type for the real accept and the
+	/// failure alike, so no variant of the two is built per instantiation.
+	using AcceptSender =
+		stdexec_ext::ErasedSender<stdexec::set_value_t(tcp::socket),
+							 stdexec::set_error_t(std::exception_ptr),
+							 stdexec::set_stopped_t()>;
+
 	/**
 	 * \brief The real accept, or a failure if one is due.
 	 * \tparam Executor The type of the executor for the accepted socket.
 	 * \tparam Token The completion token's type: use_sender.
-	 * \return A sender of the accepted socket; its type is deduced, a
-	 *         variant_sender of the real accept and of the failure.
+	 * \return A sender of the accepted socket.
 	 */
 	template <class Executor, class Token>
-	stdexec::sender auto async_accept(Executor &&ex, Token &&token) {
-		using Real =
-			decltype(tcp::acceptor::async_accept(std::forward<Executor>(ex),
-												 std::forward<Token>(token)));
-		using Failed = decltype(stdexec::just_error(std::exception_ptr{}));
-		using Result = exec::variant_sender<Real, Failed>;
-
+	AcceptSender async_accept(Executor &&ex, Token &&token) {
 		int due = plan_->failures.load();
 		while (due > 0 &&
 			   !plan_->failures.compare_exchange_weak(due, due - 1)) {}
 		if (due > 0) {
 			++plan_->injected;
-			return Result(stdexec::just_error(std::make_exception_ptr(
-				boost::system::system_error(plan_->error))));
+			return stdexec::just_error(std::make_exception_ptr(
+				boost::system::system_error(plan_->error)));
 		}
-		return Result(tcp::acceptor::async_accept(std::forward<Executor>(ex),
-												  std::forward<Token>(token)));
+		// The then() stage is what lets it be erased: Asio's own receiver
+		// cannot wrap an erased one.
+		return tcp::acceptor::async_accept(std::forward<Executor>(ex),
+										   std::forward<Token>(token)) |
+			   stdexec::then([](tcp::socket client) { return client; });
 	}
 
 private:

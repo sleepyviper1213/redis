@@ -1,14 +1,14 @@
 #include "session.hpp"
 
+#include "admission.hpp"
 #include "core/stdexec_ext/supervise.hpp"
 #include "core/stdexec_ext/watchdog/time_limited.hpp"
+#include "pipeline.hpp"
 #include "server/log_channels.hpp"
-#include "server/net/detail/admission.hpp"
-#include "server/net/detail/pipeline.hpp"
-#include "server/net/detail/timer_scheduler.hpp"
 #include "server/net/formatter.hpp"
 #include "server/net/net_error.hpp"
 #include "server/services.hpp"
+#include "timer_scheduler.hpp"
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/write.hpp>
@@ -336,7 +336,7 @@ stdexec::sender auto Session::respond() {
 		   });
 }
 
-stdexec::sender auto Session::round() {
+stdexec::sender auto Session::round_chain() {
 	using stdexec::just;
 
 	return read() | stdexec::let_value([this](std::optional<size_t> bytes) {
@@ -347,6 +347,15 @@ stdexec::sender auto Session::round() {
 			   return just();
 		   }) |
 		   stdexec::then([this] { return done_; });
+}
+
+stdexec::sender auto Session::round() {
+	// Built afresh each time it starts: repeat_until restarts a copy of its
+	// child, which an erased sender is not.
+	return stdexec_ext::erased_per_start<
+		stdexec::set_value_t(bool),
+		stdexec::set_error_t(std::exception_ptr),
+		stdexec::set_stopped_t()>([this] { return round_chain(); });
 }
 
 stdexec::sender auto Session::run() {
