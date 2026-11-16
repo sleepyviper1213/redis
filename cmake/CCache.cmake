@@ -1,6 +1,13 @@
 include_guard(GLOBAL)
 
 
+# The environment can set it too: a workflow preset takes no -D flag, which is
+# how CI switches ccache (REDIS_ENABLE_CCACHE=OFF in the workflow's env). It wins
+# over the preset's value.
+if(DEFINED ENV{REDIS_ENABLE_CCACHE})
+    set(REDIS_ENABLE_CCACHE "$ENV{REDIS_ENABLE_CCACHE}")
+endif()
+
 if(NOT REDIS_ENABLE_CCACHE)
     message(STATUS "ccache: disabled (REDIS_ENABLE_CCACHE=OFF)")
     return()

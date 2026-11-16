@@ -22,9 +22,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # ccache passes every compile straight through, reading and writing nothing:
-  # each job builds from scratch. Remove this line to cache objects again.
-  CCACHE_DISABLE: "1"
+  # Whether the build uses ccache: the project's own switch (cmake/CCache.cmake
+  # reads it from the environment as well, as a workflow preset takes no -D).
+  # OFF: each job compiles from scratch. ON: objects are cached across runs.
+  REDIS_ENABLE_CCACHE: "OFF"
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   # Built dependencies live in this directory (vcpkg's default "files" binary
   # cache), saved and restored by actions/cache below. vcpkg removed x-gha.
@@ -67,8 +68,6 @@ jobs:
       # changed files recompile.
       CCACHE_DIR: /root/.ccache
       CCACHE_MAXSIZE: 500M
-      CMAKE_C_COMPILER_LAUNCHER: ccache
-      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Install build tools
         run: |
@@ -186,8 +185,6 @@ jobs:
       # changed files recompile.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
-      CMAKE_C_COMPILER_LAUNCHER: ccache
-      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
       - name: Use every core
