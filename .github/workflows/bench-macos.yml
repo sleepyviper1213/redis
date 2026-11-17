@@ -38,6 +38,9 @@ env:
   # As the Release preset has it. LTO linked fine here; the stall that looked
   # like it was the base revision's session.cpp swapping (see the build report).
   IPO: ${{ inputs.ipo || 'ON' }}
+  # Presets are named per revision: the base predates the arch-os-abi names.
+  BASE_PRESET: macos-arm64-llvm
+  NEW_PRESET: aarch64-apple-darwin-llvm
   MallocNanoZone: 0
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
@@ -121,11 +124,12 @@ jobs:
           monitor=$!
           trap 'kill $monitor 2>/dev/null || true' EXIT
           cd ../redis-base
-          cmake --preset aarch64-apple-darwin-llvm -DREDIS_ENABLE_IPO="$IPO"
-          /usr/bin/time -l cmake --build --preset aarch64-apple-darwin-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
+          cmake --preset $BASE_PRESET -DREDIS_ENABLE_IPO="$IPO"
+          /usr/bin/time -l cmake --build --preset $BASE_PRESET-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
       - name: Build report
         if: always()
         run: |
+          preset_of() { if [[ "$1" == base ]]; then echo "$BASE_PRESET"; else echo "$NEW_PRESET"; fi; }
           {
             echo '```'
             for side in new base; do
@@ -135,7 +139,7 @@ jobs:
               else
                 echo "build $side: no output"
               fi
-              ls "../redis-$side/build/aarch64-apple-darwin-llvm/src/app/Release/redis_server" >/dev/null 2>&1 ||
+              ls "../redis-$side/build/$(preset_of $side)/src/app/Release/redis_server" >/dev/null 2>&1 ||
                 echo "  ($side has no redis_server: the build did not finish)"
             done
             echo '```'
@@ -147,17 +151,18 @@ jobs:
           REQUESTS: ${{ inputs.requests || '200000' }}
           RUNS: ${{ inputs.runs || '5' }}
         run: |
+          preset_of() { if [[ "$1" == base ]]; then echo "$BASE_PRESET"; else echo "$NEW_PRESET"; fi; }
           mkdir -p bench
           rounds="${{ inputs.rounds || '3' }}"
           for i in $(seq "$rounds"); do
             for side in base new; do
               # A side that did not build is skipped: the reference server
               # still gives the new one something to be compared with.
-              [[ -x "../redis-$side/build/aarch64-apple-darwin-llvm/src/app/Release/redis_server" ]] ||
+              [[ -x "../redis-$side/build/$(preset_of $side)/src/app/Release/redis_server" ]] ||
                 continue
               echo "== $side (round $i) ==" | tee -a bench/macos.txt
               ( cd "../redis-$side" &&
-                bash scripts/bench_server.sh aarch64-apple-darwin-llvm Release ) |
+                bash scripts/bench_server.sh "$(preset_of $side)" Release ) |
                 tee -a bench/macos.txt
             done
           done
