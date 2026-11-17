@@ -18,10 +18,11 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 | AC-06 | UC-011   | FR-006.7                | NFR-010.4               | TC-094, 095, 104c to 104e | Partial | None      | None         | state_key_expiry_lifecycle |
 | AC-07 | UC-020   | FR-006.8                | NFR-010.1               | TC-105, 106, 106a to 106c | Partial | None      | None         | sequence_key_expiry        |
 | AC-08 | UC-020   | FR-006.9                | NFR-010.2, 010.3, 010.6 | TC-107 to 110a        | Partial | None        | None         | activity_expiry_sweep      |
-| AC-09 | UC-021   | FR-006.10               | NFR-010.5, NFR-003      | TC-111 to 119         | Mostly  | None        | None         | sequence_key_expiry        |
+| AC-09 | UC-021   | FR-006.10               | NFR-010.5, NFR-003      | TC-111 to 119         | Partial | None        | None         | sequence_key_expiry        |
 | AC-10 | UC-022   | FR-006.11               | NFR-010.7               | TC-120 to 122         | Partial | None        | None         | sequence_key_expiry        |
 
-The known limits (LI-05, #40 to #42) are not tied to a criterion; they pin today's behaviour.
+The known limits (LI-05, #40 to #42) are not tied to a criterion; they pin today's behaviour. TC-103 (arity,
+FR-010) and TC-123 (deadline arithmetic, NFR-010.1) check a requirement directly, not a criterion.
 
 The differential test sends nothing that depends on time (master test plan §5.2). Scenarios marked Differential can
 join it only in a time-independent form. That is a change to `scripts/diff_test.py`, not part of this feature yet.

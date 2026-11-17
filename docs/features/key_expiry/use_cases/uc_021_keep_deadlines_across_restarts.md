@@ -49,10 +49,12 @@ Operator (restarts the server and relies on the files); the Client's commands pr
 * Expiry is off while the log is replayed, so the result does not depend on when the replay runs
 * Expiry resumes when the replay ends
 
-### A3: Rewrite of the append-only file
+### A3: Base of the append-only file
 
-* The new base keeps keys that are due but not yet swept, so the logged commands that follow still apply to them; the
-  logged `DEL` removes them on replay
+* A base, written when the file starts or is rewritten, holds only live keys, each with its absolute deadline
+* At startup the base is loaded keeping deadlines that have passed since it was written, unlike a plain snapshot
+  (main flow, step 3), so the logged commands that follow still find those keys; the logged `DEL` for a key that
+  expired removes it, and expiry resumes after the replay (A2)
 
 ## Related Functional Requirements
 
