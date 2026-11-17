@@ -116,7 +116,7 @@ Each feature is identified by its requirement in the SRS and its use case [5]. S
 | Integration     | `test/integration/`       | A running server, via hiredis | `scripts/test_server.sh <preset> <config>`   |
 | Stress          | `test/stress/`            | A running server              | `scripts/stress_server.sh <preset> <config>` |
 | Differential    | `scripts/diff_test.py`    | This server and real Redis    | `scripts/diff_server.sh <preset> <config>`   |
-| Static analysis | clang-tidy, cppcheck      | The source                    | CI job `linux-clang-analysis`                |
+| Static analysis | clang-tidy, cppcheck      | The source                    | CI job `x86_64-linux-gnu-clang-analysis`                |
 | Performance     | `scripts/bench_server.sh` | This server and real Redis    | See [4]                                      |
 
 **Unit tests** (`redis_unit_test`, 166 test cases) mirror `src/`: protocol (`common/resp`), keyspace
@@ -167,15 +167,15 @@ missing key, out of range, resource failure). Boundaries are tested at, below an
 
 | Environment                  | Where             | Runs                                                        |
 |------------------------------|-------------------|-------------------------------------------------------------|
-| Linux, GCC 16.2, Debug       | GitHub Actions    | Unit, integration (`linux-gcc-debug`)                       |
-| Linux, GCC 16.2, Release     | GitHub Actions    | Optimised build with LTO (`linux-gcc-release`)              |
-| Linux, Clang 22, Debug       | GitHub Actions    | Unit, integration (`linux-clang-debug`)                     |
-| Linux, GCC, ThreadSanitizer  | GitHub Actions    | Unit, integration (`linux-gcc-tsan`, privileged container)  |
-| macOS, Homebrew LLVM         | GitHub Actions    | Unit, integration (`macos-arm64-llvm-debug`)                |
+| Linux, GCC 16.2, Debug       | GitHub Actions    | Unit, integration (`x86_64-linux-gnu-gcc-debug`)                       |
+| Linux, GCC 16.2, Release     | GitHub Actions    | Optimised build with LTO (`x86_64-linux-gnu-gcc-release`)              |
+| Linux, Clang 22, Debug       | GitHub Actions    | Unit, integration (`x86_64-linux-gnu-clang-debug`)                     |
+| Linux, GCC, ThreadSanitizer  | GitHub Actions    | Unit, integration (`x86_64-linux-gnu-gcc-tsan`, privileged container)  |
+| macOS, Homebrew LLVM         | GitHub Actions    | Unit, integration (`aarch64-apple-darwin-llvm-debug`)                |
 | Windows 11, Clang-cl         | Developer machine | Unit tests (Part B)                                         |
 
 Tools: CMake with Ninja, vcpkg for the dependencies, Catch2 (test framework), hiredis (client), `redis-benchmark`
-and `redis-server` (reference). `linux-gcc-asan` is switched off in CI until GCC 16.2 accepts stdexec's `let_value`
+and `redis-server` (reference). `x86_64-linux-gnu-gcc-asan` is switched off in CI until GCC 16.2 accepts stdexec's `let_value`
 under `-fsanitize=address,undefined`.
 
 ## 10. Responsibilities and schedule
@@ -290,7 +290,7 @@ other levels run in CI and were not run for this report.
 |---------------------------|-----------------------------------------------------------------------------------------|
 | Integration               | Not run. Runs on Linux and macOS in CI                                                  |
 | Stress, differential      | Not run. Run on Linux with `scripts/stress_server.sh` and `scripts/diff_server.sh`      |
-| Static analysis           | Not run. CI job `linux-clang-analysis`                                                  |
+| Static analysis           | Not run. CI job `x86_64-linux-gnu-clang-analysis`                                                  |
 | Performance               | See [4]                                                                                 |
 
 ## 16. Anomalies
@@ -300,7 +300,7 @@ other levels run in CI and were not run for this report.
 | A-1 | Timer-based tests (`watchdog`, `every`) fail under load and pass alone                                       | Low      | Widen the time margins, or wait on a signal instead of a clock |
 | A-2 | No automated test of option parsing and of precedence among command line, config file and environment (FR-013) | Medium  | Add tests that run the app with each source                  |
 | A-3 | The POSIX crash report is not tested (FR-016)                                                                | Low      | Crash a child on purpose and check the log                   |
-| A-4 | `linux-gcc-asan` is off in CI                                                                                | Medium   | Re-enable when the GCC and stdexec problem is fixed          |
+| A-4 | `x86_64-linux-gnu-gcc-asan` is off in CI                                                                                | Medium   | Re-enable when the GCC and stdexec problem is fixed          |
 | A-5 | Integration `save` tests TC-001 to TC-006 carry the hidden tag `[.]`, and `scripts/test_server.sh` runs the binary with no tag, so they never run by default | Medium | Run them explicitly (`"[save]"`), or fix them and remove the tag |
 | A-6 | No end-to-end test of `SIGTERM`: final save, exit status 0, non-zero exit when the final save fails (FR-017)  | Medium   | Script a test that starts, writes, signals and inspects the snapshot |
 | A-7 | Append-only file and client limits are tested in-process only                                                | Low      | Add integration tests for an `--appendonly` restart and `--maxclients` |

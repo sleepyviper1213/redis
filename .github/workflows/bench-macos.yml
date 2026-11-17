@@ -98,8 +98,8 @@ jobs:
           monitor=$!
           trap 'kill $monitor 2>/dev/null || true' EXIT
           cd ../redis-new
-          cmake --preset macos-arm64-llvm -DREDIS_ENABLE_IPO="$IPO"
-          /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-new.txt"
+          cmake --preset aarch64-apple-darwin-llvm -DREDIS_ENABLE_IPO="$IPO"
+          /usr/bin/time -l cmake --build --preset aarch64-apple-darwin-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-new.txt"
       - name: Build the base revision, timed
         # The runner has about 7 GB, and the base compiles a file that took
         # 8 GB on a Mac: it may thrash instead of finishing. Bounded, and
@@ -121,8 +121,8 @@ jobs:
           monitor=$!
           trap 'kill $monitor 2>/dev/null || true' EXIT
           cd ../redis-base
-          cmake --preset macos-arm64-llvm -DREDIS_ENABLE_IPO="$IPO"
-          /usr/bin/time -l cmake --build --preset macos-arm64-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
+          cmake --preset aarch64-apple-darwin-llvm -DREDIS_ENABLE_IPO="$IPO"
+          /usr/bin/time -l cmake --build --preset aarch64-apple-darwin-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
       - name: Build report
         if: always()
         run: |
@@ -135,7 +135,7 @@ jobs:
               else
                 echo "build $side: no output"
               fi
-              ls "../redis-$side/build/macos-arm64-llvm/src/app/Release/redis_server" >/dev/null 2>&1 ||
+              ls "../redis-$side/build/aarch64-apple-darwin-llvm/src/app/Release/redis_server" >/dev/null 2>&1 ||
                 echo "  ($side has no redis_server: the build did not finish)"
             done
             echo '```'
@@ -153,11 +153,11 @@ jobs:
             for side in base new; do
               # A side that did not build is skipped: the reference server
               # still gives the new one something to be compared with.
-              [[ -x "../redis-$side/build/macos-arm64-llvm/src/app/Release/redis_server" ]] ||
+              [[ -x "../redis-$side/build/aarch64-apple-darwin-llvm/src/app/Release/redis_server" ]] ||
                 continue
               echo "== $side (round $i) ==" | tee -a bench/macos.txt
               ( cd "../redis-$side" &&
-                bash scripts/bench_server.sh macos-arm64-llvm Release ) |
+                bash scripts/bench_server.sh aarch64-apple-darwin-llvm Release ) |
                 tee -a bench/macos.txt
             done
           done

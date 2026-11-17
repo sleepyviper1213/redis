@@ -12,12 +12,12 @@
 # the server fails the run.
 #
 # Unit tests need no server and run through CTest instead:
-#   ctest --preset linux-gcc-debug
+#   ctest --preset x86_64-linux-gnu-gcc-debug
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
 
-PRESET="${1:-linux-gcc}"
+PRESET="${1:-x86_64-linux-gnu-gcc}"
 CONFIG="${2:-Debug}"
 PORT="${3:-6380}"
 

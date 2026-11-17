@@ -7,240 +7,240 @@
     ],
     "configurePresets": [
         {
-            "name": "linux-gcc",
+            "name": "x86_64-linux-gnu-gcc",
             "displayName": "Linux GCC",
             "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
-                "linux-gcc-toolchain"
+                "x86_64-linux-gnu-gcc-toolchain"
             ],
             "cacheVariables": {
                 "REDIS_SANITIZER": "Thread;Undefined"
             }
         },
         {
-            "name": "linux-gcc-asan",
+            "name": "x86_64-linux-gnu-gcc-asan",
             "displayName": "Linux GCC / AddressSanitizer",
             "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
             "inherits": [
                 "asan-deps-linux",
                 "dev-options",
-                "linux-gcc-toolchain"
+                "x86_64-linux-gnu-gcc-toolchain"
             ],
             "cacheVariables": {
                 "REDIS_SANITIZER": "Address"
             }
         },
         {
-            "name": "linux-gcc-coverage",
+            "name": "x86_64-linux-gnu-gcc-coverage",
             "displayName": "Linux GCC / coverage",
             "inherits": [
                 "coverage-options",
-                "linux-gcc-toolchain"
+                "x86_64-linux-gnu-gcc-toolchain"
             ]
         },
         {
-            "name": "linux-gcc-analysis",
+            "name": "x86_64-linux-gnu-gcc-analysis",
             "displayName": "Linux GCC / analysis",
             "inherits": [
                 "analysis-options",
-                "linux-gcc-toolchain"
+                "x86_64-linux-gnu-gcc-toolchain"
             ]
         }
     ],
     "buildPresets": [
         {
-            "name": "linux-gcc-debug",
-            "configurePreset": "linux-gcc",
+            "name": "x86_64-linux-gnu-gcc-debug",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "Debug"
         },
         {
-            "name": "linux-gcc-release",
-            "configurePreset": "linux-gcc",
+            "name": "x86_64-linux-gnu-gcc-release",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "Release"
         },
         {
-            "name": "linux-gcc-relwithdebinfo",
-            "configurePreset": "linux-gcc",
+            "name": "x86_64-linux-gnu-gcc-relwithdebinfo",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "RelWithDebInfo"
         },
         {
-            "name": "linux-gcc-coverage",
-            "configurePreset": "linux-gcc-coverage",
+            "name": "x86_64-linux-gnu-gcc-coverage",
+            "configurePreset": "x86_64-linux-gnu-gcc-coverage",
             "configuration": "Debug"
         },
         {
-            "name": "linux-gcc-analysis",
-            "configurePreset": "linux-gcc-analysis",
+            "name": "x86_64-linux-gnu-gcc-analysis",
+            "configurePreset": "x86_64-linux-gnu-gcc-analysis",
             "configuration": "Debug"
         },
         {
-            "name": "linux-gcc-asan",
-            "configurePreset": "linux-gcc-asan",
+            "name": "x86_64-linux-gnu-gcc-asan",
+            "configurePreset": "x86_64-linux-gnu-gcc-asan",
             "configuration": "AddressSanitizer"
         },
         {
-            "name": "linux-gcc-tsan",
-            "configurePreset": "linux-gcc",
+            "name": "x86_64-linux-gnu-gcc-tsan",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "ThreadSanitizer"
         },
         {
-            "name": "linux-gcc-ubsan",
-            "configurePreset": "linux-gcc",
+            "name": "x86_64-linux-gnu-gcc-ubsan",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "UndefinedSanitizer"
         }
     ],
     "testPresets": [
         {
-            "name": "linux-gcc-debug",
+            "name": "x86_64-linux-gnu-gcc-debug",
             "inherits": "test-base",
-            "configurePreset": "linux-gcc",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "Debug"
         },
         {
-            "name": "linux-gcc-release",
+            "name": "x86_64-linux-gnu-gcc-release",
             "inherits": "test-base",
-            "configurePreset": "linux-gcc",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "Release"
         },
         {
-            "name": "linux-gcc-coverage",
+            "name": "x86_64-linux-gnu-gcc-coverage",
             "inherits": "test-base",
-            "configurePreset": "linux-gcc-coverage",
+            "configurePreset": "x86_64-linux-gnu-gcc-coverage",
             "configuration": "Debug"
         },
         {
-            "name": "linux-gcc-asan",
+            "name": "x86_64-linux-gnu-gcc-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "linux-gcc-asan",
+            "configurePreset": "x86_64-linux-gnu-gcc-asan",
             "configuration": "AddressSanitizer"
         },
         {
-            "name": "linux-gcc-tsan",
+            "name": "x86_64-linux-gnu-gcc-tsan",
             "inherits": "tsan-test-base",
-            "configurePreset": "linux-gcc",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "ThreadSanitizer"
         },
         {
-            "name": "linux-gcc-ubsan",
+            "name": "x86_64-linux-gnu-gcc-ubsan",
             "inherits": "ubsan-test-base",
-            "configurePreset": "linux-gcc",
+            "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "UndefinedSanitizer"
         }
     ],
     "workflowPresets": [
         {
-            "name": "linux-gcc-debug",
+            "name": "x86_64-linux-gnu-gcc-debug",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc"
+                    "name": "x86_64-linux-gnu-gcc"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-debug"
+                    "name": "x86_64-linux-gnu-gcc-debug"
                 },
                 {
                     "type": "test",
-                    "name": "linux-gcc-debug"
+                    "name": "x86_64-linux-gnu-gcc-debug"
                 }
             ]
         },
         {
-            "name": "linux-gcc-release",
+            "name": "x86_64-linux-gnu-gcc-release",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc"
+                    "name": "x86_64-linux-gnu-gcc"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-release"
+                    "name": "x86_64-linux-gnu-gcc-release"
                 },
                 {
                     "type": "test",
-                    "name": "linux-gcc-release"
+                    "name": "x86_64-linux-gnu-gcc-release"
                 }
             ]
         },
         {
-            "name": "linux-gcc-coverage",
+            "name": "x86_64-linux-gnu-gcc-coverage",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc-coverage"
+                    "name": "x86_64-linux-gnu-gcc-coverage"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-coverage"
+                    "name": "x86_64-linux-gnu-gcc-coverage"
                 },
                 {
                     "type": "test",
-                    "name": "linux-gcc-coverage"
+                    "name": "x86_64-linux-gnu-gcc-coverage"
                 }
             ]
         },
         {
-            "name": "linux-gcc-analysis",
+            "name": "x86_64-linux-gnu-gcc-analysis",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc-analysis"
+                    "name": "x86_64-linux-gnu-gcc-analysis"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-analysis"
+                    "name": "x86_64-linux-gnu-gcc-analysis"
                 }
             ]
         },
         {
-            "name": "linux-gcc-asan",
+            "name": "x86_64-linux-gnu-gcc-asan",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc-asan"
+                    "name": "x86_64-linux-gnu-gcc-asan"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-asan"
+                    "name": "x86_64-linux-gnu-gcc-asan"
                 },
                 {
                     "type": "test",
-                    "name": "linux-gcc-asan"
+                    "name": "x86_64-linux-gnu-gcc-asan"
                 }
             ]
         },
         {
-            "name": "linux-gcc-tsan",
+            "name": "x86_64-linux-gnu-gcc-tsan",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc"
+                    "name": "x86_64-linux-gnu-gcc"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-tsan"
+                    "name": "x86_64-linux-gnu-gcc-tsan"
                 },
                 {
                     "type": "test",
-                    "name": "linux-gcc-tsan"
+                    "name": "x86_64-linux-gnu-gcc-tsan"
                 }
             ]
         },
         {
-            "name": "linux-gcc-ubsan",
+            "name": "x86_64-linux-gnu-gcc-ubsan",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc"
+                    "name": "x86_64-linux-gnu-gcc"
                 },
                 {
                     "type": "build",
-                    "name": "linux-gcc-ubsan"
+                    "name": "x86_64-linux-gnu-gcc-ubsan"
                 },
                 {
                     "type": "test",
-                    "name": "linux-gcc-ubsan"
+                    "name": "x86_64-linux-gnu-gcc-ubsan"
                 }
             ]
         }

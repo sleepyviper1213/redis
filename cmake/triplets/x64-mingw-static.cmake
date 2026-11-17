@@ -1,4 +1,4 @@
-# Overlay of vcpkg's community x64-mingw-static triplet, for the windows-mingw
+# Overlay of vcpkg's community x64-mingw-static triplet, for the x86_64-w64-mingw32-gcc
 # preset (VCPKG_OVERLAY_TRIPLETS points at this directory).
 #
 # reflect-cpp's sources put more sections in one object than PE/COFF allows by

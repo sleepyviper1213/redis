@@ -5,7 +5,7 @@
     ],
     "configurePresets": [
         {
-            "name": "linux-gcc-toolchain",
+            "name": "x86_64-linux-gnu-gcc-toolchain",
             "hidden": true,
             "inherits": "vcpkg-base",
             "condition": {
@@ -18,7 +18,7 @@
             }
         },
         {
-            "name": "linux-clang-toolchain",
+            "name": "x86_64-linux-gnu-clang-toolchain",
             "hidden": true,
             "inherits": "vcpkg-base",
             "condition": {
@@ -31,7 +31,7 @@
             }
         },
         {
-            "name": "macos-llvm-toolchain",
+            "name": "aarch64-apple-darwin-llvm-toolchain",
             "hidden": true,
             "inherits": "vcpkg-base",
             "condition": {

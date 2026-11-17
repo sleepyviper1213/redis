@@ -6,7 +6,7 @@ include_guard(GLOBAL)
 #
 # MSVC uses /fsanitize=address; Clang/AppleClang/GCC on macOS/Linux use
 # -fsanitize=address,undefined. GCC/Clang on Windows (MinGW) ship no libasan, so
-# the config is uninstrumented there — use the windows-msvc preset for ASan on
+# the config is uninstrumented there — use the x86_64-pc-windows-msvc-cl preset for ASan on
 # Windows.
 
 _redis_register_sanitizer_config(AddressSanitizer)
@@ -72,7 +72,7 @@ elseif(WIN32)
     message(
         STATUS
             "MinGW cannot link AddressSanitizer; 'AddressSanitizer' builds "
-            "WITHOUT instrumentation. Use the windows-msvc preset for ASan on Windows."
+            "WITHOUT instrumentation. Use the x86_64-pc-windows-msvc-cl preset for ASan on Windows."
     )
 else()
     # GCC/Clang need -fsanitize at BOTH compile and link. UBSan is folded in: it

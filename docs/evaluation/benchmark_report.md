@@ -165,13 +165,13 @@ disagree), and unknown for everything else until medians and run counts are publ
 ```sh
 # Linux or macOS; needs redis-benchmark and, for the comparison, redis-server
 $ REF_SERVER=redis-server RUNS=7 REQUESTS=500000 THREADS=2 \
-      scripts/bench_server.sh linux-gcc Release
+      scripts/bench_server.sh x86_64-linux-gnu-gcc Release
 
 # Pin the server and the load generator to separate CPUs (Linux)
-$ SERVER_CPUS=0-1 CLIENT_CPUS=2-3 REF_SERVER=redis-server scripts/bench_server.sh linux-gcc Release
+$ SERVER_CPUS=0-1 CLIENT_CPUS=2-3 REF_SERVER=redis-server scripts/bench_server.sh x86_64-linux-gnu-gcc Release
 
 # Several network threads
-$ SERVER_ARGS="--io-threads 4" scripts/bench_server.sh linux-gcc Release
+$ SERVER_ARGS="--io-threads 4" scripts/bench_server.sh x86_64-linux-gnu-gcc Release
 
 # On GitHub Actions: push any commit to a bench/ branch
 $ git push -f origin HEAD:bench/<name>

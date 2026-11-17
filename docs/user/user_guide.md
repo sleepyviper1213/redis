@@ -86,17 +86,17 @@ installed by vcpkg during configuration. The first configuration builds them and
 ```sh
 $ git clone https://github.com/sleepyviper1213/redis.git
 $ cd redis
-$ cmake --workflow --preset linux-gcc-debug     # configure, build, run the unit tests
-$ cmake --build --preset linux-gcc-release --target redis_server
+$ cmake --workflow --preset x86_64-linux-gnu-gcc-debug     # configure, build, run the unit tests
+$ cmake --build --preset x86_64-linux-gnu-gcc-release --target redis_server
 ```
 
-Use the `macos-arm64-llvm` prefix on macOS and `linux-clang` for Clang. `cmake --list-presets=all` lists everything.
+Use the `aarch64-apple-darwin-llvm` prefix on macOS and `x86_64-linux-gnu-clang` for Clang. `cmake --list-presets=all` lists everything.
 The server binary is in the build tree for the preset; `scripts/run.sh` finds it for you.
 
 ### 2.4 Check the installation
 
 ```sh
-$ scripts/run.sh linux-gcc Release -- --port 6379
+$ scripts/run.sh x86_64-linux-gnu-gcc Release -- --port 6379
 $ redis-cli -p 6379 PING
 PONG
 ```

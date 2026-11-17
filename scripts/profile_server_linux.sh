@@ -27,7 +27,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
 
-PRESET="${1:-linux-gcc}"
+PRESET="${1:-x86_64-linux-gnu-gcc}"
 CONFIG="${2:-RelWithDebInfo}"
 SCENARIO="${3:-bigget}"
 PORT="${PORT:-6381}"

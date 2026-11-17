@@ -20,7 +20,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
 
-PRESET="${1:-macos-arm64-llvm}"
+PRESET="${1:-aarch64-apple-darwin-llvm}"
 CONFIG="${2:-RelWithDebInfo}"
 WHICH="${3:-all}"
 PORT="${PORT:-6381}"
