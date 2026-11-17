@@ -32,6 +32,14 @@ scenario is written or run.
 hidden phases, `[restart-write]` and `[restart-verify]` in `test/integration/expiry_restart.test.cpp`, run around a
 server restart by `scripts/test_expiry_server.sh` (CI step "Key expiry restart test").
 
+**Running the differential scenarios.** `scripts/diff_test.py --expiry` adds the expiry commands to the stream sent to this
+server and to real Redis: `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT`, `PERSIST`, `SET` with `EX`, `PX`, `EXAT`, `PXAT`,
+`KEEPTTL`, wrong arity, and writes that keep or clear a deadline. Deadlines are far ahead, already past or invalid, never
+short, and `TTL` and `PTTL` are compared as missing, no deadline, or "some time left", because the two servers cannot
+agree on the remaining time to the millisecond. CI runs it as a step that does not fail the job ("Differential test
+against Redis, expiry commands") until its first results have been dealt with. The scenarios marked Differential are
+covered by it in that form; the marks below stay as they are until a run against Redis confirms them.
+
 **Timing rules for integration tests.** Use `PEXPIRE` with a small millisecond amount, then poll with a timeout instead
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
 memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millisecond; assert a range.
