@@ -25,6 +25,11 @@ SERVER="$(locate_binary "$PRESET" "$CONFIG" redis_server)"
 TESTS="$(locate_binary "$PRESET" "$CONFIG" redis_integration_test)"
 WORKDIR="$(mktemp -d)"
 
+# Abseil poisons empty hash slots under ASan, but the vcpkg library is not
+# instrumented and never unpoisons them: the server then trips on a slot it
+# legitimately reads. Ignoring user poisoning makes both halves agree.
+export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}allow_user_poisoning=0"
+
 # shellcheck disable=SC2086 # SERVER_ARGS is a list of words
 start_server "$SERVER" "$PORT" "$WORKDIR" ${SERVER_ARGS:-}
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT

@@ -18,7 +18,7 @@
             "hidden": true,
             "inherits": "test-base",
             "environment": {
-                "ASAN_OPTIONS": "abort_on_error=1:halt_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1",
+                "ASAN_OPTIONS": "abort_on_error=1:halt_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1:allow_user_poisoning=0",
                 "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
             }
         },
