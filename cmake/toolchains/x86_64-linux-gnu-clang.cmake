@@ -6,3 +6,5 @@
 # same compiler whatever CC and CXX say.
 set(CMAKE_C_COMPILER clang CACHE FILEPATH "Clang" FORCE)
 set(CMAKE_CXX_COMPILER clang++ CACHE FILEPATH "Clang++" FORCE)
+
+include("${CMAKE_CURRENT_LIST_DIR}/detail/vcpkg-port-flags.cmake")
