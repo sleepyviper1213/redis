@@ -36,6 +36,7 @@ add_executable(redis_unit_test
     unit/server/persistence/aof.test.cpp
     unit/server/diagnostics/command_watchdog.test.cpp
     unit/server/commands/config.test.cpp
+    unit/server/commands/expiry.test.cpp
     unit/server/commands/handler.test.cpp
     unit/server/commands/hash.test.cpp
     unit/server/commands/info.test.cpp
