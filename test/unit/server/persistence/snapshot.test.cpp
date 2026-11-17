@@ -246,3 +246,68 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 		}
 	}
 }
+
+// TC-117, TC-119
+SCENARIO("A snapshot keeps absolute deadlines", "[persistence][expiry]") {
+	GIVEN("a key with a fixed absolute deadline") {
+		test::Server server;
+		// The year 2100, so it cannot pass during the test.
+		constexpr auto DEADLINE_MS = "4102444800000";
+		REQUIRE(server.run({"SET", "k", "v", "PXAT", DEADLINE_MS}) == "+OK\r\n");
+		REQUIRE(
+			persistence::detail::save_snapshot(server.db, server.dump.path()));
+
+		WHEN("it is loaded into a fresh server") {
+			test::Server restored;
+			REQUIRE(persistence::detail::load_snapshot(restored.db,
+													   server.dump.path()));
+
+			THEN("the deadline is the same to the millisecond") {
+				const auto before = server.db.expiry("k");
+				const auto after  = restored.db.expiry("k");
+				REQUIRE(before.has_value());
+				REQUIRE(after.has_value());
+				CHECK(after->to_msecs_since_epoch() ==
+					  before->to_msecs_since_epoch());
+				CHECK(after->to_msecs_since_epoch() == 4102444800000);
+			}
+		}
+	}
+
+	GIVEN("a snapshot whose short deadline has passed since it was written") {
+		test::Server server;
+		REQUIRE(server.run({"SET", "short", "v", "PX", "30"}) == "+OK\r\n");
+		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
+		REQUIRE(
+			persistence::detail::save_snapshot(server.db, server.dump.path()));
+		std::this_thread::sleep_for(60ms);
+
+		WHEN("it is loaded as the base of an append-only file") {
+			test::Server restored;
+			REQUIRE(persistence::detail::load_snapshot(restored.db,
+													   server.dump.path(),
+													   /*keep_expired=*/true));
+
+			THEN("the key is still there, with its deadline") {
+				CHECK(restored.db.size() == 2);
+				CHECK(restored.db.expiring() == 1);
+			}
+
+			AND_THEN("it expires like any other once a command looks at it") {
+				CHECK(restored.run({"EXISTS", "short"}) == ":0\r\n");
+				CHECK(restored.db.expired_keys() == 1);
+			}
+		}
+
+		WHEN("it is loaded as a plain snapshot") {
+			test::Server restored;
+			REQUIRE(persistence::detail::load_snapshot(restored.db,
+													   server.dump.path()));
+
+			THEN("the key is not restored at all") {
+				CHECK(restored.db.size() == 1);
+				CHECK(restored.db.expiring() == 0);
+			}
+		}
+	}
+}

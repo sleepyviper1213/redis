@@ -605,3 +605,89 @@ SCENARIO("The server's files are private, and links are not followed",
 	}
 #endif
 }
+
+namespace {
+size_t occurrences(const std::string &text, const std::string &part) {
+	size_t count = 0;
+	for (auto at = text.find(part); at != std::string::npos;
+		 at      = text.find(part, at + part.size()))
+		++count;
+	return count;
+}
+} // namespace
+
+// TC-113
+SCENARIO("A deadline already past is logged as DEL", "[aof][expiry]") {
+	GIVEN("a server with an append-only file and a key") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		AofServer server(dir.path(), snapshot.path());
+		REQUIRE(server.start().has_value());
+		server.run({"SET", "k", "old"});
+
+		WHEN("EXPIRE gets a zero amount, then SET gets a PXAT in the past") {
+			CHECK(server.run({"EXPIRE", "k", "0"}) == ":1\r\n");
+			CHECK(server.run({"SET", "k", "v", "PXAT", "1"}) == "+OK\r\n");
+
+			THEN("each is logged as a DEL of the key, not as itself") {
+				CHECK(server.log() == logged({"SET", "k", "old"}) +
+										  logged({"DEL", "k"}) +
+										  logged({"DEL", "k"}));
+			}
+		}
+	}
+}
+
+// TC-114
+SCENARIO("A key that expires is logged as DEL, once", "[aof][expiry]") {
+	GIVEN("two keys that expire and one that does not") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		AofServer server(dir.path(), snapshot.path());
+		REQUIRE(server.start().has_value());
+		server.run({"SET", "by_access", "v", "PX", "20"});
+		server.run({"SET", "by_sweep", "v", "PX", "20"});
+		server.run({"SET", "kept", "v"});
+		std::this_thread::sleep_for(60ms);
+
+		WHEN("one is found by a read and the other by the sweep") {
+			CHECK(server.run({"GET", "by_access"}) == "$-1\r\n");
+			REQUIRE(server.db.active_expire_cycle(100) == 1);
+			server.aof.log_expired(server.db);
+			server.aof.after_batch();
+
+			THEN("the log has one DEL for each, and none for the kept key") {
+				const auto log = server.log();
+				CHECK(occurrences(log, logged({"DEL", "by_access"})) == 1);
+				CHECK(occurrences(log, logged({"DEL", "by_sweep"})) == 1);
+				CHECK(occurrences(log, logged({"DEL", "kept"})) == 0);
+			}
+		}
+	}
+}
+
+// TC-115
+SCENARIO("A replay does not extend a lifetime", "[aof][expiry]") {
+	GIVEN("a key set to live two seconds, restarted after part of that") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		{
+			AofServer server(dir.path(), snapshot.path());
+			REQUIRE(server.start().has_value());
+			server.run({"SET", "k", "v", "EX", "2"});
+			std::this_thread::sleep_for(700ms);
+		}
+
+		WHEN("the files are replayed") {
+			Restarted server(dir.path(), snapshot.path());
+			const auto reply = server.run({"PTTL", "k"});
+
+			THEN("what is left is what was left, not the full two seconds") {
+				REQUIRE(reply.starts_with(":"));
+				const auto left = std::stoll(reply.substr(1));
+				CHECK(left > 0);
+				CHECK(left <= 1500);
+			}
+		}
+	}
+}
