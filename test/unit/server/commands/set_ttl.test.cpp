@@ -11,7 +11,8 @@
 using namespace redis;
 using namespace std::chrono_literals;
 
-SCENARIO("SET applies each expiration option", "[commands][set]") {
+SCENARIO("SET applies each expiration option",
+		 "[commands][set][TC-093][TC-104]") {
 	GIVEN("an empty keyspace") {
 		test::Server server;
 
@@ -58,7 +59,8 @@ SCENARIO("SET applies each expiration option", "[commands][set]") {
 	}
 }
 
-SCENARIO("SET handles an existing TTL like Redis", "[commands][set]") {
+SCENARIO("SET handles an existing TTL like Redis",
+		 "[commands][set][TC-094][TC-095]") {
 	GIVEN("a key with a TTL") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v", "EX", "100"}) == "+OK\r\n");
@@ -80,7 +82,8 @@ SCENARIO("SET handles an existing TTL like Redis", "[commands][set]") {
 	}
 }
 
-SCENARIO("SET option validation", "[commands][set]") {
+SCENARIO("SET option validation",
+		 "[commands][set][TC-096][TC-097][TC-102]") {
 	GIVEN("an empty keyspace") {
 		test::Server server;
 
@@ -331,7 +334,7 @@ SCENARIO("A plain SET overwrites without looking at the old value",
 }
 
 SCENARIO("Expiry arguments that overflow the clock are rejected",
-		 "[commands][set][limits]") {
+		 "[commands][set][limits][TC-101][TC-102]") {
 	test::Server server;
 	const std::string huge = "9223372036854775807";
 	// Seconds cannot be scaled to milliseconds, and a relative amount cannot be

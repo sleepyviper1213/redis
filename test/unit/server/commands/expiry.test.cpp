@@ -30,8 +30,8 @@ bool contains(const std::string &text, const char *part) {
 }
 } // namespace
 
-// TC-090, TC-092
-SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
+SCENARIO("Every value type takes a deadline",
+		 "[commands][expiry][TC-090][TC-092]") {
 	GIVEN("a string, a list, a hash and a set") {
 		test::Server server;
 		server.run({"SET", "str", "v"});
@@ -62,9 +62,8 @@ SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
 	}
 }
 
-// TC-098 to TC-101, TC-103
 SCENARIO("Deadlines already past, invalid amounts and wrong arity",
-		 "[commands][expiry]") {
+		 "[commands][expiry][TC-098][TC-099][TC-100][TC-103]") {
 	GIVEN("a key") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
@@ -123,8 +122,8 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 	}
 }
 
-// TC-104c to TC-104e
-SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
+SCENARIO("Writes keep or drop a deadline",
+		 "[commands][expiry][TC-104c][TC-104d][TC-104e]") {
 	GIVEN("keys of each type, each with a deadline") {
 		test::Server server;
 		server.run({"SET", "n", "1"});
@@ -184,9 +183,8 @@ SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
 	}
 }
 
-// TC-105, TC-106, TC-106a to TC-106c
 SCENARIO("A key past its deadline is missing to every command",
-		 "[commands][expiry]") {
+		 "[commands][expiry][TC-105][TC-106][TC-106a][TC-106b][TC-106c]") {
 	GIVEN("keys of each type whose deadlines have passed, and one live key") {
 		test::Server server;
 		server.run({"SET", "str", "v"});
@@ -235,9 +233,8 @@ SCENARIO("A key past its deadline is missing to every command",
 	}
 }
 
-// TC-120, TC-121
 SCENARIO("INFO reports the keys with a deadline and the keys that expired",
-		 "[commands][expiry][info]") {
+		 "[commands][expiry][info][TC-120][TC-121]") {
 	GIVEN("three keys, two with a deadline") {
 		test::Server server;
 		server.run({"SET", "a", "1"});
@@ -336,6 +333,54 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 			CHECK(server.run({"PEXPIRETIME", "k"}) ==
 				  "-ERR unknown command 'PEXPIRETIME', with args beginning "
 				  "with: 'k' \r\n");
+		}
+	}
+}
+
+// TC-087, TC-088, TC-089: deadlines in the future, set by each command.
+SCENARIO("Deadlines in the future are read back in their unit",
+		 "[commands][expiry][TC-087][TC-088][TC-089]") {
+	GIVEN("a key, and PEXPIRE with 5000 milliseconds") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		REQUIRE(server.run({"PEXPIRE", "k", "5000"}) == ":1\r\n");
+
+		THEN("PTTL is in milliseconds, 4000 to 5000") {
+			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
+			CHECK(ms > 4000);
+			CHECK(ms <= 5000);
+		}
+	}
+
+	GIVEN("a key, and EXPIREAT 100 seconds from now") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+							 std::chrono::system_clock::now().time_since_epoch())
+							 .count();
+		REQUIRE(server.run({"EXPIREAT", "k", fmt::format("{}", now + 100)}) ==
+				":1\r\n");
+
+		THEN("TTL is about 100 seconds") {
+			const auto secs = std::stoll(server.run({"TTL", "k"}).substr(1));
+			CHECK(secs >= 98);
+			CHECK(secs <= 100);
+		}
+	}
+
+	GIVEN("a key, and PEXPIREAT 100000 milliseconds from now") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+							 std::chrono::system_clock::now().time_since_epoch())
+							 .count();
+		REQUIRE(server.run({"PEXPIREAT", "k", fmt::format("{}", now + 100000)}) ==
+				":1\r\n");
+
+		THEN("PTTL is about 100000 milliseconds") {
+			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
+			CHECK(ms > 98000);
+			CHECK(ms <= 100000);
 		}
 	}
 }

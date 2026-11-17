@@ -12,7 +12,7 @@ using namespace redis;
 using namespace std::chrono_literals;
 using persistence::PersistKind;
 
-SCENARIO("Snapshots round-trip every value type", "[persistence]") {
+SCENARIO("Snapshots round-trip every value type", "[persistence][TC-118]") {
 	GIVEN("a keyspace with one key of each type and a TTL") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "s", "hello", "EX", "100"}) == "+OK\r\n");
@@ -247,8 +247,8 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 	}
 }
 
-// TC-117, TC-119
-SCENARIO("A snapshot keeps absolute deadlines", "[persistence][expiry]") {
+SCENARIO("A snapshot keeps absolute deadlines",
+		 "[persistence][expiry][TC-117][TC-119]") {
 	GIVEN("a key with a fixed absolute deadline") {
 		test::Server server;
 		// The year 2100, so it cannot pass during the test.
