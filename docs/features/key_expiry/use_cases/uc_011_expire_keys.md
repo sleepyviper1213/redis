@@ -65,7 +65,8 @@ Client (redis-cli or any Redis client)
 ### A5: Amount not an integer, or out of range
 
 * Server replies `ERR value is not an integer or out of range`
-* An amount whose deadline would overflow gets `ERR invalid expire time`
+* An amount whose deadline would overflow gets `ERR invalid expire time in '<command>' command`, the command name in
+  lower case (`expire`, `pexpire`, `expireat`), as Redis words it
 
 ### A6: Replacing the value
 
@@ -98,7 +99,8 @@ Requirements: FR-006.1, FR-006.6
 * Given no key `k`, when I send `EXPIRE k 300`, then the reply is `:0` and nothing changes.
 * Given `EXPIRE k abc`, then the reply is `-ERR value is not an integer or out of range`.
 * Given an amount whose deadline would overflow a signed 64-bit millisecond count, then the reply is
-  `-ERR invalid expire time`, and the key keeps its previous deadline.
+  `-ERR invalid expire time in 'expire' command` (`'pexpire'`, `'expireat'` for the others), and the key keeps its
+  previous deadline.
 
 ### AC-02: Expire a key at a point in time
 

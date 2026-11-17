@@ -58,6 +58,15 @@ Value type(CommandContext &ctx, Args args) {
 		(object != nullptr) ? std::string_view(type_name(*object)) : "none");
 }
 
+// The command's name as Redis words it in an error: lower case.
+constexpr std::string_view expire_name(detail::ExpireUnit unit,
+									   detail::ExpireBase base) {
+	const bool seconds = unit == detail::ExpireUnit::Seconds;
+	if (base == detail::ExpireBase::Relative)
+		return seconds ? "expire" : "pexpire";
+	return seconds ? "expireat" : "pexpireat";
+}
+
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
 template <detail::ExpireUnit Unit, detail::ExpireBase Base>
@@ -68,7 +77,8 @@ Value expire_generic(CommandContext &ctx, Args args) {
 	}
 	const auto deadline = detail::expire_time(*amount, Unit, Base);
 	if (!deadline) {
-		return reply::error("ERR invalid expire time");
+		return reply::error("ERR invalid expire time in '{}' command",
+							expire_name(Unit, Base));
 	}
 	const DeadlineTimer timer = *deadline;
 	const bool applied        = ctx.db.set_expiry(args[1], timer);

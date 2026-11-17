@@ -18,7 +18,7 @@ Handler -> Handler : amount is an integer?\nseconds x 1000 + now: no overflow?
 alt not an integer
   Handler --> Client : -ERR value is not an integer or out of range
 else overflow
-  Handler --> Client : -ERR invalid expire time
+  Handler --> Client : -ERR invalid expire time in 'expire' command
 else valid
   Handler -> DB : set_expiry("session:42", now + 300 s)
   alt key missing

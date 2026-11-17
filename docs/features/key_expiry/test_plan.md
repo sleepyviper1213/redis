@@ -38,7 +38,10 @@ server and to real Redis: `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT`, `PERSIST
 short, and `TTL` and `PTTL` are compared as missing, no deadline, or "some time left", because the two servers cannot
 agree on the remaining time to the millisecond. CI runs it as a step that does not fail the job ("Differential test
 against Redis, expiry commands") until its first results have been dealt with. The scenarios marked Differential are
-covered by it in that form; the marks below stay as they are until a run against Redis confirms them.
+covered by it in that form; the marks below stay as they are until a run against Redis confirms them. The first run
+(CI run 49) found: the overflow error text (#44, fixed), `EXPIRE k 10 11` answered `Unsupported option` by Redis (#41),
+and a `DBSIZE` difference after `SET` with an already-past deadline (#45, to be confirmed). The step stays non-gating
+until #41 and #45 are settled.
 
 **Timing rules for integration tests.** Use `PEXPIRE` with a small millisecond amount, then poll with a timeout instead
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
@@ -68,7 +71,7 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 | TC-098 | Zero or negative amount          | Key `k`; `EXPIRE k 0`; again with `EXPIRE k -5`    | `:1`; `EXISTS k` is `:0`; the log records `DEL` (TC-113) | FR-006.5     | Unit, Differential   | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit |
 | TC-099 | Absolute time in the past        | Key `k`; `EXPIREAT k 1`; `PEXPIREAT k 1`           | `:1`; the key is gone                                     | FR-006.5       | Unit, Differential   | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit |
 | TC-100 | Not an integer                   | `EXPIRE k abc`; `EXPIRE k 1.5`; `PEXPIRE k ""`     | `-ERR value is not an integer or out of range`            | FR-006.6, 010  | Unit, Differential   | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit |
-| TC-101 | Deadline overflows               | `EXPIRE k 9223372036854775807`; `PEXPIRE k 9223372036854775807` | `-ERR invalid expire time`; the previous deadline is kept | FR-006.6 | Unit, Differential | `set_ttl`: "Expiry arguments that overflow the clock are rejected" | Partial |
+| TC-101 | Deadline overflows               | `EXPIRE k 9223372036854775807`; `PEXPIRE k 9223372036854775807` | `-ERR invalid expire time in 'expire' command` (`'pexpire'`, `'expireat'`; fixed in #44); the previous deadline is kept | FR-006.6 | Unit, Differential | `set_ttl`: "Expiry arguments that overflow the clock are rejected" | Partial |
 | TC-102 | `SET` with a non-positive or overflowing expiry | `SET k v EX 0`; `EX -1`; `PX 9223372036854775807` | `-ERR invalid expire time in 'set' command`; `k` unchanged | FR-006.6 | Unit, Differential | `set_ttl`: "SET option validation", "Expiry arguments that overflow the clock are rejected" | Unit |
 | TC-103 | Wrong arity                      | `EXPIRE k`; `EXPIRE k 1 2`; `TTL`; `PERSIST k x`   | `-ERR wrong number of arguments for '...' command`        | FR-010         | Unit, Differential   | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit |
 

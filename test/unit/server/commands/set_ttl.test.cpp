@@ -340,8 +340,15 @@ SCENARIO("Expiry arguments that overflow the clock are rejected",
 		CHECK(server.run({"SET", "k", "v", opt, huge}) ==
 			  "-ERR invalid expire time in 'set' command\r\n");
 	server.run({"SET", "k", "v"});
-	for (const char *cmd : {"EXPIRE", "PEXPIRE", "EXPIREAT"})
-		CHECK(server.run({cmd, "k", huge}) == "-ERR invalid expire time\r\n");
+	// Redis names the command, in lower case (#44).
+	for (const auto &[cmd, name] :
+		 {std::pair{"EXPIRE", "expire"},
+		  std::pair{"PEXPIRE", "pexpire"},
+		  std::pair{"EXPIREAT", "expireat"}})
+		CHECK(server.run({cmd, "k", huge}) ==
+			  fmt::format("-ERR invalid expire time in '{}' command\r\n", name));
+	CHECK(server.run({"EXPIRE", "k", "-9223372036854775808"}) ==
+		  "-ERR invalid expire time in 'expire' command\r\n");
 	CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
 	CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
 
