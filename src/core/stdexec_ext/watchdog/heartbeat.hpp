@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <concepts>
 #include <cstddef>
@@ -104,12 +105,14 @@ public:
 			return std::nullopt; // a beat overlapped: the fields may mix
 		if (!busy) return std::nullopt;
 
-		Beat<T, Clock> beat{.generation = sequence / 2,
-							.started =
-								time_point{typename Clock::duration{started}},
-							.subject = {}};
-		std::memcpy(&beat.subject, words.data(), sizeof(T));
-		return beat;
+		// The bytes of a T, made into one: bit_cast, not a memcpy into a T
+		// that may have default member initializers (-Wclass-memaccess).
+		std::array<std::byte, sizeof(T)> bytes;
+		std::memcpy(bytes.data(), words.data(), sizeof(T));
+		return Beat<T, Clock>{.generation = sequence / 2,
+							  .started =
+								  time_point{typename Clock::duration{started}},
+							  .subject = std::bit_cast<T>(bytes)};
 	}
 
 private:
