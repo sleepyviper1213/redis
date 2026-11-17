@@ -1,6 +1,6 @@
 #pragma once
 #include "asio_context.hpp"
-#include "core/stdexec_ext/erased.hpp"
+#include "core/stdexec_ext/task.hpp"
 #include "pipeline.hpp"
 #include "server/net/guard.hpp"
 #include "server/net/net_error.hpp"
@@ -110,10 +110,9 @@ private:
 			std::shared_ptr<Services> services, NetGuard::Ticket ticket);
 
 	// The stages of one round, each a sender. Defined in session.cpp, their
-	// only user, which is why their types can be deduced. round() is erased,
-	// though: the chain of a whole session is too deep for stdexec to compute
-	// its completion signatures in reasonable time and memory, and this is
-	// where it is cut.
+	// only user, which is why their types can be deduced. run() is a coroutine,
+	// which is where the chain of a whole session is cut: too deep otherwise for
+	// stdexec to compute its completion signatures in reasonable time and memory.
 	/// Waits for the client's next bytes, or for the idle limit. Completes with
 	/// the byte count, or with nothing once the session is over.
 	stdexec::sender auto read();
@@ -127,15 +126,12 @@ private:
 	 * session ends.
 	 */
 	stdexec::sender auto respond();
-	/// One round, as a sender built afresh each time it starts; see
-	/// round_chain().
-	[[nodiscard]] stdexec::sender auto round();
 	/// One round: read, then respond. Completes with true once the session is
 	/// over.
 	stdexec::sender auto round_chain();
 	/// Every round, until the session is over; a stop request closes the
 	/// socket (see CloseOnStop).
-	stdexec::sender auto run();
+	stdexec_ext::InlineTask<void> run();
 
 	// What the stages decide with, as plain code.
 	/// Take in \p bytes just read. Returns whether there is anything to

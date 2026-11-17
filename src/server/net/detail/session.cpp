@@ -13,7 +13,6 @@
 #include <boost/asio/post.hpp>
 #include <boost/asio/write.hpp>
 #include <exec/asio/use_sender.hpp>
-#include <exec/repeat_until.hpp>
 #include <exec/variant_sender.hpp>
 #include <spdlog/logger.h>
 
@@ -349,22 +348,16 @@ stdexec::sender auto Session::round_chain() {
 		   stdexec::then([this] { return done_; });
 }
 
-stdexec::sender auto Session::round() {
-	// Built afresh each time it starts: repeat_until restarts a copy of its
-	// child, which an erased sender is not.
-	return stdexec_ext::erased_per_start<
-		stdexec::set_value_t(bool),
-		stdexec::set_error_t(std::exception_ptr),
-		stdexec::set_stopped_t()>([this] { return round_chain(); });
-}
-
-stdexec::sender auto Session::run() {
-	return stdexec::read_env(stdexec::get_stop_token) |
-		   stdexec::let_value([this](stdexec::inplace_stop_token stop) {
-			   // Here, where the session no longer moves.
-			   close_on_stop_.arm(socket_, stop);
-			   return exec::repeat_until(round());
-		   });
+// A coroutine for the loop only, as accept_loop() is: its frame is allocated
+// once per session, and each round's operation state lives in it, so a round
+// costs no allocation. It also ends the deduced sender types here: what is
+// built on run() sees one InlineTask, not the tree of senders inside a round.
+stdexec_ext::InlineTask<void> Session::run() {
+	const stdexec::inplace_stop_token stop =
+		co_await stdexec::read_env(stdexec::get_stop_token);
+	// Here, where the session no longer moves.
+	close_on_stop_.arm(socket_, stop);
+	while (!co_await round_chain()) {}
 }
 
 SessionSender Session::serve(tcp::socket socket,
