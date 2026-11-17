@@ -14,7 +14,9 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "g++"
+                "VCPKG_TARGET_TRIPLET": "x64-linux-gcc",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/x86_64-linux-gnu-gcc.cmake"
             }
         },
         {
@@ -27,7 +29,9 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "clang++"
+                "VCPKG_TARGET_TRIPLET": "x64-linux-clang",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/x86_64-linux-gnu-clang.cmake"
             }
         },
         {
@@ -48,18 +52,25 @@
             }
         },
         {
-            "name": "asan-deps-linux",
+            "name": "asan-deps-gcc",
             "hidden": true,
             "description": "Dependencies built with -fsanitize=address, so that Abseil's poisoning and generations agree between the library and our code.",
             "cacheVariables": {
-                "VCPKG_TARGET_TRIPLET": "x64-linux-asan",
-                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets"
+                "VCPKG_TARGET_TRIPLET": "x64-linux-gcc-asan"
+            }
+        },
+        {
+            "name": "asan-deps-clang",
+            "hidden": true,
+            "description": "Dependencies built with -fsanitize=address, so that Abseil's poisoning and generations agree between the library and our code.",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-clang-asan"
             }
         },
         {
             "name": "asan-deps-macos",
             "hidden": true,
-            "description": "As asan-deps-linux, for the Homebrew LLVM triplet.",
+            "description": "As asan-deps-gcc, for the Homebrew LLVM triplet.",
             "cacheVariables": {
                 "VCPKG_TARGET_TRIPLET": "arm64-osx-llvm-asan",
                 "VCPKG_HOST_TRIPLET": "arm64-osx-llvm",

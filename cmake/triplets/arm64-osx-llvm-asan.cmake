@@ -1,5 +1,5 @@
 # Custom vcpkg triplet: arm64-osx-llvm with every port built under
-# AddressSanitizer. See x64-linux-asan.cmake for why. Selected by the
+# AddressSanitizer. See x64-linux-gcc-asan.cmake for why. Selected by the
 # aarch64-apple-darwin-llvm-asan preset (asan-deps-macos).
 set(VCPKG_TARGET_ARCHITECTURE arm64)
 set(VCPKG_CRT_LINKAGE dynamic)

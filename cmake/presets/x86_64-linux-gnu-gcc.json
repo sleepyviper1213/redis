@@ -23,7 +23,7 @@
             "displayName": "Linux GCC / AddressSanitizer",
             "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
             "inherits": [
-                "asan-deps-linux",
+                "asan-deps-gcc",
                 "dev-options",
                 "x86_64-linux-gnu-gcc-toolchain"
             ],
