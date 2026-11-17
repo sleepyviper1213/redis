@@ -9,13 +9,27 @@
         {
             "name": "macos-arm64-llvm",
             "displayName": "macOS arm64 Homebrew LLVM",
-            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "macos-llvm-toolchain"
             ],
             "cacheVariables": {
-                "REDIS_SANITIZER": "Address;Thread;Undefined;Realtime",
+                "REDIS_SANITIZER": "Thread;Undefined;Realtime",
+                "CMAKE_MAKE_PROGRAM": "/opt/homebrew/bin/ninja"
+            }
+        },
+        {
+            "name": "macos-arm64-llvm-asan",
+            "displayName": "macOS arm64 Homebrew LLVM / AddressSanitizer",
+            "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
+            "inherits": [
+                "asan-deps-macos",
+                "dev-options",
+                "macos-llvm-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address",
                 "CMAKE_MAKE_PROGRAM": "/opt/homebrew/bin/ninja"
             }
         },
@@ -64,7 +78,7 @@
         },
         {
             "name": "macos-arm64-llvm-asan",
-            "configurePreset": "macos-arm64-llvm",
+            "configurePreset": "macos-arm64-llvm-asan",
             "configuration": "AddressSanitizer"
         },
         {
@@ -105,7 +119,7 @@
         {
             "name": "macos-arm64-llvm-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "macos-arm64-llvm",
+            "configurePreset": "macos-arm64-llvm-asan",
             "configuration": "AddressSanitizer"
         },
         {
@@ -197,7 +211,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "macos-arm64-llvm"
+                    "name": "macos-arm64-llvm-asan"
                 },
                 {
                     "type": "build",

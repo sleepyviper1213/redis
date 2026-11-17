@@ -46,6 +46,25 @@
                 "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
                 "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/homebrew-llvm.cmake"
             }
+        },
+        {
+            "name": "asan-deps-linux",
+            "hidden": true,
+            "description": "Dependencies built with -fsanitize=address, so that Abseil's poisoning and generations agree between the library and our code.",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-asan",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets"
+            }
+        },
+        {
+            "name": "asan-deps-macos",
+            "hidden": true,
+            "description": "As asan-deps-linux, for the Homebrew LLVM triplet.",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-llvm-asan",
+                "VCPKG_HOST_TRIPLET": "arm64-osx-llvm",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets"
+            }
         }
     ]
 }

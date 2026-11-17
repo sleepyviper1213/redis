@@ -9,13 +9,26 @@
         {
             "name": "linux-gcc",
             "displayName": "Linux GCC",
-            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, ThreadSanitizer and UndefinedSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "linux-gcc-toolchain"
             ],
             "cacheVariables": {
-                "REDIS_SANITIZER": "Address;Thread;Undefined"
+                "REDIS_SANITIZER": "Thread;Undefined"
+            }
+        },
+        {
+            "name": "linux-gcc-asan",
+            "displayName": "Linux GCC / AddressSanitizer",
+            "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
+            "inherits": [
+                "asan-deps-linux",
+                "dev-options",
+                "linux-gcc-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address"
             }
         },
         {
@@ -63,7 +76,7 @@
         },
         {
             "name": "linux-gcc-asan",
-            "configurePreset": "linux-gcc",
+            "configurePreset": "linux-gcc-asan",
             "configuration": "AddressSanitizer"
         },
         {
@@ -99,7 +112,7 @@
         {
             "name": "linux-gcc-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "linux-gcc",
+            "configurePreset": "linux-gcc-asan",
             "configuration": "AddressSanitizer"
         },
         {
@@ -185,7 +198,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-gcc"
+                    "name": "linux-gcc-asan"
                 },
                 {
                     "type": "build",

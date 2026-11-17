@@ -9,13 +9,26 @@
         {
             "name": "linux-clang",
             "displayName": "Linux Clang",
-            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, AddressSanitizer, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
             "inherits": [
                 "dev-options",
                 "linux-clang-toolchain"
             ],
             "cacheVariables": {
-                "REDIS_SANITIZER": "Address;Thread;Undefined;Realtime"
+                "REDIS_SANITIZER": "Thread;Undefined;Realtime"
+            }
+        },
+        {
+            "name": "linux-clang-asan",
+            "displayName": "Linux Clang / AddressSanitizer",
+            "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
+            "inherits": [
+                "asan-deps-linux",
+                "dev-options",
+                "linux-clang-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address"
             }
         },
         {
@@ -63,7 +76,7 @@
         },
         {
             "name": "linux-clang-asan",
-            "configurePreset": "linux-clang",
+            "configurePreset": "linux-clang-asan",
             "configuration": "AddressSanitizer"
         },
         {
@@ -104,7 +117,7 @@
         {
             "name": "linux-clang-asan",
             "inherits": "asan-test-base",
-            "configurePreset": "linux-clang",
+            "configurePreset": "linux-clang-asan",
             "configuration": "AddressSanitizer"
         },
         {
@@ -196,7 +209,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux-clang"
+                    "name": "linux-clang-asan"
                 },
                 {
                     "type": "build",
