@@ -16,10 +16,10 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 | AC-04 | UC-011   | FR-005, FR-006.3        | NFR-010.4               | TC-104, 104a          | Yes     | None        | None         | sequence_key_expiry        |
 | AC-05 | UC-011   | FR-005, FR-006.4        | NFR-010.4               | TC-104b              | Yes     | None        | None         | state_key_expiry_lifecycle |
 | AC-06 | UC-011   | FR-006.7                | NFR-010.4               | TC-094, 095, 104c to 104e | Yes     | None      | None         | state_key_expiry_lifecycle |
-| AC-07 | UC-020   | FR-006.8                | NFR-010.1               | TC-105, 106, 106a to 106c | Yes     | None      | None         | sequence_key_expiry        |
-| AC-08 | UC-020   | FR-006.9                | NFR-010.2, 010.3, 010.6 | TC-107 to 110a        | Mostly  | None        | None         | activity_expiry_sweep      |
-| AC-09 | UC-021   | FR-006.10               | NFR-010.5, NFR-003      | TC-111 to 119         | Mostly  | None        | None         | sequence_key_expiry        |
-| AC-10 | UC-022   | FR-006.11               | NFR-010.7               | TC-120 to 122         | Mostly  | None        | None         | sequence_key_expiry        |
+| AC-07 | UC-020   | FR-006.8                | NFR-010.1               | TC-105, 106, 106a to 106c | Yes     | Partial     | None         | sequence_key_expiry        |
+| AC-08 | UC-020   | FR-006.9                | NFR-010.2, 010.3, 010.6 | TC-107 to 110a        | Mostly  | Partial     | None         | activity_expiry_sweep      |
+| AC-09 | UC-021   | FR-006.10               | NFR-010.5, NFR-003      | TC-111 to 119         | Mostly  | Partial     | None         | sequence_key_expiry        |
+| AC-10 | UC-022   | FR-006.11               | NFR-010.7               | TC-120 to 122         | Mostly  | Partial     | None         | sequence_key_expiry        |
 
 The bug #40, the unimplemented #41 and #42, and the limit by design LI-05 are not tied to a criterion; see
 [test_plan.md](test_plan.md). TC-103 (arity,

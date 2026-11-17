@@ -134,6 +134,10 @@ jobs:
         env:
           SERVER_ARGS: --io-threads 4
         run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6382
+      # Key expiry across a restart: two servers over one snapshot, and the
+      # trace log of the sweep.
+      - name: Key expiry restart test
+        run: scripts/test_expiry_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6385
       # Every reply checked against a model, then the same-key
       # linearizability race. Smaller under TSan, which is ~10x slower.
       - name: Stress test

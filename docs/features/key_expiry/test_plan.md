@@ -12,6 +12,7 @@ bulk, `-ERR ...` error).
 | Mark    | Meaning                                                                                          |
 |---------|--------------------------------------------------------------------------------------------------|
 | Unit    | A unit test whose scenario name matches; named in the *Existing test* column                     |
+| Integration | A test against a running server, alone or with a unit test ("Unit, Integration")             |
 | Gap     | No test found; to be written at the level in the *Level* column                                  |
 | Partial | A test covers part of the scenario                                                               |
 
@@ -25,6 +26,11 @@ scenario is written or run.
 | Unit         | Keyspace and command logic with no socket; time is controlled where the test can set deadlines      |
 | Integration  | A running server through hiredis: real clock, real sweep, restart                                  |
 | Differential | Replies compared with real Redis; only time-independent cases (no waiting, deadlines far ahead or already past) |
+
+**Running the integration scenarios.** Those that need one server run with the rest of the suite
+(`scripts/test_server.sh`, `test/integration/expiry.test.cpp`). Those that need a restart or the server's log are two
+hidden phases, `[restart-write]` and `[restart-verify]` in `test/integration/expiry_restart.test.cpp`, run around a
+server restart by `scripts/test_expiry_server.sh` (CI step "Key expiry restart test").
 
 **Timing rules for integration tests.** Use `PEXPIRE` with a small millisecond amount, then poll with a timeout instead
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
@@ -73,7 +79,7 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 
 | ID        | Scenario                         | Given / When                                       | Then                                                      | Req            | Level                | Existing test                              | Coverage |
 |-----------|----------------------------------|----------------------------------------------------|-----------------------------------------------------------|----------------|----------------------|--------------------------------------------|----------|
-| TC-105 | Every read sees the key missing  | `PEXPIRE k 50`; wait until 50 ms have passed; `GET`, `EXISTS`, `TYPE`, `TTL`, `LLEN`, `HGETALL` as the type allows | `$-1`/`:0`/`none`/`:-2`/empty, never the old value | FR-006.8, NFR-010.1 | Unit, Integration | `expiry`: "A key past its deadline is missing to every command" | Unit |
+| TC-105 | Every read sees the key missing  | `PEXPIRE k 50`; wait until 50 ms have passed; `GET`, `EXISTS`, `TYPE`, `TTL`, `LLEN`, `HGETALL` as the type allows | `$-1`/`:0`/`none`/`:-2`/empty, never the old value | FR-006.8, NFR-010.1 | Unit, Integration | `expiry`: "A key past its deadline is missing to every command"; integration `expiry`: "TC-105" | Unit, Integration |
 | TC-106 | `KEYS` skips a due key           | `PEXPIRE k 50`; wait; `KEYS *`                     | `k` is not listed                                         | FR-006.8       | Unit                 | `expiry`: "A key past its deadline is missing to every command" | Unit |
 | TC-106a | A write starts from empty       | A list `k` is due; `LPUSH k x`; `LRANGE k 0 -1`    | Only `x`; no `WRONGTYPE`; `TTL k` is `:-1`                | FR-006.8       | Unit                 | `expiry`: "A key past its deadline is missing to every command" | Unit |
 | TC-106b | A type change after expiry      | A string `k` is due; `LPUSH k x`                   | Succeeds, not `WRONGTYPE`                                 | FR-006.8       | Unit                 | `expiry`: "A key past its deadline is missing to every command" | Unit |
@@ -83,7 +89,7 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 
 | ID        | Scenario                         | Given / When                                       | Then                                                      | Req            | Level                | Existing test                              | Coverage |
 |-----------|----------------------------------|----------------------------------------------------|-----------------------------------------------------------|----------------|----------------------|--------------------------------------------|----------|
-| TC-107 | Unread keys are swept            | `PEXPIRE` 100 keys by 50 ms; read none; wait 300 ms | `DBSIZE` is `:0`; `expired_keys` rose by 100             | FR-006.9, NFR-010.2 | Integration     | `database`: "Expiring keys" (cycle only)   | Partial  |
+| TC-107 | Unread keys are swept            | `PEXPIRE` 100 keys by 50 ms; read none; wait 300 ms | `DBSIZE` is `:0`; `expired_keys` rose by 100             | FR-006.9, NFR-010.2 | Integration     | integration `expiry`: "TC-107"; `database`: "The active expiry cycle is bounded and takes the oldest first" (cycle only) | Integration |
 | TC-108 | The sweep is bounded             | 2500 keys all due; call the cycle with a limit of 1000 | Returns 1000; a second call 1000; a third 500; then 0 | FR-006.9, NFR-010.3 | Unit             | `database`: "The active expiry cycle is bounded and takes the oldest first" | Unit |
 | TC-109 | Oldest deadline first            | Keys due at t1 < t2 < t3; limit 2                  | The keys of t1 and t2 go; t3 stays                        | FR-006.9       | Unit                 | `database`: "The active expiry cycle is bounded and takes the oldest first" | Unit |
 | TC-110 | The sweep does not touch live keys | Mix of due, future and persistent keys; one cycle | Only the due keys go; the others and their deadlines remain | FR-006.9    | Unit                 | `database`: "The active expiry cycle is bounded and takes the oldest first" | Unit |
@@ -99,8 +105,8 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 | TC-114 | Expired key logged as `DEL`      | `--appendonly`; key expires by access; another by the sweep | The log holds `DEL` for both, once each          | FR-006.10      | Unit                 | `aof`: "A key that expires is logged as DEL, once" | Unit |
 | TC-115 | Replay does not extend a lifetime | Log `EXPIRE k 300`; restart 100 s later (or replay with a fixed clock) | `TTL k` is about 200, not 300                  | FR-006.10, NFR-010.5 | Unit, Integration | `aof`: "A replay does not extend a lifetime" | Unit |
 | TC-116 | Nothing expires during replay    | A log sets a key with a deadline already past by the time of replay, then reads it | The commands in the log see the key; expiry resumes after replay | FR-006.10 | Unit | `aof`: "A replay does not depend on when it runs" | Unit |
-| TC-117 | Snapshot keeps deadlines         | A key with a deadline; `SAVE`; restart             | After load, `TTL k` matches the remaining time            | FR-006.10, FR-011 | Unit, Integration | `snapshot`: "A snapshot keeps absolute deadlines" | Unit |
-| TC-118 | Snapshot skips keys already due  | A key with a short deadline; `SAVE`; restart after it passed | The key is not restored; `DBSIZE` excludes it   | FR-006.10      | Unit, Integration    | `snapshot`: "Snapshots round-trip every value type" (a key whose TTL passes after the snapshot) | Unit |
+| TC-117 | Snapshot keeps deadlines         | A key with a deadline; `SAVE`; restart             | After load, `TTL k` matches the remaining time            | FR-006.10, FR-011 | Unit, Integration | `snapshot`: "A snapshot keeps absolute deadlines"; integration `expiry_restart` via `scripts/test_expiry_server.sh` | Unit, Integration |
+| TC-118 | Snapshot skips keys already due  | A key with a short deadline; `SAVE`; restart after it passed | The key is not restored; `DBSIZE` excludes it   | FR-006.10      | Unit, Integration    | `snapshot`: "Snapshots round-trip every value type"; integration `expiry_restart` via `scripts/test_expiry_server.sh` | Unit, Integration |
 | TC-119 | Base of the log keeps a deadline that passed since it was written | A base holds `k` with a deadline; the deadline passes before restart; a logged command uses `k` | On startup the command sees `k`; after the replay `k` expires and a `DEL` is logged | FR-006.10, FR-012 | Unit | `snapshot`: "A snapshot keeps absolute deadlines" (`keep_expired` load); no test through the append-only file yet | Partial |
 
 ## 7. Observability and clock (AC-10)
@@ -109,7 +115,7 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 |-----------|----------------------------------|----------------------------------------------------|-----------------------------------------------------------|----------------|----------------------|--------------------------------------------|----------|
 | TC-120 | `INFO keyspace` counts deadlines | 3 keys, 2 with deadlines; `INFO keyspace`          | `db0:keys=3,expires=2`; after `PERSIST` of one, `expires=1` | FR-006.11    | Unit, Integration    | `expiry`: "INFO reports the keys with a deadline and the keys that expired" | Unit |
 | TC-121 | `INFO stats` counts expiry       | 5 keys expire (access or sweep); `INFO stats`      | `expired_keys` is 5; `FLUSHDB` does not add to it         | FR-006.11      | Unit, Integration    | `expiry`: "INFO reports the keys with a deadline and the keys that expired" | Unit |
-| TC-122 | Trace log of the sweep           | `--log-level trace`; keys expire by the sweep      | `Expired N keys` is logged; no key name appears           | FR-006.9, 3.2.3 | Integration         | None found                                 | Gap      |
+| TC-122 | Trace log of the sweep           | `--log-level trace`; keys expire by the sweep      | `Expired N keys` is logged; no key name appears           | FR-006.9, 3.2.3 | Integration         | `scripts/test_expiry_server.sh` (trace log of the sweep, no key name) with `expiry_restart` "[restart-write]" | Integration |
 | TC-123 | Deadline arithmetic saturates safely | `DeadlineTimer` near the largest time          | No overflow; the commands reject instead (TC-101)      | NFR-010.1      | Unit                 | `deadline_timer`                           | Unit     |
 
 ## Bugs, unimplemented features and limits by design
