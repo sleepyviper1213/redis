@@ -50,37 +50,56 @@ stdexec_ext::InlineTask<void> BasicListener<A>::run() {
 	using stdexec::let_value;
 	using stdexec::then;
 
-	return detail::accept_loop(detail::AcceptHooks{
-		.announce =
-			[this] {
-				boost::system::error_code bound;
-				logging::logger_for(logging::channel::net)
-					.info("Listening at {}", acceptor_.local_endpoint(bound));
-			},
-		.is_open = [this] { return acceptor_.is_open(); },
+	// On the acceptor's strand, as the loop starts.
+	boost::system::error_code bound;
+	logging::logger_for(logging::channel::net)
+		.info("Listening at {}", acceptor_.local_endpoint(bound));
+
+	/// What the loop asks of this listener; it lives in the coroutine's frame, as
+	/// long as the loop runs.
+	class Source final : public detail::AcceptSource {
+	public:
+		explicit Source(BasicListener &listener) : listener_(listener) {}
+
+		[[nodiscard]] bool is_open() const override {
+			return listener_.acceptor_.is_open();
+		}
+
 		// One accept. With several I/O threads each client gets a strand of its
 		// own, so its handlers never overlap; a single thread needs no such
 		// guarantee, and a strand would cost a lock and a queue hop on every
 		// completion. Building the operation anew on every attempt is what
 		// gives each client its own.
-		.attempt = [this]() -> detail::AcceptAttempt {
-			return just() | let_value([this] {
-					   return acceptor_.async_accept(
-						   concurrent_ ? boost::asio::any_io_executor(
-											 boost::asio::make_strand(ex_))
-									   : ex_,
+		[[nodiscard]] detail::AcceptAttempt attempt() override {
+			BasicListener &listener = listener_;
+			return just() | let_value([&listener] {
+					   return listener.acceptor_.async_accept(
+						   listener.concurrent_
+							   ? boost::asio::any_io_executor(
+									 boost::asio::make_strand(listener.ex_))
+							   : listener.ex_,
 						   exec::asio::use_sender);
 				   }) |
-				   then([this](tcp::socket client) {
-					   sessions_.serve(std::move(client), services_);
+				   then([&listener](tcp::socket client) {
+					   listener.sessions_.serve(std::move(client),
+												listener.services_);
 				   });
-		},
+		}
+
 		// The error usually persists: wait a little rather than spin on it.
-		.pause = [this]() -> detail::AcceptPause {
-			retry_timer_.expires_after(detail::ACCEPT_RETRY_DELAY);
-			return retry_timer_.async_wait(exec::asio::use_sender) |
-				   then([this] { return acceptor_.is_open(); });
-		}});
+		[[nodiscard]] detail::AcceptPause pause() override {
+			BasicListener &listener = listener_;
+			listener.retry_timer_.expires_after(detail::ACCEPT_RETRY_DELAY);
+			return listener.retry_timer_.async_wait(exec::asio::use_sender) |
+				   then([&listener] { return listener.acceptor_.is_open(); });
+		}
+
+	private:
+		BasicListener &listener_;
+	};
+
+	Source source(*this);
+	co_await detail::accept_loop(source);
 }
 
 template <Acceptor A>

@@ -21,9 +21,9 @@ void log_accept_failure(const std::exception_ptr &error) {
 // A coroutine for the loop only: it runs once per accept or failure, not per
 // request, so its frame is not on the request path. Sessions stay sender
 // chains.
-stdexec_ext::InlineTask<void> accept_loop(AcceptHooks hooks) {
-	stdexec_ext::AttemptFunc auto accept_one = [&hooks] {
-		return hooks.attempt();
+stdexec_ext::InlineTask<void> accept_loop(AcceptSource &source) {
+	stdexec_ext::AttemptFunc auto accept_one = [&source] {
+		return source.attempt();
 	};
 
 	// Transient failures (e.g. EMFILE when out of descriptors) must not kill
@@ -31,14 +31,12 @@ stdexec_ext::InlineTask<void> accept_loop(AcceptHooks hooks) {
 	// the acceptor is closed there is nothing to retry, and that is not a
 	// failure to report.
 	stdexec_ext::RetryFunc auto after_failure =
-		[&hooks](size_t, const std::exception_ptr &error) {
-			if (hooks.is_open()) log_accept_failure(error);
-			return hooks.pause();
+		[&source](size_t, const std::exception_ptr &error) {
+			if (source.is_open()) log_accept_failure(error);
+			return source.pause();
 		};
 
-	hooks.announce();
-
-	while (hooks.is_open()) {
+	while (source.is_open()) {
 		try {
 			co_await stdexec_ext::retry(accept_one, after_failure);
 		} catch (...) {

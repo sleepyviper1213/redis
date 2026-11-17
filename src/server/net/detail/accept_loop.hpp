@@ -18,7 +18,6 @@
 
 #include <chrono>
 #include <exception>
-#include <functional>
 
 namespace redis::detail {
 
@@ -36,28 +35,38 @@ using AcceptPause = stdexec_ext::ErasedSender<stdexec::set_value_t(bool),
 								 stdexec::set_error_t(std::exception_ptr),
 								 stdexec::set_stopped_t()>;
 
-/// What accept_loop() needs of the listener it serves. All run on the
-/// acceptor's strand.
-struct AcceptHooks {
-	/// Called once, as the loop starts.
-	std::function<void()> announce;
+/**
+ * \brief What accept_loop() needs of the listener it serves: when to stop, and
+ * how to accept and to wait. All run on the acceptor's strand.
+ *
+ * An interface, not a set of callables: the three belong together, and one
+ * vtable costs nothing to copy or to allocate. The listener outlives the loop.
+ */
+class AcceptSource {
+public:
 	/// Whether the acceptor is open: closing it is how the loop is told to end.
-	std::function<bool()> is_open;
+	[[nodiscard]] virtual bool is_open() const = 0;
 	/// A fresh attempt: accept one client and start its session. Called afresh
 	/// for every attempt, as that is what gives each client its own strand.
-	std::function<AcceptAttempt()> attempt;
+	[[nodiscard]] virtual AcceptAttempt attempt() = 0;
 	/// Starts the wait after a failure; completes with is_open().
-	std::function<AcceptPause()> pause;
+	[[nodiscard]] virtual AcceptPause pause() = 0;
+
+protected:
+	AcceptSource()                                = default;
+	AcceptSource(const AcceptSource &)            = default;
+	AcceptSource &operator=(const AcceptSource &) = default;
+	~AcceptSource()                               = default; // not deleted through it
 };
 
 /**
  * \brief Accepts until the acceptor is closed or a stop request arrives.
  *
  * A failed attempt is logged (unless the acceptor was closed, which is how the
- * loop is told to end), then the loop waits as hooks.pause says and tries
+ * loop is told to end), then the loop waits as source.pause() says and tries
  * again, so a transient failure does not end it. Cancellation reaches the
  * suspended co_await as set_stopped and unwinds the task without an error.
  */
-stdexec_ext::InlineTask<void> accept_loop(AcceptHooks hooks);
+stdexec_ext::InlineTask<void> accept_loop(AcceptSource &source);
 
 } // namespace redis::detail
