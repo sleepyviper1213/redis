@@ -7,7 +7,7 @@
 
 using namespace redis;
 
-SCENARIO("DeadlineTimer saturates instead of overflowing",
+SCENARIO("TC-123: DeadlineTimer saturates instead of overflowing",
 		 "[core][deadline_timer][TC-123]") {
 	constexpr auto big = std::numeric_limits<int64_t>::max();
 	constexpr auto low = std::numeric_limits<int64_t>::min();

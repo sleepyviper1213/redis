@@ -60,7 +60,7 @@ SCENARIO("Listing keys by pattern", "[commands][keyspace]") {
 	}
 }
 
-SCENARIO("Setting and clearing expiry",
+SCENARIO("TC-086, TC-091, TC-104a, TC-104b: Setting and clearing expiry",
 		 "[commands][keyspace][ttl][TC-086][TC-091][TC-104a][TC-104b]") {
 	GIVEN("a persistent key") {
 		test::Server server;

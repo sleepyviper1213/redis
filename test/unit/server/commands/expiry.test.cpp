@@ -30,7 +30,7 @@ bool contains(const std::string &text, const char *part) {
 }
 } // namespace
 
-SCENARIO("Every value type takes a deadline",
+SCENARIO("TC-090, TC-092: Every value type takes a deadline",
 		 "[commands][expiry][TC-090][TC-092]") {
 	GIVEN("a string, a list, a hash and a set") {
 		test::Server server;
@@ -62,7 +62,7 @@ SCENARIO("Every value type takes a deadline",
 	}
 }
 
-SCENARIO("Deadlines already past, invalid amounts and wrong arity",
+SCENARIO("TC-098, TC-099, TC-100, TC-103: Deadlines already past, invalid amounts and wrong arity",
 		 "[commands][expiry][TC-098][TC-099][TC-100][TC-103]") {
 	GIVEN("a key") {
 		test::Server server;
@@ -122,7 +122,7 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 	}
 }
 
-SCENARIO("Writes keep or drop a deadline",
+SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
 		 "[commands][expiry][TC-104c][TC-104d][TC-104e]") {
 	GIVEN("keys of each type, each with a deadline") {
 		test::Server server;
@@ -183,7 +183,7 @@ SCENARIO("Writes keep or drop a deadline",
 	}
 }
 
-SCENARIO("A key past its deadline is missing to every command",
+SCENARIO("TC-105, TC-106, TC-106a, TC-106b, TC-106c: A key past its deadline is missing to every command",
 		 "[commands][expiry][TC-105][TC-106][TC-106a][TC-106b][TC-106c]") {
 	GIVEN("keys of each type whose deadlines have passed, and one live key") {
 		test::Server server;
@@ -233,7 +233,7 @@ SCENARIO("A key past its deadline is missing to every command",
 	}
 }
 
-SCENARIO("INFO reports the keys with a deadline and the keys that expired",
+SCENARIO("TC-120, TC-121: INFO reports the keys with a deadline and the keys that expired",
 		 "[commands][expiry][info][TC-120][TC-121]") {
 	GIVEN("three keys, two with a deadline") {
 		test::Server server;
@@ -338,7 +338,7 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 }
 
 // TC-087, TC-088, TC-089: deadlines in the future, set by each command.
-SCENARIO("Deadlines in the future are read back in their unit",
+SCENARIO("TC-087, TC-088, TC-089: Deadlines in the future are read back in their unit",
 		 "[commands][expiry][TC-087][TC-088][TC-089]") {
 	GIVEN("a key, and PEXPIRE with 5000 milliseconds") {
 		test::Server server;

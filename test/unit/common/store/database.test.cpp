@@ -188,7 +188,7 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 // Deadlines that have passed are made without waiting: with
 // expiry off a deadline in the past is stored, not acted on, so the order and
 // the count do not depend on the clock.
-SCENARIO("The active expiry cycle is bounded and takes the oldest first",
+SCENARIO("TC-108, TC-109, TC-110: The active expiry cycle is bounded and takes the oldest first",
 		 "[storage][expiry][TC-108][TC-109][TC-110]") {
 	GIVEN("2500 keys whose deadlines have passed") {
 		Database db;

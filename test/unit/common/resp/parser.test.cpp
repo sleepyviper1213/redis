@@ -14,7 +14,7 @@ using Catch::Matchers::Equals;
 using Catch::Matchers::WithinAbs;
 using namespace redis::resp;
 
-SCENARIO("[UT-2001] Encode RESP values into wire format", "[Encode][RESP]") {
+SCENARIO("UT-2001: Encode RESP values into wire format", "[Encode][RESP]") {
 	GIVEN("various RESP values") {
 		WHEN("encoding a Simple String") {
 			const auto val     = Value::from_simple_string("OK");
@@ -104,7 +104,7 @@ SCENARIO("[UT-2001] Encode RESP values into wire format", "[Encode][RESP]") {
 	}
 }
 
-SCENARIO("[UT-2002] Decode RESP wire format into values", "[Decode][RESP]") {
+SCENARIO("UT-2002: Decode RESP wire format into values", "[Decode][RESP]") {
 	GIVEN("various RESP payloads") {
 		WHEN("decoding a Simple String") {
 			const std::string_view input = "+OK\r\n";

@@ -133,7 +133,7 @@ SCENARIO("Write commands are logged", "[aof]") {
 	}
 }
 
-SCENARIO("Commands that cannot be replayed as received",
+SCENARIO("TC-111, TC-112: Commands that cannot be replayed as received",
 		 "[aof][TC-111][TC-112]") {
 	GIVEN("a server with an append-only file") {
 		TempDir const dir;
@@ -243,7 +243,7 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 	}
 }
 
-SCENARIO("A replay does not depend on when it runs", "[aof][TC-116]") {
+SCENARIO("TC-116: A replay does not depend on when it runs", "[aof][TC-116]") {
 	GIVEN("a key that expired before the restart, and one that was persisted") {
 		TempDir const dir;
 		test::TempFile const snapshot;
@@ -617,7 +617,7 @@ size_t occurrences(const std::string &text, const std::string &part) {
 }
 } // namespace
 
-SCENARIO("A deadline already past is logged as DEL",
+SCENARIO("TC-113: A deadline already past is logged as DEL",
 		 "[aof][expiry][TC-113]") {
 	GIVEN("a server with an append-only file and a key") {
 		TempDir const dir;
@@ -639,7 +639,7 @@ SCENARIO("A deadline already past is logged as DEL",
 	}
 }
 
-SCENARIO("A key that expires is logged as DEL, once",
+SCENARIO("TC-114: A key that expires is logged as DEL, once",
 		 "[aof][expiry][TC-114]") {
 	GIVEN("two keys that expire and one that does not") {
 		TempDir const dir;
@@ -667,7 +667,7 @@ SCENARIO("A key that expires is logged as DEL, once",
 	}
 }
 
-SCENARIO("A replay does not extend a lifetime",
+SCENARIO("TC-115: A replay does not extend a lifetime",
 		 "[aof][expiry][TC-115]") {
 	GIVEN("a key set to live two seconds, restarted after part of that") {
 		TempDir const dir;

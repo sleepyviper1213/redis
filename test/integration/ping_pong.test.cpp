@@ -24,7 +24,7 @@ SCENARIO_METHOD(RedisTestFixture,
 	}
 }
 
-SCENARIO("[UT-1002] Multiple clients can independently PING and receive PONG",
+SCENARIO("UT-1002: Multiple clients can independently PING and receive PONG",
 		 "[server][ping_pong]") {
 	GIVEN("two connected clients") {
 		TestClient c1;
