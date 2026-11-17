@@ -1,5 +1,5 @@
-// Key expiry through the commands. Scenario IDs (TC-nnn, LI-nn, #n) are those of
-// docs/features/key_expiry/test_plan.md; the issue is #43.
+// Key expiry through the commands. Scenario IDs (TC-nnn, LI-nn, #n) are those
+// of docs/features/key_expiry/test_plan.md; the issue is #43.
 #include "absl/strings/match.h"
 #include "commands.fixture.hpp"
 
@@ -96,8 +96,9 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 				for (const char *cmd :
 					 {"EXPIRE", "PEXPIRE", "EXPIREAT", "PEXPIREAT"}) {
 					for (const char *amount : {"abc", "1.5", ""})
-						CHECK(server.run({cmd, "k", amount}) ==
-							  "-ERR value is not an integer or out of range\r\n");
+						CHECK(
+							server.run({cmd, "k", amount}) ==
+							"-ERR value is not an integer or out of range\r\n");
 				}
 				CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
 				CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
@@ -106,14 +107,17 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 
 		WHEN("the number of arguments is wrong") {
 			THEN("the error names the command in lower case") {
-				CHECK(server.run({"EXPIRE", "k"}) ==
-					  "-ERR wrong number of arguments for 'expire' command\r\n");
-				CHECK(server.run({"EXPIRE", "k", "1", "2"}) ==
-					  "-ERR wrong number of arguments for 'expire' command\r\n");
+				CHECK(
+					server.run({"EXPIRE", "k"}) ==
+					"-ERR wrong number of arguments for 'expire' command\r\n");
+				CHECK(
+					server.run({"EXPIRE", "k", "1", "2"}) ==
+					"-ERR wrong number of arguments for 'expire' command\r\n");
 				CHECK(server.run({"TTL"}) ==
 					  "-ERR wrong number of arguments for 'ttl' command\r\n");
-				CHECK(server.run({"PERSIST", "k", "x"}) ==
-					  "-ERR wrong number of arguments for 'persist' command\r\n");
+				CHECK(
+					server.run({"PERSIST", "k", "x"}) ==
+					"-ERR wrong number of arguments for 'persist' command\r\n");
 			}
 		}
 	}
@@ -190,7 +194,8 @@ SCENARIO("A key past its deadline is missing to every command",
 		server.run({"HSET", "hash", "f", "v"});
 		server.run({"SET", "live", "v"});
 		for (const char *key : {"str", "list", "hash"})
-			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) == ":1\r\n");
+			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) ==
+					":1\r\n");
 		std::this_thread::sleep_for(PAST_DEADLINE);
 
 		THEN("reads see them as missing") {
@@ -261,24 +266,27 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 		for (int i = 0; i < 5; ++i) {
 			const auto key = fmt::format("k{}", i);
 			server.run({"SET", key, "v"});
-			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) == ":1\r\n");
+			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) ==
+					":1\r\n");
 		}
 		std::this_thread::sleep_for(PAST_DEADLINE);
 		server.run({"GET", "k0"});
 		server.db.active_expire_cycle(100);
 
 		THEN("expired_keys is 5 and FLUSHDB adds nothing") {
-			CHECK(contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
+			CHECK(
+				contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
 			server.run({"SET", "x", "v"});
 			server.run({"FLUSHDB"});
-			CHECK(contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
+			CHECK(
+				contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
 		}
 	}
 }
 
 // Bug #40: the expectation is the correct one, and the test is expected to fail
-// until the bug is fixed. When it starts to "fail" because it passes, the bug is
-// fixed: remove [!shouldfail].
+// until the bug is fixed. When it starts to "fail" because it passes, the bug
+// is fixed: remove [!shouldfail].
 SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 		 "[commands][expiry][!shouldfail]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
@@ -294,8 +302,8 @@ SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 	}
 }
 
-// By design (LI-05), and not implemented (#41, #42). Pinned so that changing one
-// is deliberate: replace the test with a normal scenario when it changes.
+// By design (LI-05), and not implemented (#41, #42). Pinned so that changing
+// one is deliberate: replace the test with a normal scenario when it changes.
 SCENARIO("Key expiry limits by design and commands not implemented",
 		 "[commands][expiry][limit]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
@@ -316,8 +324,9 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 
 		THEN("EXPIRE takes no NX, XX, GT or LT option (#41)") {
 			for (const char *option : {"NX", "XX", "GT", "LT"})
-				CHECK(server.run({"EXPIRE", "k", "10", option}) ==
-					  "-ERR wrong number of arguments for 'expire' command\r\n");
+				CHECK(
+					server.run({"EXPIRE", "k", "10", option}) ==
+					"-ERR wrong number of arguments for 'expire' command\r\n");
 		}
 
 		THEN("EXPIRETIME and PEXPIRETIME are unknown commands (#42)") {
