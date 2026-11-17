@@ -72,13 +72,13 @@ run. The differential test (`scripts/diff_test.py`) sends `DEL`, `EXISTS`, `KEYS
 
 Coverage per use case is in [traceability.md](traceability.md).
 
-## Known limits: tests to write when they change
+## Limits by design, and a bug: tests to write when they change
 
 | ID       | Behaviour pinned                                                           | Today's result                                      |
 |----------|----------------------------------------------------------------------------|-----------------------------------------------------|
 | LI-02 | `KEYS` blocks every other client while it walks the keyspace               | A slow `KEYS` is reported by the command watchdog   |
 | LI-03 | `FLUSHDB` clears at once whatever the option                               | `ASYNC` and `SYNC` are accepted and ignored (TC-073) |
-| #40 | `DEL` of a due key not yet swept                                           | `:1` (real Redis: `:0`; tracked in #40)                  |
+| #40 | Bug: `DEL` of a due key not yet swept replies `:1` (real Redis: `:0`)      | Tested in [key_expiry](../key_expiry/test_plan.md) as expected to fail until fixed |
 
 ## Entry and exit criteria
 

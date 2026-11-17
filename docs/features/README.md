@@ -41,7 +41,7 @@ Start a new one by copying [_template/](_template/).
 IDs are serial numbers for the whole project, never reused and never renumbered, so an ID cited in an issue, a PR or
 another document means one thing. Take the next free number from the table, then update the table.
 
-| Feature | Scenarios `TC-nnn` | Known limits `LI-nn` | Design choices `DX-nn` | Criteria `AC-nn` |
+| Feature | Scenarios `TC-nnn` | Limits by design `LI-nn` (issues) | Design choices `DX-nn` | Criteria `AC-nn` |
 |---------|--------------------|----------------------|------------------------|------------------|
 | (master test plan, integration) | TC-001 to TC-027 | | | |
 | data_types | TC-028 to TC-064 | LI-01 | DX-01 to DX-09 | |
@@ -72,8 +72,9 @@ templates, or a `## Requirement` heading in the task template. The [issue index 
 `<feature>/issues.md` from the issues carrying that feature's label, and opens or updates one pull request on the branch
 `bot/issue-index`. Nothing is pushed to the default branch, and `issues.md` is never edited by hand.
 
-Documents cite an issue by number. A known limit that is by design keeps an ID `LI-nn`, the next free one below. A
-limit that is a defect or a missing feature is an issue, and `LI-nn` is not used for it. Retired for that reason, not
+Documents cite an issue by number. A limit that is by design keeps an ID `LI-nn`, the next free one below. A bug or a
+missing feature is an issue, and `LI-nn` is not used for it. A bug's test states the correct behaviour and is tagged
+`[!shouldfail]` until the fix; a missing feature's test pins today's reply. Retired for that reason, not
 reused: LI-04, LI-06, LI-07, LI-08 (now #40, #40, #41, #42).
 
 ## What stays outside the folder

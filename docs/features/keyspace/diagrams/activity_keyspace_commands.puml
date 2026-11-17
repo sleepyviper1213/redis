@@ -4,7 +4,7 @@ title Keyspace Commands - Redis-like Server
 ' DEL, EXISTS, KEYS, TYPE, DBSIZE and FLUSHDB against the keyspace. All run on
 ' the keyspace thread, so none races another. A key past its deadline is
 ' removed lazily only by a lookup (find); DEL, KEYS and DBSIZE do not look
-' it up, which is the known limit in docs/features/key_expiry/README.md.
+' it up, which is bug #40 (docs/features/key_expiry/README.md).
 
 start
 :Command arrives, arity already checked;

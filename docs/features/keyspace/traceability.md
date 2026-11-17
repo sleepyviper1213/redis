@@ -14,7 +14,7 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 | UC-012   | FR-005, FR-006, FR-010 | NFR-001, NFR-004 | TC-076 to 084           | Partial: `keyspace`, `glob`; `TYPE` of hash and set, empty `KEYS`, arity are gaps | None                          | Differential `KEYS *`, `EXISTS`, `TYPE`, `DBSIZE`       |
 
 The `TTL`, `PTTL` and `PERSIST` commands of FR-005 are scenario TC-085 here and TC-104a, 104b in
-[key_expiry](../key_expiry/test_plan.md). The known limits LI-02, LI-03 and #40 are not tied to a use case; they pin
+[key_expiry](../key_expiry/test_plan.md). The limits by design LI-02 and LI-03, and the bug #40, are not tied to a use case; they pin
 today's behaviour.
 
 ## Non-functional requirements and how each is checked

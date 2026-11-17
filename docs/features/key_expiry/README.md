@@ -45,19 +45,25 @@ options (AC-03) belong to this feature.
 * The sweep: [activity_expiry_sweep.puml](diagrams/activity_expiry_sweep.puml)
 * Use cases overview (global): [use_case.puml](../../analysis/diagrams/use_case.puml)
 
-## Constraints and known limits
+## Bugs, unimplemented features and limits by design
 
-These describe the specified behaviour as it stands; changing one is a change to this feature.
+**Bug** (tracked, tested as expected to fail until fixed):
 
+* #40: `DEL` removes a due key without first checking its deadline, so it replies `:1` for a key that other commands
+  already see as missing. Redis replies `:0`.
+
+**Not implemented** (tracked):
+
+* #41: the `EXPIRE` family takes no `NX`, `XX`, `GT` or `LT` option.
+* #42: there are no `EXPIRETIME` or `PEXPIRETIME` commands.
+
+**By design** (changing one is a change to this feature):
+
+* LI-05: a key past its deadline stays in memory until it is accessed or swept, so `DBSIZE` and `expires` may count
+  it, as in Redis.
 * Deadlines use the wall clock, since `EXPIREAT`, `PXAT` and snapshots name calendar times. A clock set backwards
   extends lifetimes, and one set forwards shortens them.
-* The `EXPIRE` family takes no `NX`, `XX`, `GT` or `LT` option, and there are no `EXPIRETIME` or `PEXPIRETIME`
-  commands.
 * Only one database exists, so expiry has no database dimension.
-* A key past its deadline stays in memory until it is accessed or swept, so `DBSIZE` and `expires` may count it.
-* `DEL` removes a due key without first checking its deadline, so it may reply `:1` for a key that other commands
-  already see as missing.
 * Expiry is not replicated; there is no replication (SRS section 1.2.2).
 
-Each limit is pinned by a scenario in [test_plan.md](test_plan.md). LI-05 is by design. The other three are tracked
-issues: #40 (`DEL` of a due key), #41 (`NX`/`XX`/`GT`/`LT`) and #42 (`EXPIRETIME`/`PEXPIRETIME`).
+How each is tested is in [test_plan.md](test_plan.md).

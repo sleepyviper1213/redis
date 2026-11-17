@@ -112,20 +112,23 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 | TC-122 | Trace log of the sweep           | `--log-level trace`; keys expire by the sweep      | `Expired N keys` is logged; no key name appears           | FR-006.9, 3.2.3 | Integration         | None found                                 | Gap      |
 | TC-123 | Deadline arithmetic saturates safely | `DeadlineTimer` near the largest time          | No overflow; the commands reject instead (TC-101)      | NFR-010.1      | Unit                 | `deadline_timer`                           | Unit     |
 
-## Known limits: tests to write when they change
+## Bugs, unimplemented features and limits by design
 
-Pinned today by `expiry`: "Known limits of key expiry, as they stand" (`test/unit/server/commands/expiry.test.cpp`).
+Three kinds of behaviour that differ from what a reader might expect, each handled differently. The tests are in
+`test/unit/server/commands/expiry.test.cpp`. Issues are listed in [issues.md](issues.md).
 
-These behaviours are in the specification as they stand. A test that pins them makes a later change deliberate.
-A limit that is by design has an ID `LI-nn`; one that is a defect or a missing feature is tracked as a GitHub issue
-and cited by its number (list: [issues.md](issues.md)).
+| Kind | Meaning | ID | Test |
+|------|---------|----|------|
+| Bug | The server breaks a requirement or differs from Redis without intent | Issue number | The **correct** expectation, tagged `[!shouldfail]`; when the bug is fixed the test starts to pass and the tag is removed |
+| Not implemented | A feature or option Redis has and the server lacks | Issue number | Pins today's reply; replaced by normal scenarios when the feature is added |
+| By design | A deliberate limitation, the same as Redis or documented as accepted | `LI-nn` | Pins today's behaviour |
 
-| ID        | Behaviour pinned                                                          | Given / When                                  | Today's result                                      |
-|-----------|---------------------------------------------------------------------------|-----------------------------------------------|-----------------------------------------------------|
-| LI-05 | `DBSIZE` counts a due key not yet swept                                   | A key is due; sweep not yet run; `DBSIZE`     | The key is counted                                  |
-| #40 | `DEL` of a due key not yet swept                                          | A key is due; `DEL k`                         | `:1` (real Redis: `:0`)                             |
-| #41 | No `NX`/`XX`/`GT`/`LT` on `EXPIRE`                                        | `EXPIRE k 10 NX`                              | `-ERR wrong number of arguments for 'expire' command` |
-| #42 | No `EXPIRETIME`/`PEXPIRETIME`                                             | `EXPIRETIME k`                                | `-ERR unknown command 'EXPIRETIME'` (as the server words it) |
+| ID    | Kind            | Behaviour                                             | Given / When                              | Today's result                                        | Test |
+|-------|-----------------|-------------------------------------------------------|-------------------------------------------|-------------------------------------------------------|------|
+| #40   | Bug             | `DEL` of a due key not yet swept replies `:1`         | A key is due; `DEL k`                     | `:1`; expected `:0` and `expired_keys` + 1 (as Redis) | "DEL of a key past its deadline replies 0, as Redis does (#40)", `[!shouldfail]` |
+| #41   | Not implemented | No `NX`/`XX`/`GT`/`LT` on `EXPIRE`                    | `EXPIRE k 10 NX`                          | `-ERR wrong number of arguments for 'expire' command` | "Key expiry limits by design and commands not implemented" |
+| #42   | Not implemented | No `EXPIRETIME`/`PEXPIRETIME`                         | `EXPIRETIME k`                            | `-ERR unknown command 'EXPIRETIME'` (as the server words it) | same |
+| LI-05 | By design       | `DBSIZE` counts a due key not yet swept (as Redis)    | A key is due; sweep not yet run; `DBSIZE` | The key is counted                                    | same |
 
 ## Coverage summary
 

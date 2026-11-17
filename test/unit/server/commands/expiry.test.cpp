@@ -276,9 +276,28 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 	}
 }
 
-// Known limits, pinned so that changing one is deliberate. Replace each test
-// with a normal scenario when its issue is fixed.
-SCENARIO("Known limits of key expiry, as they stand", "[commands][expiry][limit]") {
+// Bug #40: the expectation is the correct one, and the test is expected to fail
+// until the bug is fixed. When it starts to "fail" because it passes, the bug is
+// fixed: remove [!shouldfail].
+SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
+		 "[commands][expiry][!shouldfail]") {
+	GIVEN("a key whose deadline has passed but which nothing has removed") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		make_due(server, "k");
+
+		THEN("DEL finds no key, and the key counts as expired") {
+			const auto before = server.db.expired_keys();
+			CHECK(server.run({"DEL", "k"}) == ":0\r\n");
+			CHECK(server.db.expired_keys() == before + 1);
+		}
+	}
+}
+
+// By design (LI-05), and not implemented (#41, #42). Pinned so that changing one
+// is deliberate: replace the test with a normal scenario when it changes.
+SCENARIO("Key expiry limits by design and commands not implemented",
+		 "[commands][expiry][limit]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
@@ -288,16 +307,6 @@ SCENARIO("Known limits of key expiry, as they stand", "[commands][expiry][limit]
 			CHECK(server.run({"DBSIZE"}) == ":1\r\n");
 			server.db.active_expire_cycle(100);
 			CHECK(server.run({"DBSIZE"}) == ":0\r\n");
-		}
-	}
-
-	GIVEN("a key whose deadline has passed, DEL not looking at it first") {
-		test::Server server;
-		server.run({"SET", "k", "v"});
-		make_due(server, "k");
-
-		THEN("DEL replies 1; Redis replies 0 (#40)") {
-			CHECK(server.run({"DEL", "k"}) == ":1\r\n");
 		}
 	}
 
