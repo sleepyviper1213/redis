@@ -1,0 +1,63 @@
+@startuml
+title Command Registration and Dispatch - Redis-like Server
+
+' How a command gets into the server and how a request reaches it
+' (DX-EXT-1 to DX-EXT-8). Adding a command is one CommandInfo row and one
+' function; the handler and the dispatcher do not change.
+
+start
+
+partition "Registration (CommandHandler constructor, once)" {
+  :Each family file defines its own table of CommandInfo rows
+  {name, fn, arity, write}
+  and an accessor that returns it as a span;
+  note right
+    Families: string_commands(), keyspace_commands(),
+    list_commands(), set_commands(), hash_commands(),
+    server_commands().
+  end note
+  :Take the tables in that order, then the optional "extra" span
+  (used by tests for a command the server does not have);
+  repeat
+    :Take the next row;
+    :commands_.insert_or_assign(name, row);
+    note right
+      A later row with the same name replaces the earlier one,
+      so "extra" wins a name clash.
+    end note
+  repeat while (More rows?) is (yes)
+  -> no;
+}
+
+partition "Dispatch (one request)" {
+  :execute(ctx, args, out) logs "Query: <name> (<n> args)" at trace;
+  if (Request empty?) then (yes)
+    :Reply "ERR Protocol error: expected a non-empty array of bulk strings";
+  else (no)
+    :Upper-case the name into a fixed 32-byte buffer
+    (a longer name is not looked up);
+    if (Name in the hash table?) then (no)
+      :Reply "ERR unknown command '<name>', with args beginning with: ...";
+    else (yes)
+      if (Arity matches?\n(n >= 0: exactly n arguments,\nn < 0: at least -n)) then (no)
+        :Reply "ERR wrong number of arguments for '<cmd>' command";
+      else (yes)
+        :Record the running command (for the watchdog and a crash report);
+        :Call the command's function with the context and the arguments;
+        :Count the call and its time (INFO commandstats);
+        :Reply what the function returned;
+      endif
+    endif
+  endif
+  :Append the encoded reply to the batch's output;
+  if (Append-only file on?) then (yes)
+    if (A command ran, its row has write set,\nand the reply is not an error?) then (yes)
+      :Log the command to the append-only file
+      (or its deterministic equivalent);
+    endif
+  endif
+  :Log "Response: <n> bytes" at trace;
+}
+
+stop
+@enduml

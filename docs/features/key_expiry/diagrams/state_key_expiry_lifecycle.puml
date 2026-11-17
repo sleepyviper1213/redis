@@ -1,0 +1,42 @@
+@startuml
+title Key Expiry Lifecycle - Redis-like Server
+
+' The life of one key with respect to its deadline (FR-006).
+' "Due" is a key whose deadline has passed but which the sweep has not yet
+' removed: it is still in memory, but no command can observe it.
+
+[*] --> Persistent : key created\n(SET, LPUSH, HSET, SADD ...)
+
+state Persistent : no deadline\nTTL = -1
+state Volatile   : deadline in the future\nTTL = seconds left
+state Due        : deadline passed, still in memory\nlooks missing to every command
+state Gone       : not in the keyspace\nTTL = -2
+
+Persistent --> Volatile : EXPIRE / PEXPIRE / EXPIREAT / PEXPIREAT\nSET ... EX / PX / EXAT / PXAT
+Volatile   --> Volatile : a new deadline replaces the old one
+Volatile   --> Persistent : PERSIST\nSET without KEEPTTL, MSET
+Volatile   --> Volatile : INCR, APPEND, LPUSH, HSET ...\nand SET ... KEEPTTL keep the deadline
+
+Persistent --> Gone : deadline already past\n(amount <= 0, or EXPIREAT in the past)
+Volatile   --> Gone : deadline already past\n(amount <= 0, or EXPIREAT in the past)
+
+Volatile --> Due : the clock passes the deadline
+Due --> Gone : lazy: the next command that\nlooks the key up removes it
+Due --> Gone : active: the sweep removes it\n(every 100 ms, up to 1000 keys,\noldest deadline first)
+
+Persistent --> Gone : DEL, FLUSHDB
+Volatile   --> Gone : DEL, FLUSHDB
+Gone --> [*]
+
+note right of Due
+  Counted in expired_keys when removed.
+  DBSIZE and INFO keyspace "expires" still
+  include it until it is removed.
+end note
+
+note bottom of Gone
+  Removal by expiry is logged as DEL in the
+  append-only file (--appendonly).
+end note
+
+@enduml

@@ -1,0 +1,43 @@
+@startuml
+title Active Expiry Sweep - Redis-like Server
+
+' The periodic part of FR-006. It runs on the keyspace thread, between
+' commands, so it cannot race with them; the bound keeps it short.
+
+start
+:Wait CRON_PERIOD (100 ms);
+:Hop to the keyspace thread;
+
+if (expiry enabled?\n(off only while replaying the log)) then (no)
+  :Remove nothing;
+else (yes)
+  :removed = 0;
+  while (removed < 1000\nand a key has a deadline\nand the oldest deadline <= now?) is (yes)
+    :Take the key with the oldest deadline;
+    :Erase the key, its value and its deadline;
+    :expired_keys++;
+    if (append-only file on?) then (yes)
+      :Remember the key to log as DEL;
+    endif
+    :removed++;
+  endwhile (no)
+  if (removed > 0) then (yes)
+    :Log "Expired N keys" (trace);
+  endif
+endif
+
+:Sample statistics, poll persistence;
+if (append-only file on?) then (yes)
+  :Append DEL for each remembered key;
+  :Flush the batch, poll fsync;
+endif
+:Hop back to the event loop;
+
+note right
+  If more than 1000 keys are due, the rest
+  wait for the next run, so the sweep never
+  holds up commands for long.
+end note
+
+stop
+@enduml

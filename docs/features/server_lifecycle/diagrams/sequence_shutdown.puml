@@ -1,0 +1,66 @@
+@startuml
+title Server Shutdown - Redis-like Server
+
+' The order of a stop (SDD 11.2, 14.3; UC-017). serve() races the accept
+' loop, housekeeping and the wait for a signal; sessions are outside the race
+' and are drained through the listener's counting scope afterwards.
+' Thread hops are in the connection feature's
+' sequence_threads_request_and_shutdown.puml; this one shows the steps.
+
+actor Operator
+participant "serve()\n(race)" as Serve
+participant "Listener\n(accept loop,\ncounting scope)" as Listener
+participant "Sessions" as Sessions
+participant "RedisServer::run()" as Run
+participant "Keyspace\n(Executor)" as KS
+participant "SnapshotManager" as Snap
+participant "AppendOnlyFile\n(--appendonly)" as Aof
+participant "main()" as Main
+
+== A signal, or a failure, ends the race ==
+Operator -> Serve : SIGINT or SIGTERM
+Serve -> Serve : log "Received SIGTERM, shutting down"
+note over Serve
+  The first of the accept loop, housekeeping and the signal
+  to finish cancels the other two through the stop token.
+  A failed accept loop or housekeeping (FailFast) ends the server
+  the same way, with its error recorded.
+end note
+
+== Stop accepting, drain sessions ==
+Serve -> Listener : stop(): close the acceptor,\ncancel the sessions via the scope's stop token
+Listener -> Sessions : stop token
+Sessions -> Sessions : each session unwinds;\nunsent replies are dropped
+Serve -> Listener : co_await drained()
+Listener --> Serve : every session has finished
+Serve -> Serve : io.stop()
+
+== Final steps, after the I/O threads have joined ==
+Serve --> Run : event loop returns
+alt an I/O thread failed
+  Run --> Main : ServerError (WorkerFailed)
+else
+  Run -> KS : stop(): wait for the executing batch
+  Run -> Snap : cancel_background_save()
+  note right of Snap
+    A running BGSAVE would make the final save fail
+    ("already in progress"), and its snapshot
+    predates the latest writes.
+  end note
+  opt --appendonly
+    Run -> Aof : cancel_rewrite()
+    Run -> Aof : close(): flush, sync, release the lock
+  end
+  Run -> Snap : save(db): atomic replacement of --dump
+  alt saved
+    Run -> Run : log "Redis is now ready to exit, bye bye..."
+    Run --> Main : ok
+    Main --> Operator : exit status 0
+  else save failed
+    Run --> Main : ServerError (FinalSaveFailed)
+    Main -> Main : log critical "final snapshot failed: <reason>"
+    Main --> Operator : exit status non-zero (EXIT_FAILURE),\nprevious snapshot left in place
+  end
+end
+
+@enduml

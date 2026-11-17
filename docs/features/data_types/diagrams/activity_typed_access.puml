@@ -1,0 +1,58 @@
+@startuml
+title Typed Access to a Value - Redis-like Server
+
+' How a command reaches a value (SDD 6.3, DX-DT-2, DX-DT-3). A command never
+' sees a value of the wrong type: the lookup either gives the right type,
+' nothing, or a WrongType failure that the command turns into an error reply.
+' Strings use find_string / find_or_create_string, which work the same way.
+
+start
+:A command (HSET, LPUSH, HGET, SREM ...)
+looks up its key by name;
+
+if (Command writes a new collection?\n(HSET, LPUSH, RPUSH, SADD, APPEND)) then (yes)
+  :find_or_create<T>(key)
+  (find_or_create_string for APPEND);
+else (no)
+  :find_as<T>(key)
+  (find_string for string reads);
+endif
+
+:find(key): a key past its deadline\nis erased and looks missing;
+
+if (Key exists?) then (no)
+  if (find_or_create?) then (yes)
+    :Create an empty T under the key;
+    :Return the new value;
+  else (no)
+    :Return nullptr;
+    :Read commands reply as for an empty value
+    (nil, 0, empty array);
+    stop
+  endif
+else (yes)
+  if (Value is of type T?) then (yes)
+    :Return the value;
+  else (no)
+    :Return the WrongType failure;
+    :Reply "WRONGTYPE Operation against a key\nholding the wrong kind of value";
+    note right
+      MGET is the exception: it replies nil
+      for a key of another type, as Redis does.
+    end note
+    stop
+  endif
+endif
+
+:The command reads or changes the value;
+
+if (Command removes elements?\n(LPOP, RPOP, HDEL, SREM, SPOP)) then (yes)
+  :erase_if_empty(key);
+  if (List, set or hash now empty?) then (yes)
+    :Erase the key and its deadline;
+  endif
+endif
+:Reply;
+
+stop
+@enduml

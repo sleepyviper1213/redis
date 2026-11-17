@@ -1,0 +1,83 @@
+@startuml
+title Keyspace Commands - Redis-like Server
+
+' DEL, EXISTS, KEYS, TYPE, DBSIZE and FLUSHDB against the keyspace. All run on
+' the keyspace thread, so none races another. A key past its deadline is
+' removed lazily only by a lookup (find); DEL, KEYS and DBSIZE do not look
+' it up, which is the known limit in docs/features/key_expiry/README.md.
+
+start
+:Command arrives, arity already checked;
+
+switch (Command?)
+case ( DEL k1 k2 ... )
+  :removed = 0;
+  repeat
+    :erase(key): drop its deadline, then its value
+    (no deadline check first);
+    if (Key was in the table?) then (yes)
+      :removed++;
+    endif
+  repeat while (More keys?) is (yes)
+  :Reply ":<removed>";
+  note right
+    A key past its deadline that the sweep has not
+    reached is still in the table, so DEL counts it
+    and replies :1, though GET, EXISTS and TYPE
+    already see it as missing.
+  end note
+case ( EXISTS k1 k2 ... )
+  :count = 0;
+  repeat
+    :contains(key), which is find(key);
+    if (Key past its deadline?) then (yes)
+      :Erase it and its deadline, expired_keys++;
+      :Not counted;
+    elseif (Key in the table?) then (yes)
+      :count++;
+    else (no)
+      :Not counted;
+    endif
+  repeat while (More keys?) is (yes)
+  :Reply ":<count>"
+  (a key named twice counts twice);
+case ( TYPE key )
+  :find(key), removing it first if past its deadline;
+  if (Key found?) then (yes)
+    :Reply "+string", "+list", "+hash" or "+set";
+  else (no)
+    :Reply "+none";
+  endif
+case ( KEYS pattern )
+  :Walk every key in the table;
+  if (Key past its deadline?) then (yes)
+    :Skip it (not removed, not matched);
+  elseif (glob_match(pattern, key)?) then (yes)
+    :Collect it;
+  else (no)
+    :Skip it;
+  endif
+  :Reply with the collected keys as an array of bulk strings
+  (empty array if none match, order undefined);
+  note right
+    Visits every key and holds the keyspace thread
+    meanwhile, so other clients wait.
+  end note
+case ( DBSIZE )
+  :Reply ":<number of keys in the table>";
+  note right
+    Counts keys past their deadline that
+    nothing has removed yet.
+  end note
+case ( FLUSHDB, with or without arguments )
+  :clear(): drop every value,
+  every deadline and the deadline index;
+  :Reply "+OK";
+  note right
+    expired_keys is not changed:
+    nothing here expired.
+  end note
+endswitch
+
+stop
+@enduml

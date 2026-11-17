@@ -1,0 +1,104 @@
+@startuml
+title Logging Pipeline - Redis-like Server
+
+' From a log call to the sinks, and the parts around it (SDD 5.1, 14.1;
+' DX-OBS-6 to DX-OBS-11). Set-up is in main(); the level can change while the
+' server runs. The watchdog and the crash report are separate paths.
+
+start
+:main() creates the logging guard
+with --log-level and --log-file, and the four channels;
+
+:init(): build the sinks
+(stderr, and --log-file if it can be opened);
+if (Log file cannot be opened?) then (yes)
+  :Keep stderr only and log a warning
+  "log file ... unavailable ...; stderr only";
+endif
+:Build an asynchronous logger:
+a bounded queue (8192 lines) and one worker thread;
+:Make the channels server, net, commands and persistence
+as clones of that logger (same sinks, level and pattern);
+if (Level name recognised?) then (no)
+  :Fall back to info and log a warning
+  "unknown log level ...; falling back to info";
+endif
+:install_crash_handler(--log-file);
+
+note right
+  Channels: server (startup, shutdown, signals, cron),
+  net (connections), commands (requests and replies, trace),
+  persistence (snapshot loads, SAVE, BGSAVE, AOF).
+end note
+
+partition "A log call, on any thread" {
+  :logger_for(channel).<level>(...);
+  if (Level at or above the channel's level?) then (no)
+    :Dropped, nearly free;
+  else (yes)
+    :The arguments are formatted into the message;
+    :Enqueue the line for the worker;
+    if (Queue full?) then (yes)
+      :The oldest queued line is dropped;
+      note right
+        The caller never blocks: the queue fills
+        when the server is busiest.
+      end note
+    endif
+    if (Level warning or above?) then (yes)
+      :Flush at once;
+    endif
+  endif
+}
+
+partition "Logger worker thread" {
+  :Take the next line off the queue;
+  :Format "[time] [channel] [level] text";
+  :Write to stderr;
+  :Write to --log-file, if there is one;
+}
+
+partition "Level change while running" {
+  :Client sends CONFIG SET loglevel <level>
+  (only with --enable-config-set);
+  if (Level name valid?) then (yes)
+    :Set the level of the default logger
+    and of every channel;
+    :Log "Log level changed to <level> by CONFIG SET"
+    (warning, server channel);
+    :Reply +OK;
+  else (no)
+    :Reply "-ERR Invalid argument '<x>' for CONFIG SET 'loglevel'";
+  endif
+}
+
+partition "Command watchdog thread (--watchdog-ms above 0)" {
+  :Every 100 ms, read the running-command record;
+  if (A command has run past --watchdog-ms?) then (yes)
+    :Warn once per command, on the server channel:
+    "Command '<name>' (<n> args) has been running for <ms> ms;
+    no other command runs until it ends";
+  endif
+}
+
+partition "Crash (POSIX only)" {
+  :Fatal signal or uncaught exception;
+  :Write "=== REDIS BUG REPORT START" ... "END" with write(2)
+  to stderr and --log-file, not through the logger
+  (signal, address, pid, running command, backtrace);
+  :Run the signal's default action
+  (core dump where enabled);
+  note right
+    The async queue dies with the process,
+    so the report bypasses it.
+  end note
+}
+
+partition "Exit" {
+  :The guard's destructor calls shutdown():
+  flush, join the worker (it writes what is still queued),
+  then drop the loggers;
+}
+
+stop
+@enduml

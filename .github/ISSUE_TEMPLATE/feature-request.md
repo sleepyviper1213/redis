@@ -13,3 +13,8 @@ Include a basic example or links here.
 
 ### Motivation
 Why are we doing this? What use cases does it support? What is the expected outcome?
+
+### Additional context
+**Requirement:** <!-- FR-xxx / NFR-xxx. Also add a `feat:<folder>` label (docs/features/). -->
+
+Add any other context here.
