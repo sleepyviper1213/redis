@@ -30,8 +30,8 @@ bool contains(const std::string &text, const char *part) {
 }
 } // namespace
 
-SCENARIO("TC-090, TC-092: Every value type takes a deadline",
-		 "[commands][expiry][TC-090][TC-092]") {
+SCENARIO("Every value type takes a deadline",
+		 "[commands][expiry]") {
 	GIVEN("a string, a list, a hash and a set") {
 		test::Server server;
 		server.run({"SET", "str", "v"});
@@ -39,7 +39,7 @@ SCENARIO("TC-090, TC-092: Every value type takes a deadline",
 		server.run({"HSET", "hash", "f", "v"});
 		server.run({"SADD", "set", "m"});
 
-		WHEN("each gets a deadline") {
+		WHEN("TC-090: each gets a deadline") {
 			THEN("EXPIRE replies 1 and the key keeps its type") {
 				for (const char *key : {"str", "list", "hash", "set"})
 					CHECK(server.run({"EXPIRE", key, "100"}) == ":1\r\n");
@@ -51,7 +51,7 @@ SCENARIO("TC-090, TC-092: Every value type takes a deadline",
 			}
 		}
 
-		WHEN("a key has a deadline and gets another") {
+		WHEN("TC-092: a key has a deadline and gets another") {
 			server.run({"EXPIRE", "str", "100"});
 			server.run({"EXPIRE", "str", "500"});
 
@@ -62,13 +62,13 @@ SCENARIO("TC-090, TC-092: Every value type takes a deadline",
 	}
 }
 
-SCENARIO("TC-098, TC-099, TC-100, TC-103: Deadlines already past, invalid amounts and wrong arity",
-		 "[commands][expiry][TC-098][TC-099][TC-100][TC-103]") {
+SCENARIO("Deadlines already past, invalid amounts and wrong arity",
+		 "[commands][expiry]") {
 	GIVEN("a key") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
 
-		WHEN("the amount is zero or negative") {
+		WHEN("TC-098: the amount is zero or negative") {
 			THEN("the key is deleted at once and the reply is 1") {
 				for (const char *cmd : {"EXPIRE", "PEXPIRE"}) {
 					for (const char *amount : {"0", "-5"}) {
@@ -80,7 +80,7 @@ SCENARIO("TC-098, TC-099, TC-100, TC-103: Deadlines already past, invalid amount
 			}
 		}
 
-		WHEN("the absolute time is in the past") {
+		WHEN("TC-099: the absolute time is in the past") {
 			THEN("the key is deleted at once and the reply is 1") {
 				for (const char *cmd : {"EXPIREAT", "PEXPIREAT"}) {
 					server.run({"SET", "k", "v"});
@@ -90,7 +90,7 @@ SCENARIO("TC-098, TC-099, TC-100, TC-103: Deadlines already past, invalid amount
 			}
 		}
 
-		WHEN("the amount is not an integer") {
+		WHEN("TC-100: the amount is not an integer") {
 			THEN("it is rejected and the key is unchanged") {
 				for (const char *cmd :
 					 {"EXPIRE", "PEXPIRE", "EXPIREAT", "PEXPIREAT"}) {
@@ -104,7 +104,7 @@ SCENARIO("TC-098, TC-099, TC-100, TC-103: Deadlines already past, invalid amount
 			}
 		}
 
-		WHEN("the number of arguments is wrong") {
+		WHEN("TC-103: the number of arguments is wrong") {
 			THEN("the error names the command in lower case") {
 				CHECK(
 					server.run({"EXPIRE", "k"}) ==
@@ -122,8 +122,8 @@ SCENARIO("TC-098, TC-099, TC-100, TC-103: Deadlines already past, invalid amount
 	}
 }
 
-SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
-		 "[commands][expiry][TC-104c][TC-104d][TC-104e]") {
+SCENARIO("Writes keep or drop a deadline",
+		 "[commands][expiry]") {
 	GIVEN("keys of each type, each with a deadline") {
 		test::Server server;
 		server.run({"SET", "n", "1"});
@@ -133,7 +133,7 @@ SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
 		for (const char *key : {"n", "list", "hash", "set"})
 			server.run({"EXPIRE", key, "100"});
 
-		WHEN("they are changed in place") {
+		WHEN("TC-104c: they are changed in place") {
 			server.run({"INCR", "n"});
 			server.run({"APPEND", "n", "0"});
 			server.run({"LPUSH", "list", "y"});
@@ -146,7 +146,7 @@ SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
 			}
 		}
 
-		WHEN("a string is replaced by SET or MSET") {
+		WHEN("TC-104d: a string is replaced by SET or MSET") {
 			server.run({"SET", "n", "2"});
 
 			THEN("SET clears the deadline") {
@@ -163,7 +163,7 @@ SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
 			}
 		}
 
-		WHEN("a key is deleted and created again") {
+		WHEN("TC-104e: a key is deleted and created again") {
 			server.run({"DEL", "n"});
 			server.run({"SET", "n", "1"});
 
@@ -172,7 +172,7 @@ SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
 			}
 		}
 
-		WHEN("the keyspace is flushed and a key is created again") {
+		WHEN("TC-104e: the keyspace is flushed and a key is created again") {
 			server.run({"FLUSHDB"});
 			server.run({"SET", "list", "v"});
 
@@ -183,8 +183,8 @@ SCENARIO("TC-104c, TC-104d, TC-104e: Writes keep or drop a deadline",
 	}
 }
 
-SCENARIO("TC-105, TC-106, TC-106a, TC-106b, TC-106c: A key past its deadline is missing to every command",
-		 "[commands][expiry][TC-105][TC-106][TC-106a][TC-106b][TC-106c]") {
+SCENARIO("A key past its deadline is missing to every command",
+		 "[commands][expiry]") {
 	GIVEN("keys of each type whose deadlines have passed, and one live key") {
 		test::Server server;
 		server.run({"SET", "str", "v"});
@@ -196,24 +196,24 @@ SCENARIO("TC-105, TC-106, TC-106a, TC-106b, TC-106c: A key past its deadline is 
 					":1\r\n");
 		std::this_thread::sleep_for(PAST_DEADLINE);
 
-		THEN("reads see them as missing") {
+		THEN("TC-105: reads see them as missing") {
 			CHECK(server.run({"GET", "str"}) == "$-1\r\n");
 			CHECK(server.run({"LLEN", "list"}) == ":0\r\n");
 			CHECK(server.run({"HGETALL", "hash"}) == "*0\r\n");
 		}
 
-		THEN("EXISTS, TYPE, TTL and PTTL see them as missing") {
+		THEN("TC-105: EXISTS, TYPE, TTL and PTTL see them as missing") {
 			CHECK(server.run({"EXISTS", "str", "list", "hash"}) == ":0\r\n");
 			CHECK(server.run({"TYPE", "str"}) == "+none\r\n");
 			CHECK(server.run({"TTL", "list"}) == ":-2\r\n");
 			CHECK(server.run({"PTTL", "hash"}) == ":-2\r\n");
 		}
 
-		THEN("KEYS does not list them") {
+		THEN("TC-106: KEYS does not list them") {
 			CHECK(server.run({"KEYS", "*"}) == "*1\r\n$4\r\nlive\r\n");
 		}
 
-		THEN("a write starts from an empty key, of any type") {
+		THEN("TC-106a, TC-106b: a write starts from an empty key, of any type") {
 			CHECK(server.run({"LPUSH", "str", "x"}) == ":1\r\n");
 			CHECK(server.run({"LRANGE", "str", "0", "-1"}) ==
 				  "*1\r\n$1\r\nx\r\n");
@@ -224,7 +224,7 @@ SCENARIO("TC-105, TC-106, TC-106a, TC-106b, TC-106c: A key past its deadline is 
 				  "*1\r\n$1\r\ny\r\n");
 		}
 
-		THEN("a lookup counts the key in expired_keys, once") {
+		THEN("TC-106c: a lookup counts the key in expired_keys, once") {
 			const auto before = server.db.expired_keys();
 			server.run({"GET", "str"});
 			server.run({"GET", "str"});
@@ -233,8 +233,8 @@ SCENARIO("TC-105, TC-106, TC-106a, TC-106b, TC-106c: A key past its deadline is 
 	}
 }
 
-SCENARIO("TC-120, TC-121: INFO reports the keys with a deadline and the keys that expired",
-		 "[commands][expiry][info][TC-120][TC-121]") {
+SCENARIO("INFO reports the keys with a deadline and the keys that expired",
+		 "[commands][expiry][info]") {
 	GIVEN("three keys, two with a deadline") {
 		test::Server server;
 		server.run({"SET", "a", "1"});
@@ -243,15 +243,15 @@ SCENARIO("TC-120, TC-121: INFO reports the keys with a deadline and the keys tha
 		server.run({"EXPIRE", "a", "100"});
 		server.run({"EXPIRE", "b", "100"});
 
-		THEN("INFO keyspace counts both") {
+		THEN("TC-120: INFO keyspace counts both") {
 			CHECK(contains(server.run({"INFO", "keyspace"}),
 						   "db0:keys=3,expires=2\r\n"));
 		}
 
-		WHEN("one deadline is removed with PERSIST") {
+		WHEN("TC-120: one deadline is removed with PERSIST") {
 			server.run({"PERSIST", "a"});
 
-			THEN("expires drops by one") {
+			THEN("TC-120: expires drops by one") {
 				CHECK(contains(server.run({"INFO", "keyspace"}),
 							   "db0:keys=3,expires=1\r\n"));
 			}
@@ -270,7 +270,7 @@ SCENARIO("TC-120, TC-121: INFO reports the keys with a deadline and the keys tha
 		server.run({"GET", "k0"});
 		server.db.active_expire_cycle(100);
 
-		THEN("expired_keys is 5 and FLUSHDB adds nothing") {
+		THEN("TC-121: expired_keys is 5 and FLUSHDB adds nothing") {
 			CHECK(
 				contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
 			server.run({"SET", "x", "v"});
@@ -338,14 +338,14 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 }
 
 // TC-087, TC-088, TC-089: deadlines in the future, set by each command.
-SCENARIO("TC-087, TC-088, TC-089: Deadlines in the future are read back in their unit",
-		 "[commands][expiry][TC-087][TC-088][TC-089]") {
+SCENARIO("Deadlines in the future are read back in their unit",
+		 "[commands][expiry]") {
 	GIVEN("a key, and PEXPIRE with 5000 milliseconds") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
 		REQUIRE(server.run({"PEXPIRE", "k", "5000"}) == ":1\r\n");
 
-		THEN("PTTL is in milliseconds, 4000 to 5000") {
+		THEN("TC-087: PTTL is in milliseconds, 4000 to 5000") {
 			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
 			CHECK(ms > 4000);
 			CHECK(ms <= 5000);
@@ -361,7 +361,7 @@ SCENARIO("TC-087, TC-088, TC-089: Deadlines in the future are read back in their
 		REQUIRE(server.run({"EXPIREAT", "k", fmt::format("{}", now + 100)}) ==
 				":1\r\n");
 
-		THEN("TTL is about 100 seconds") {
+		THEN("TC-088: TTL is about 100 seconds") {
 			const auto secs = std::stoll(server.run({"TTL", "k"}).substr(1));
 			CHECK(secs >= 98);
 			CHECK(secs <= 100);
@@ -377,7 +377,7 @@ SCENARIO("TC-087, TC-088, TC-089: Deadlines in the future are read back in their
 		REQUIRE(server.run({"PEXPIREAT", "k", fmt::format("{}", now + 100000)}) ==
 				":1\r\n");
 
-		THEN("PTTL is about 100000 milliseconds") {
+		THEN("TC-089: PTTL is about 100000 milliseconds") {
 			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
 			CHECK(ms > 98000);
 			CHECK(ms <= 100000);

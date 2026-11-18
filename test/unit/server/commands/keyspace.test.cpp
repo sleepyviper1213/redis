@@ -60,27 +60,27 @@ SCENARIO("Listing keys by pattern", "[commands][keyspace]") {
 	}
 }
 
-SCENARIO("TC-086, TC-091, TC-104a, TC-104b: Setting and clearing expiry",
-		 "[commands][keyspace][ttl][TC-086][TC-091][TC-104a][TC-104b]") {
+SCENARIO("Setting and clearing expiry",
+		 "[commands][keyspace][ttl]") {
 	GIVEN("a persistent key") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
 
-		THEN("TTL and PTTL report -1, and -2 for missing keys") {
+		THEN("TC-104a: TTL and PTTL report -1, and -2 for missing keys") {
 			CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
 			CHECK(server.run({"PTTL", "k"}) == ":-1\r\n");
 			CHECK(server.run({"TTL", "missing"}) == ":-2\r\n");
 			CHECK(server.run({"PTTL", "missing"}) == ":-2\r\n");
 		}
 
-		WHEN("EXPIRE sets a TTL") {
+		WHEN("TC-086: EXPIRE sets a TTL") {
 			REQUIRE(server.run({"EXPIRE", "k", "100"}) == ":1\r\n");
 
 			THEN("TTL reports it") {
 				CHECK(server.run({"TTL", "k"}) == ":100\r\n");
 			}
 
-			AND_WHEN("PERSIST removes it") {
+			AND_WHEN("TC-104b: PERSIST removes it") {
 				const auto reply = server.run({"PERSIST", "k"});
 
 				THEN("the key is persistent again") {
@@ -108,7 +108,7 @@ SCENARIO("TC-086, TC-091, TC-104a, TC-104b: Setting and clearing expiry",
 			}
 		}
 
-		WHEN("EXPIRE targets a missing key or a bad number") {
+		WHEN("TC-091: EXPIRE targets a missing key or a bad number") {
 			THEN("it reports 0 or an error") {
 				CHECK(server.run({"EXPIRE", "missing", "10"}) == ":0\r\n");
 				CHECK(server.run({"EXPIRE", "k", "soon"}) ==

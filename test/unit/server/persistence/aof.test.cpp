@@ -133,15 +133,15 @@ SCENARIO("Write commands are logged", "[aof]") {
 	}
 }
 
-SCENARIO("TC-111, TC-112: Commands that cannot be replayed as received",
-		 "[aof][TC-111][TC-112]") {
+SCENARIO("Commands that cannot be replayed as received",
+		 "[aof]") {
 	GIVEN("a server with an append-only file") {
 		TempDir const dir;
 		test::TempFile const snapshot;
 		AofServer server(dir.path(), snapshot.path());
 		REQUIRE(server.start().has_value());
 
-		WHEN("SET has a relative expiry") {
+		WHEN("TC-112: SET has a relative expiry") {
 			server.run({"SET", "k", "v", "EX", "100"});
 
 			THEN("the log has the absolute deadline") {
@@ -151,7 +151,7 @@ SCENARIO("TC-111, TC-112: Commands that cannot be replayed as received",
 			}
 		}
 
-		WHEN("EXPIRE is used") {
+		WHEN("TC-111: EXPIRE is used") {
 			server.run({"SET", "k", "v"});
 			server.run({"EXPIRE", "k", "100"});
 
@@ -243,7 +243,7 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 	}
 }
 
-SCENARIO("TC-116: A replay does not depend on when it runs", "[aof][TC-116]") {
+SCENARIO("A replay does not depend on when it runs", "[aof]") {
 	GIVEN("a key that expired before the restart, and one that was persisted") {
 		TempDir const dir;
 		test::TempFile const snapshot;
@@ -267,7 +267,7 @@ SCENARIO("TC-116: A replay does not depend on when it runs", "[aof][TC-116]") {
 			std::this_thread::sleep_until(k_set_at + 600ms);
 		}
 
-		WHEN("the files are replayed after the deadlines") {
+		WHEN("TC-116: the files are replayed after the deadlines") {
 			Restarted server(dir.path(), snapshot.path());
 
 			THEN("commands saw the keys as they were") {
@@ -617,8 +617,8 @@ size_t occurrences(const std::string &text, const std::string &part) {
 }
 } // namespace
 
-SCENARIO("TC-113: A deadline already past is logged as DEL",
-		 "[aof][expiry][TC-113]") {
+SCENARIO("A deadline already past is logged as DEL",
+		 "[aof][expiry]") {
 	GIVEN("a server with an append-only file and a key") {
 		TempDir const dir;
 		test::TempFile const snapshot;
@@ -626,7 +626,7 @@ SCENARIO("TC-113: A deadline already past is logged as DEL",
 		REQUIRE(server.start().has_value());
 		server.run({"SET", "k", "old"});
 
-		WHEN("EXPIRE gets a zero amount, then SET gets a PXAT in the past") {
+		WHEN("TC-113: EXPIRE gets a zero amount, then SET gets a PXAT in the past") {
 			CHECK(server.run({"EXPIRE", "k", "0"}) == ":1\r\n");
 			CHECK(server.run({"SET", "k", "v", "PXAT", "1"}) == "+OK\r\n");
 
@@ -639,8 +639,8 @@ SCENARIO("TC-113: A deadline already past is logged as DEL",
 	}
 }
 
-SCENARIO("TC-114: A key that expires is logged as DEL, once",
-		 "[aof][expiry][TC-114]") {
+SCENARIO("A key that expires is logged as DEL, once",
+		 "[aof][expiry]") {
 	GIVEN("two keys that expire and one that does not") {
 		TempDir const dir;
 		test::TempFile const snapshot;
@@ -651,7 +651,7 @@ SCENARIO("TC-114: A key that expires is logged as DEL, once",
 		server.run({"SET", "kept", "v"});
 		std::this_thread::sleep_for(60ms);
 
-		WHEN("one is found by a read and the other by the sweep") {
+		WHEN("TC-114: one is found by a read and the other by the sweep") {
 			CHECK(server.run({"GET", "by_access"}) == "$-1\r\n");
 			REQUIRE(server.db.active_expire_cycle(100) == 1);
 			server.aof.log_expired(server.db);
@@ -667,8 +667,8 @@ SCENARIO("TC-114: A key that expires is logged as DEL, once",
 	}
 }
 
-SCENARIO("TC-115: A replay does not extend a lifetime",
-		 "[aof][expiry][TC-115]") {
+SCENARIO("A replay does not extend a lifetime",
+		 "[aof][expiry]") {
 	GIVEN("a key set to live two seconds, restarted after part of that") {
 		TempDir const dir;
 		test::TempFile const snapshot;
@@ -679,7 +679,7 @@ SCENARIO("TC-115: A replay does not extend a lifetime",
 			std::this_thread::sleep_for(700ms);
 		}
 
-		WHEN("the files are replayed") {
+		WHEN("TC-115: the files are replayed") {
 			Restarted server(dir.path(), snapshot.path());
 			const auto reply = server.run({"PTTL", "k"});
 

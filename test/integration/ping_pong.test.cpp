@@ -10,7 +10,7 @@ using Catch::Matchers::Equals;
 // ---------------------------------------------------------
 
 SCENARIO_METHOD(RedisTestFixture,
-				"[UT-1001] Single client can PING and receive PONG",
+				" Single client can PING and receive PONG",
 				"[server][ping_pong]") {
 	GIVEN("a connected client") {
 		WHEN("the client sends PING") {
@@ -54,7 +54,7 @@ SCENARIO("UT-1002: Multiple clients can independently PING and receive PONG",
 }
 
 SCENARIO_METHOD(RedisTestFixture,
-				"[UT-1003] PING with custom message returns same message",
+				" PING with custom message returns same message",
 				"[server][ping_pong]") {
 	GIVEN("a connected client") {
 		WHEN("the client sends PING with a custom payload") {
@@ -69,7 +69,7 @@ SCENARIO_METHOD(RedisTestFixture,
 }
 
 SCENARIO_METHOD(RedisTestFixture,
-				"[UT-1004] Multiple PING requests preserve order",
+				" Multiple PING requests preserve order",
 				"[server][ping_pong]") {
 	GIVEN("a connected client") {
 		WHEN("the client sends PING twice") {

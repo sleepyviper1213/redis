@@ -12,7 +12,7 @@ using namespace redis;
 using namespace std::chrono_literals;
 using persistence::PersistKind;
 
-SCENARIO("TC-118: Snapshots round-trip every value type", "[persistence][TC-118]") {
+SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 	GIVEN("a keyspace with one key of each type and a TTL") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "s", "hello", "EX", "100"}) == "+OK\r\n");
@@ -81,7 +81,7 @@ SCENARIO("TC-118: Snapshots round-trip every value type", "[persistence][TC-118]
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
 		std::this_thread::sleep_for(50ms);
 
-		WHEN("the snapshot is loaded") {
+		WHEN("TC-118: the snapshot is loaded") {
 			test::Server restored;
 			REQUIRE(persistence::detail::load_snapshot(restored.db,
 													   server.dump.path()));
@@ -247,8 +247,8 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 	}
 }
 
-SCENARIO("TC-117, TC-119: A snapshot keeps absolute deadlines",
-		 "[persistence][expiry][TC-117][TC-119]") {
+SCENARIO("A snapshot keeps absolute deadlines",
+		 "[persistence][expiry]") {
 	GIVEN("a key with a fixed absolute deadline") {
 		test::Server server;
 		// The year 2100, so it cannot pass during the test.
@@ -257,7 +257,7 @@ SCENARIO("TC-117, TC-119: A snapshot keeps absolute deadlines",
 		REQUIRE(
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
 
-		WHEN("it is loaded into a fresh server") {
+		WHEN("TC-117: it is loaded into a fresh server") {
 			test::Server restored;
 			REQUIRE(persistence::detail::load_snapshot(restored.db,
 													   server.dump.path()));
@@ -282,7 +282,7 @@ SCENARIO("TC-117, TC-119: A snapshot keeps absolute deadlines",
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
 		std::this_thread::sleep_for(60ms);
 
-		WHEN("it is loaded as the base of an append-only file") {
+		WHEN("TC-119: it is loaded as the base of an append-only file") {
 			test::Server restored;
 			REQUIRE(persistence::detail::load_snapshot(restored.db,
 													   server.dump.path(),

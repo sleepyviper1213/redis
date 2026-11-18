@@ -33,7 +33,7 @@ int64_t integer(TestClient &client, const std::string &command) {
 } // namespace
 
 TEST_CASE("TC-117, TC-122: write keys with deadlines and let some expire",
-		  "[restart-write][TC-117][TC-122][.]") {
+		  "[restart-write][.]") {
 	TestClient client;
 	REQUIRE(client.is_connected());
 	REQUIRE(client.send("FLUSHDB").ok);
@@ -56,7 +56,7 @@ TEST_CASE("TC-117, TC-122: write keys with deadlines and let some expire",
 	REQUIRE(client.send("SAVE").value == "OK");
 }
 
-TEST_CASE("TC-117, TC-118: deadlines after a restart", "[restart-verify][TC-117][TC-118][.]") {
+TEST_CASE("TC-117, TC-118: deadlines after a restart", "[restart-verify][.]") {
 	TestClient client;
 	REQUIRE(client.is_connected());
 

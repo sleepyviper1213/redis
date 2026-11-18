@@ -64,7 +64,7 @@ TEST_CASE_METHOD(RedisTestFixture,
 
 TEST_CASE_METHOD(RedisTestFixture,
 				 "TC-107: Keys nobody reads are removed by the sweep",
-				 "[expiry][TC-107]") {
+				 "[expiry]") {
 	constexpr int KEYS = 100;
 	for (int i = 0; i < KEYS; ++i) {
 		const auto key = fmt::format("sweep:{}", i);

@@ -188,8 +188,8 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 // Deadlines that have passed are made without waiting: with
 // expiry off a deadline in the past is stored, not acted on, so the order and
 // the count do not depend on the clock.
-SCENARIO("TC-108, TC-109, TC-110: The active expiry cycle is bounded and takes the oldest first",
-		 "[storage][expiry][TC-108][TC-109][TC-110]") {
+SCENARIO("The active expiry cycle is bounded and takes the oldest first",
+		 "[storage][expiry]") {
 	GIVEN("2500 keys whose deadlines have passed") {
 		Database db;
 		db.set_expiry_enabled(false);
@@ -200,7 +200,7 @@ SCENARIO("TC-108, TC-109, TC-110: The active expiry cycle is bounded and takes t
 		}
 		db.set_expiry_enabled(true);
 
-		WHEN("cycles run with a budget of 1000") {
+		WHEN("TC-108: cycles run with a budget of 1000") {
 			THEN("each removes at most 1000, until none is left") {
 				CHECK(db.active_expire_cycle(1000) == 1000);
 				CHECK(db.active_expire_cycle(1000) == 1000);
@@ -223,7 +223,7 @@ SCENARIO("TC-108, TC-109, TC-110: The active expiry cycle is bounded and takes t
 		}
 		db.set_expiry_enabled(true);
 
-		WHEN("a cycle with a budget of 2 runs") {
+		WHEN("TC-109: a cycle with a budget of 2 runs") {
 			REQUIRE(db.active_expire_cycle(2) == 2);
 
 			THEN("the two oldest deadlines went, whatever the order added") {
@@ -245,7 +245,7 @@ SCENARIO("TC-108, TC-109, TC-110: The active expiry cycle is bounded and takes t
 		db.set_expiry("later", DeadlineTimer::after(1h));
 		db.set("forever", String("v"));
 
-		WHEN("a cycle runs") {
+		WHEN("TC-110: a cycle runs") {
 			const auto removed = db.active_expire_cycle(100);
 
 			THEN("only the due key goes; the others keep their deadlines") {
