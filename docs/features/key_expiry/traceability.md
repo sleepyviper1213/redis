@@ -10,16 +10,16 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 
 | Criteria  | Use case | FR                      | NFR                     | Scenarios               | Unit    | Integration | Differential | Diagram                    |
 |-----------|----------|-------------------------|-------------------------|-------------------------|---------|-------------|--------------|----------------------------|
-| AC-01 | UC-011 | FR-006.1, 006.6 | NFR-010.4 | TC-086 to 092, 100, 101 | — | — | — | sequence_key_expiry |
-| AC-02 | UC-011 | FR-006.1, 006.5, 006.6 | NFR-010.4 | TC-088, 089, 098, 099 | — | — | — | state_key_expiry_lifecycle |
-| AC-03 | UC-002 | FR-001, FR-006.2 | NFR-010.4 | TC-093 to 097, 102 | — | — | — | use_case (global) |
-| AC-04 | UC-011 | FR-005, FR-006.3 | NFR-010.4 | TC-104, 104a | — | — | — | sequence_key_expiry |
-| AC-05 | UC-011 | FR-005, FR-006.4 | NFR-010.4 | TC-104b | — | — | — | state_key_expiry_lifecycle |
-| AC-06 | UC-011 | FR-006.7 | NFR-010.4 | TC-094, 095, 104c to 104e | — | — | — | state_key_expiry_lifecycle |
-| AC-07 | UC-020 | FR-006.8 | NFR-010.1 | TC-105, 106, 106a to 106c | — | — | — | sequence_key_expiry |
-| AC-08 | UC-020 | FR-006.9 | NFR-010.2, 010.3, 010.6 | TC-107 to 110a | — | — | — | activity_expiry_sweep |
-| AC-09 | UC-021 | FR-006.10 | NFR-010.5, NFR-003 | TC-111 to 119 | — | — | — | sequence_key_expiry |
-| AC-10 | UC-022 | FR-006.11 | NFR-010.7 | TC-120 to 122 | — | — | — | sequence_key_expiry |
+| AC-01 | UC-011 | FR-006.1, 006.6 | NFR-010.4 | TC-086 to 092, 100, 101 | n/a | n/a | n/a | sequence_key_expiry |
+| AC-02 | UC-011 | FR-006.1, 006.5, 006.6 | NFR-010.4 | TC-088, 089, 098, 099 | Yes | n/a | None | state_key_expiry_lifecycle |
+| AC-03 | UC-002 | FR-001, FR-006.2 | NFR-010.4 | TC-093 to 097, 102 | n/a | n/a | n/a | use_case (global) |
+| AC-04 | UC-011 | FR-005, FR-006.3 | NFR-010.4 | TC-104, 104a | Yes | n/a | None | sequence_key_expiry |
+| AC-05 | UC-011 | FR-005, FR-006.4 | NFR-010.4 | TC-104b | Yes | n/a | None | state_key_expiry_lifecycle |
+| AC-06 | UC-011 | FR-006.7 | NFR-010.4 | TC-094, 095, 104c to 104e | Yes | n/a | None | state_key_expiry_lifecycle |
+| AC-07 | UC-020 | FR-006.8 | NFR-010.1 | TC-105, 106, 106a to 106c | Yes | Yes | n/a | sequence_key_expiry |
+| AC-08 | UC-020 | FR-006.9 | NFR-010.2, 010.3, 010.6 | TC-107 to 110a | n/a | n/a | n/a | activity_expiry_sweep |
+| AC-09 | UC-021 | FR-006.10 | NFR-010.5, NFR-003 | TC-111 to 119 | n/a | n/a | n/a | sequence_key_expiry |
+| AC-10 | UC-022 | FR-006.11 | NFR-010.7 | TC-120 to 122 | n/a | n/a | n/a | sequence_key_expiry |
 
 The bug #40, the unimplemented #41 and #42, and the limit by design LI-05 are not tied to a criterion; see
 [test_plan.md](test_plan.md). TC-103 (arity,
