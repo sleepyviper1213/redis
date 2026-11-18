@@ -81,6 +81,9 @@ Requirements: FR-001, FR-006.2
   `-ERR invalid expire time in 'set' command` and `k` is unchanged.
 * Given `SET k v EXAT <s>` or `PXAT <ms>` with a time in the past, then the reply is `+OK` and `k` holds `v` with that
   deadline; every command but `DBSIZE` and `INFO` sees `k` as missing, and reading it removes it, as in Redis.
+* Given a key whose deadline has passed and which nothing has removed, then `SET` treats it as missing, as in Redis: it
+  counts in `expired_keys`, and `k` holds the new value with the new deadline (`KEEPTTL`: with none), whatever the
+  old value or deadline was (#49).
 * Given two different expiry options, or `KEEPTTL` with an expiry option, then the reply is a syntax error.
 
 ## Notes
