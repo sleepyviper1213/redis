@@ -20,8 +20,9 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 | AC-08 | UC-020 | FR-006.9 | NFR-010.2, 010.3, 010.6 | TC-107 to 110a | Yes | Yes | n/a | activity_expiry_sweep |
 | AC-09 | UC-021 | FR-006.10 | NFR-010.5, NFR-003 | TC-111 to 119 | Yes | Partial (2/3) | n/a | sequence_key_expiry |
 | AC-10 | UC-022 | FR-006.11 | NFR-010.7 | TC-120 to 122 | Yes | Partial (1/3) | n/a | sequence_key_expiry |
+| AC-11 | UC-011 | FR-006.1, 006.12 | NFR-010.4 | TC-266 to 270 | None | n/a | None | none |
 
-The unimplemented #41 and #42, and the limit by design LI-05 are not tied to a criterion; see
+The unimplemented #42, and the limit by design LI-05 are not tied to a criterion; see
 [test_plan.md](test_plan.md). TC-103 (arity,
 FR-010) and TC-123 (deadline arithmetic, NFR-010.1) check a requirement directly, not a criterion.
 
