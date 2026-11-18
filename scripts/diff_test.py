@@ -188,6 +188,8 @@ class Generator:
     def __init__(self, seed, expiry=False):
         self.rng = random.Random(seed)
         self.expiry_enabled = expiry
+        # Keys to read next, see settle().
+        self.pending = []
 
     def pick(self, n):
         return self.rng.randrange(n)
@@ -225,10 +227,26 @@ class Generator:
         return b"%d" % (self.pick(17) - 8)
 
     def next(self):
+        if self.pending:
+            return [b"EXISTS", self.pending.pop(0)], DEFINED
         families = [self.string, self.list, self.set, self.hash, self.keyspace]
         if self.expiry_enabled:
             families.append(self.expiry)
-        return families[self.pick(len(families))]()
+        request = families[self.pick(len(families))]()
+        self.settle(request[0])
+        return request
+
+    def settle(self, args):
+        """A SET with a deadline already past leaves its key due, in both
+        servers, until it is read or swept; a DBSIZE meanwhile depends on which
+        server's sweep ran first. Read the key at once, so that both drop it by
+        the same lazy removal and nothing depends on timing."""
+        if args[0] != b"SET":
+            return
+        for i in range(3, len(args) - 1):
+            if args[i] in (b"EXAT", b"PXAT") and args[i + 1] == b"1":
+                self.pending.append(args[1])
+                return
 
     def relative_amount(self):
         """An EXPIRE or PEXPIRE amount: far ahead, not positive, or invalid."""
