@@ -75,6 +75,7 @@ endif()
 # Integration tests: drive a running redis_server through hiredis, the C client
 # real applications use. Run via scripts/test_server.sh, which starts the server.
 add_executable(redis_integration_test
+    integration/appendfsync_bound.test.cpp
     integration/del.test.cpp
     integration/expiry.test.cpp
     integration/expiry_restart.test.cpp

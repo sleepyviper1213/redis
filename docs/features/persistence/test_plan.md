@@ -103,7 +103,7 @@ A checksum of the snapshot is deferred (risk R-001 in the SRS); add a scenario f
 | TC-157 | A manifest cannot point outside the directory | A name that climbs out (`../x`), a path, or a name that is not the server's own | Start is refused with the offending name; the other file is untouched; the server's own names start | Unit | `aof`: "A manifest cannot point outside the append-only directory" | Unit | Covered |
 | TC-158 | One server per directory | A second server starts over a directory in use; then the first closes | The second is refused and the first carries on; after close the directory is free | Unit | `aof`: "One server at a time uses the directory" | Unit | Covered |
 | TC-159 | Files are private and links are not followed | A link planted where the manifest or log is written | The file behind the link is untouched; the server's files are owner-only | Unit | `aof`: "The server's files are private, and links are not followed" | Unit | Covered |
-| TC-261 | `everysec` data-loss bound | Writes under `--appendfsync everysec`; `SIGKILL` after a pause of more than one second; restart | Every write older than one second is present; the writes lost are all within the last second. Under `always`, every acknowledged write is present | Integration | None found (NFR-003 bound, DX-77) | none | Gap |
+| TC-261 | `everysec` data-loss bound | Writes under `--appendfsync everysec`; `SIGKILL` after a pause of more than one second; restart | Every write older than one second is present; the writes lost are all within the last second. Under `always`, every acknowledged write is present | Integration | `appendfsync_bound`: "TC-261" (POSIX only, runs in `scripts/test_server.sh`) | none | Gap |
 
 ## Entry and exit criteria
 
