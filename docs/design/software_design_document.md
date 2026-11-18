@@ -303,7 +303,7 @@ connections". Failure to read data or to bind stops the server (FR-018).
 
 Shutdown: [sequence_threads_request_and_shutdown.puml](../features/connection/diagrams/sequence_threads_request_and_shutdown.puml).
 On a signal: stop accepting and housekeeping; drain sessions; wait for the executing batch; cancel `BGSAVE` and an
-unfinished rewrite; close the append-only file; write the final snapshot; exit. A failed final save exits non-zero.
+unfinished rewrite; close the append-only file; write the final snapshot; exit. A failed final save exits non-zero. After a `FailFast` end, the same final save is attempted; if it fails, the server exits non-zero.
 
 ### 11.3 Guarantees to clients
 
@@ -361,7 +361,7 @@ blocks other clients for the time that takes.
 ### 13.6 Fsync policy
 
 `always`: before the reply. `everysec`: a thread forces the log to disk once a second (default). `no`: left to the
-operating system.
+operating system. Data-loss bound: under `always` no acknowledged write is lost; under `everysec` a crash loses at most the writes of the last second.
 
 ## 14. Resource viewpoint
 
@@ -475,3 +475,4 @@ The full record of each decision is the ADR in the last column. D7 and D10 are r
 * **Not implemented** (FR-021 to FR-025): Pub/Sub, transactions, Lua, replication and clustering, memory limit and
   eviction. Design notes for transactions and retries are in [TODO.md](../../TODO.md).
 * **Snapshots are not RDB files:** tools that read RDB cannot read them.
+* **No snapshot checksum (deferred):** a flipped byte in a snapshot is not detected yet (SRS R-001).

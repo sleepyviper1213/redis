@@ -259,7 +259,7 @@ are mitigated.
 
 | Risk ID | Risk Description                                           | Impact                                                    | Likelihood | Mitigation                                                                                                                                                                                                     |
 |---------|------------------------------------------------------------|-----------------------------------------------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| R-001   | Snapshot file corrupted during save or load                | High: data loss, or no restore                            | Low        | Write to a temporary file, `fsync`, `rename`, then `fsync` the directory, so readers see the old file or the new one, never a partial one; a magic number and format version are checked on load; the server refuses to start rather than serve an empty keyspace (FR-011). A checksum is planned. |
+| R-001   | Snapshot file corrupted during save or load                | High: data loss, or no restore                            | Low        | Write to a temporary file, `fsync`, `rename`, then `fsync` the directory, so readers see the old file or the new one, never a partial one; a magic number and format version are checked on load; the server refuses to start rather than serve an empty keyspace (FR-011). A checksum is deferred (not in this release). |
 | R-002   | Dependency issues (versions, platforms)                    | Medium: build failures                                    | Medium     | Dependencies pinned through a vcpkg baseline; CMake presets per toolchain; CI builds on Linux (GCC, Clang) and macOS (NFR-007).                                                                                 |
 | R-003   | Performance bottlenecks under many connections             | High: latency targets missed (NFR-001)                    | Medium     | Asynchronous I/O; several network threads; replies of a batch sent in one write; benchmarked against Redis with redis-benchmark in CI.                                                                          |
 | R-004   | Malformed requests crashing the server                     | High: instability or downtime                             | Low        | Bounded parser (declared lengths checked); protocol errors answered then the client closed; query and output buffer limits (FR-010, FR-014); sanitizer and stress runs in CI.                                   |
@@ -312,7 +312,7 @@ table if the baseline itself is wrong.
     * stdexec (with its Asio integration) for senders and coroutines
     * spdlog and {fmt} for logging and formatting
     * CLI11 for options, magic_enum for enum names, fast_float for number parsing
-    * cereal for the snapshot's portable binary encoding
+    * reflect-cpp (CBOR) for the snapshot's records
     * Catch2 for unit tests, hiredis for integration tests
 
 ### 3.1.4 Communication interfaces
@@ -425,7 +425,7 @@ The server logs enough to support debugging and post-mortem analysis, without re
 | FR-014 | Client limits                  | `--maxclients`, `--client-query-buffer-limit`, `--client-output-buffer-limit`, `--idle-timeout`, `--request-timeout`; a client past a limit is disconnected and the event counted in `INFO`. | Medium   | Implemented |
 | FR-015 | Logging                        | Asynchronous logging by channel to stderr and `--log-file`; level set by `--log-level`, or at run time by `CONFIG SET loglevel` when `--enable-config-set` is given.                      | High     | Implemented |
 | FR-016 | Diagnostics                    | Crash reports with the running command and a backtrace (POSIX); a watchdog that logs a command running past `--watchdog-ms` (default 1000 ms) while it still runs.                         | Medium   | Implemented |
-| FR-017 | Graceful shutdown              | On `SIGINT` or `SIGTERM`: stop accepting, finish or drop pending work, save a final snapshot; exit non-zero if that save fails.                                                              | High     | Implemented |
+| FR-017 | Graceful shutdown              | On `SIGINT` or `SIGTERM`: stop accepting, finish or drop pending work, save a final snapshot; exit non-zero if that save fails. After a `FailFast` end (accept loop or housekeeping), the final snapshot is attempted too; if it fails, exit non-zero.                                                              | High     | Implemented |
 | FR-018 | Startup safety                 | Refuse to start when the snapshot or append-only file cannot be read, rather than serve an empty keyspace and overwrite the files later.                                                   | High     | Implemented |
 | FR-019 | Benchmarking                   | Throughput and latency measured with redis-benchmark against this server and Redis, in CI (`bench/` branches).                                                                              | Low      | Implemented |
 | FR-020 | Authentication and permissions | `AUTH` and client permissions.                                                                                                                                                             | Low      | Planned     |
@@ -461,6 +461,7 @@ Targets, measured with redis-benchmark (FR-019):
 ### [NFR-003] Reliability
 
 * Recovery after a crash from the latest snapshot, or from the append-only file when enabled.
+* Data-loss bound: with `--appendfsync always`, no acknowledged write is lost; with `everysec` (default), a crash loses at most the writes of the last second; with `no`, the bound is set by the operating system's writeback.
 * Snapshots and append-only file rewrites never leave a partial file in place.
 * The server refuses to start on unreadable persistence files (FR-018), and fails loudly when the final save fails.
 * Correctness is checked by unit, integration, stress and differential tests in CI, including under ThreadSanitizer.

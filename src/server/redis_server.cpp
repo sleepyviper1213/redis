@@ -232,9 +232,10 @@ std::expected<void, ServerError> RedisServer::run() {
 								 std::ref(stop_serving));
 		run_until_stopped(io_, failure, stop_serving);
 	} // joins the workers: from here on, nothing else touches failure
-	if (auto &message = failure.message())
-		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
-								 .detail = std::move(*message)});
+	// A FailFast end does not return here: the shutdown below still runs, so
+	// the final save keeps the writes since the last one. The failure is
+	// reported after it (UC-017 A2, DX-76).
+	std::optional<std::string> worker_failure = std::move(failure.message());
 
 	// A batch may still be executing: wait for it before reading the keyspace.
 	services_->keyspace.stop();
@@ -257,6 +258,10 @@ std::expected<void, ServerError> RedisServer::run() {
 	if (auto saved = services_->persistence.save(services_->db); !saved)
 		REDIS_FAILED(ServerError{.kind   = ServerKind::FinalSaveFailed,
 								 .source = saved.error()});
+	// After a successful save, a worker failure still ends the server non-zero.
+	if (worker_failure)
+		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
+								 .detail = std::move(*worker_failure)});
 	log().info("Redis is now ready to exit, bye bye...");
 	return {};
 }

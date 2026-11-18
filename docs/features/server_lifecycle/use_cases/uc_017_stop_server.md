@@ -47,7 +47,7 @@ Operator (a person at a shell, a service manager, a container runtime)
 ### A2: A server thread fails
 
 * An I/O thread, the accept loop or the housekeeping task that fails ends the server the same way, from step 3; the
-  failure is logged and the exit status is non-zero
+  failure is logged, the final snapshot of step 7 is attempted (if it fails, as in A1), and the exit status is non-zero
 
 ### A3: Process killed (`SIGKILL`, power loss)
 

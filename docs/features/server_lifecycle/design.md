@@ -16,6 +16,7 @@ Choices specific to this feature. System-wide design stays in the
 | DX-63 | A failed final save exits non-zero (`ServerKind::FinalSaveFailed`) and leaves the previous snapshot | A supervisor sees the failure; the server cannot resume once its event loop has stopped | UC-017 A1, `src/server/server_error.hpp` |
 | DX-64 | Lifecycle errors are `Failure<ServerKind>` that carry the stage's own error as source; the wording is in one place | One source of wording for log and exit | [ADR-0009](../../design/adr/0009-errors-as-values.md), SDD §14.5 |
 | DX-65 | Dependencies and toolchains are pinned and the CMake presets are layered | Reproducible builds on every platform | [ADR-0010](../../design/adr/0010-pinned-vcpkg-and-layered-presets.md), NFR-007 |
+| DX-76 | After a `FailFast` end the server attempts the final snapshot; if that fails, it exits non-zero | Keeps the writes since the last save when the keyspace thread is still healthy; a dead accept loop does not block the save | UC-017 A2, SDD §11.2, FR-017 |
 
 ## Code map
 
@@ -28,6 +29,6 @@ Choices specific to this feature. System-wide design stays in the
 
 ## Open questions
 
-* Test that a `FailFast` failure ends the server, and decide on a final snapshot after one: see [TODO.md](../../../TODO.md) (Sender-based networking).
+* Test that a `FailFast` failure ends the server (TC-262). The final snapshot after a FailFast end is decided: attempt it, and exit non-zero if it fails (DX-76). Not yet implemented.
 * Check and state the precedence of command line, environment and `--config`: see [TODO.md](../../../TODO.md) (Documentation and submission); the use cases deliberately claim no order.
 * SDD §17: on Windows there is no crash handler and `BGSAVE` is unavailable.

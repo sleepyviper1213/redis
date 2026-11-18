@@ -16,6 +16,7 @@ Choices specific to this feature. System-wide design stays in the
 | DX-31 | A load failure of a snapshot or AOF stops startup | Serving empty and later saving would destroy the only copy | [ADR-0008](../server_lifecycle/adr/0008-refuse-to-start-on-unreadable-data.md), SDD D8, NFR-003 |
 | DX-32 | Persistence returns `std::expected<T, Failure<PersistKind>>`; a failed `SAVE` is `ERR` plus the reason and the previous file stays | One wording for log and reply | [ADR-0009](../../design/adr/0009-errors-as-values.md), SDD §14.5 |
 | DX-33 | Data files are held by descriptor and not re-opened by path | Avoids a path naming a different file between two uses (from code) | `src/core/os/durable_file.hpp` |
+| DX-77 | Data-loss bound: `always` loses no acknowledged write; `everysec` (default) loses at most the writes of the last second | Stated per policy so an operator can choose; covered by TC-261 | SRS NFR-003, SDD §13.6, TC-261 |
 
 ## Code map
 
@@ -25,7 +26,9 @@ Choices specific to this feature. System-wide design stays in the
 
 ## Open questions
 
-* A final snapshot after a FailFast failure? Today the writes since the last save are lost (TODO.md).
+* Resolved: after a FailFast end the server attempts a final snapshot and exits non-zero if it fails (DX-76 in [server_lifecycle](../server_lifecycle/design.md)).
 * `BGSAVE` and `BGREWRITEAOF` are unavailable on Windows (SDD §17).
 * Snapshots are not RDB files, so RDB tools cannot read them (SDD §17).
-* TODO.md still lists a rewrite layer for AOF as not done, while SDD §8.2 and `set.cpp` show the equivalents exist; settle which is right.
+* Deferred: the rewrite layer for AOF and replication stays in TODO.md and is not in scope until one of them is added. The equivalents that SDD §8.2 describes stay as they are.
+* Deferred: a snapshot checksum (SRS R-001); no scenario until it exists.
+* Reflect-cpp with CBOR is the snapshot encoding (DX-24, ADR-0006); the SRS now says the same.
