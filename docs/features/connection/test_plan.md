@@ -10,19 +10,19 @@ Scenario IDs are `TC-nnn`, one sequence for the whole project ([ID ranges](../RE
 `$5` bulk string, `-ERR ...` error). The use cases have no acceptance criteria, so scenarios come from their flows and
 alternate flows (A1, A2, ...).
 
-## How to read the coverage column
+## How to read the coverage columns
 
-| Mark         | Meaning                                                                                   |
-|--------------|-------------------------------------------------------------------------------------------|
-| Unit         | A unit test whose scenario name matches; named in the *Existing test* column              |
-| Integration  | Only an integration test (a running server through the test client) matches               |
-| Stress       | Only a phase of `test/stress/stress.cpp` matches                                          |
-| Differential | Only the differential script `scripts/diff_test.py` sends it                              |
-| Partial      | A test covers part of the scenario                                                        |
-| Gap          | No test found; to be written at the level in the *Level* column                           |
+Two columns, one question each:
 
-Coverage was matched by test and scenario names in `test/`, not by reading every assertion; confirm when a scenario
-is written or run.
+| Column | Meaning |
+|--------|---------|
+| *Level* | The levels the scenario is designed for. A plan, not a record of what runs |
+| *Tested at* | The levels where a test exists today, found from the *Existing test* column: `Unit`, `Integration`, `Stress`, `Differential`, or `none` |
+| *Status* | `Covered` when every level in *Level* is in *Tested at*; `Partial` when some are; `Gap` when none are |
+
+So a row with Level `Unit, Integration`, Tested at `Unit` and Status `Partial` has its unit test and lacks its
+integration test. `Differential` counts as tested only where the differential script sends the scenario and the run is
+gating (the differential step is not gating for expiry; see the key-expiry plan).
 
 ## Levels and technique
 

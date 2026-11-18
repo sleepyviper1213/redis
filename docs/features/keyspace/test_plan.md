@@ -9,21 +9,19 @@ bulk, `*0` empty array, `-ERR ...` error). Integration tests named `TC-022` to `
 numbering; they are not scenarios of this document. FR-005 also lists `TTL`, `PTTL` and `PERSIST`; their scenarios
 belong to [key_expiry](../key_expiry/test_plan.md) and are only pointed to here (TC-085).
 
-## How to read the coverage column
+## How to read the coverage columns
 
-| Mark        | Meaning                                                                                      |
-|-------------|----------------------------------------------------------------------------------------------|
-| Unit        | A unit test whose scenario name or body matches; named in the *Existing test* column         |
-| Integration | No unit test, but an integration test against a running server matches                       |
-| Stress      | No unit test, but a stress test against a model matches                                      |
-| Partial     | A test covers part of the scenario (named in the column)                                     |
-| Gap         | No test found; to be written at the level in the *Level* column                              |
+Two columns, one question each:
 
-Coverage was matched by test and scenario names in `test/unit/server/commands/keyspace.test.cpp`,
-`test/unit/core/utils/glob.test.cpp`, `test/integration/del.test.cpp` and `test/stress/`, and the bodies of the
-keyspace command tests were opened to confirm; not every assertion was read. Confirm when a scenario is written or
-run. The differential test (`scripts/diff_test.py`) sends `DEL`, `EXISTS`, `KEYS *`, `TYPE`, `DBSIZE` and
-`FLUSHDB` against real Redis; it is not tied to a named scenario, so it never decides a mark by itself.
+| Column | Meaning |
+|--------|---------|
+| *Level* | The levels the scenario is designed for. A plan, not a record of what runs |
+| *Tested at* | The levels where a test exists today, found from the *Existing test* column: `Unit`, `Integration`, `Stress`, `Differential`, or `none` |
+| *Status* | `Covered` when every level in *Level* is in *Tested at*; `Partial` when some are; `Gap` when none are |
+
+So a row with Level `Unit, Integration`, Tested at `Unit` and Status `Partial` has its unit test and lacks its
+integration test. `Differential` counts as tested only where the differential script sends the scenario and the run is
+gating (the differential step is not gating for expiry; see the key-expiry plan).
 
 ## Levels
 
