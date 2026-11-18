@@ -53,7 +53,9 @@ another document means one thing. Take the next free number from the table, then
 | server_lifecycle | TC-227 to TC-252 | | DX-56 to DX-65 | |
 | extensibility | TC-253 to TC-260 | | DX-66 to DX-75 | |
 
-Next free: `TC-261`, `LI-09`, `DX-76`, `AC-11`. Sub-scenarios keep a letter suffix (`TC-104a`). Use cases keep their
+Next free: `TC-261`, `LI-09`, `DX-76`, `AC-11`. Legacy scenario IDs outside these ranges keep their numbers and are not
+renumbered: `TC-1001` to `TC-1004` (ping and echo, in `connection`) and `TC-2001`, `TC-2002` (RESP encoding and
+decoding, in `connection`). Sub-scenarios keep a letter suffix (`TC-104a`). Use cases keep their
 own numbering (`UC-nnn`).
 
 ## Issues

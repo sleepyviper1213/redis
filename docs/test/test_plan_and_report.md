@@ -124,7 +124,7 @@ Each feature is identified by its requirement in the SRS and its use case [5]. S
 (`common/store`), commands, network, persistence, diagnostics and the foundation library (`core`).
 
 **Integration tests** (`redis_integration_test`) cover `SAVE` (TC-001 to TC-006), `SET` (TC-007 to TC-014), `GET`
-(TC-015 to TC-021), `DEL` (TC-022 to TC-027) and `PING` (UT-1002 and others).
+(TC-015 to TC-021), `DEL` (TC-022 to TC-027) and `PING` (TC-1002 and others).
 
 **Stress test** (`redis_stress_test`) runs four phases and prints its seed so any failure replays exactly: (1) every
 request split at every byte boundary, malformed framing, garbage; (2) many clients against local models, pipelined, with

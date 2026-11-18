@@ -40,12 +40,12 @@ counted it, not an exact instant.
 
 | ID        | Behaviour | Given / When | Expected | Level | Existing test | Coverage |
 |-----------|-----------|--------------|----------|-------|---------------|----------|
-| TC-160 | `PING` is answered `+PONG` | Connected client; `PING`, then `PING` again | `+PONG` both times, on the same connection | Unit, Integration, Differential | `session`: "A session answers over a real connection"; `ping_pong` UT-1001; `diff_test.py` | Unit |
-| TC-161 | `PING <message>` echoes it (A1) | `PING HelloWorld` | Bulk string `HelloWorld` | Integration, Differential | `ping_pong` UT-1003 | Integration |
+| TC-160 | `PING` is answered `+PONG` | Connected client; `PING`, then `PING` again | `+PONG` both times, on the same connection | Unit, Integration, Differential | `session`: "A session answers over a real connection"; `ping_pong` TC-1001; `diff_test.py` | Unit |
+| TC-161 | `PING <message>` echoes it (A1) | `PING HelloWorld` | Bulk string `HelloWorld` | Integration, Differential | `ping_pong` TC-1003 | Integration |
 | TC-162 | `PING` with too many arguments (A2) | `PING a b` | `-ERR wrong number of arguments for 'ping' command` | Unit, Differential | None found | Gap |
 | TC-163 | `ECHO <message>` echoes it (A6) | `ECHO hello` | Bulk string `hello` | Unit, Differential | `diff_test.py` generates `ECHO <value>` | Differential |
 | TC-164 | `ECHO` takes exactly one argument (A6) | `ECHO`; `ECHO a b` | `-ERR wrong number of arguments for 'echo' command` | Unit, Differential | None found | Gap |
-| TC-165 | Replies keep request order; clients are independent | Two clients each send `PING One`, `PING Two` | Each client gets `One` then `Two`; no crosstalk | Integration, Stress | `ping_pong` UT-1002, UT-1004; stress phase 2 (values carry client id and sequence number) | Integration |
+| TC-165 | Replies keep request order; clients are independent | Two clients each send `PING One`, `PING Two` | Each client gets `One` then `Two`; no crosstalk | Integration, Stress | `ping_pong` TC-1002, TC-1004; stress phase 2 (values carry client id and sequence number) | Integration |
 | TC-166 | An idle client is disconnected (A3) | `--idle-timeout` 1 s; the client sends nothing | Server hangs up; `IdleTimeout` violation counted once | Unit | `session`: "A session closes idle clients" | Unit |
 | TC-167 | Activity, or no limit, keeps the client (A3) | Requests every 0.6 s for 4 rounds with a 1 s limit; and no limit with a quiet client | Never closed; no violation counted | Unit | `session`: "A session closes idle clients" (the two other cases) | Unit |
 
@@ -90,6 +90,16 @@ counted it, not an exact instant.
 | TC-192 | Limits are observable on a live server | Real server with `--maxclients 1`; a second client connects; read `INFO` | Second client refused with the error of TC-172; `INFO` counts it | Integration | None found (master plan A-7) | Gap |
 
 Coverage per use case is in [traceability.md](traceability.md).
+
+## 5. RESP encoding and decoding (`common/resp`, FR-008, NFR-004)
+
+The reply side and the request side of the wire format. These are the parser's own unit tests, with the IDs they
+were given before the TC scheme: they keep their numbers, which the project does not renumber.
+
+| ID | Scenario | Given / When | Then | Req | Level | Existing test | Coverage |
+|----|----------|--------------|------|-----|-------|---------------|----------|
+| TC-2001 | Encode RESP values into wire format | A value of each RESP type (simple string, error, integer, bulk, null, array) is encoded | The exact bytes of RESP2, with CRLF terminators | FR-008, NFR-004 | Unit | `parser`: "Encode RESP values into wire format" | Unit |
+| TC-2002 | Decode RESP wire format into values | The wire bytes of each RESP type are decoded | A value of the same type and contents; malformed bytes are errors (TC-179, TC-184) | FR-008 | Unit | `parser`: "Decode RESP wire format into values" | Unit |
 
 ## Entry and exit criteria
 
