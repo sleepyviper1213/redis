@@ -106,6 +106,164 @@ SCENARIO("SET over a key that is already due",
 	}
 }
 
+SCENARIO("Options decide whether EXPIRE sets a deadline",
+		 "[commands][expiry]") {
+	GIVEN("a key with a deadline 100 seconds ahead") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		server.run({"EXPIRE", "k", "100"});
+
+		WHEN("TC-266: GT, NX, XX and LT are tried in turn (#41)") {
+			THEN("only the deadline that passes its option is set") {
+				CHECK(server.run({"EXPIRE", "k", "50", "GT"}) == ":0\r\n");
+				CHECK(server.run({"TTL", "k"}) == ":100\r\n");
+				CHECK(server.run({"EXPIRE", "k", "200", "GT"}) == ":1\r\n");
+				CHECK(server.run({"TTL", "k"}) == ":200\r\n");
+				CHECK(server.run({"EXPIRE", "k", "10", "NX"}) == ":0\r\n");
+				CHECK(server.run({"EXPIRE", "k", "10", "XX"}) == ":1\r\n");
+				CHECK(server.run({"EXPIRE", "k", "5", "LT"}) == ":1\r\n");
+				CHECK(server.run({"EXPIRE", "k", "9999", "LT"}) == ":0\r\n");
+				CHECK(server.run({"TTL", "k"}) == ":5\r\n");
+			}
+		}
+	}
+
+	GIVEN("keys without a deadline") {
+		test::Server server;
+		for (const char *key : {"a", "b", "c", "d"})
+			server.run({"SET", key, "v"});
+
+		WHEN("TC-266: each option is tried (no deadline counts as infinite)") {
+			THEN("NX and LT set it, XX and GT do not") {
+				CHECK(server.run({"EXPIRE", "a", "10", "XX"}) == ":0\r\n");
+				CHECK(server.run({"EXPIRE", "b", "10", "GT"}) == ":0\r\n");
+				CHECK(server.run({"TTL", "a"}) == ":-1\r\n");
+				CHECK(server.run({"TTL", "b"}) == ":-1\r\n");
+				CHECK(server.run({"EXPIRE", "c", "10", "LT"}) == ":1\r\n");
+				CHECK(server.run({"EXPIRE", "d", "10", "NX"}) == ":1\r\n");
+				CHECK(server.run({"TTL", "c"}) == ":10\r\n");
+				CHECK(server.run({"TTL", "d"}) == ":10\r\n");
+			}
+		}
+	}
+}
+
+SCENARIO("The other EXPIRE commands take the options too",
+		 "[commands][expiry]") {
+	GIVEN("a key without a deadline") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+
+		WHEN("TC-267: PEXPIRE is tried with NX and GT") {
+			THEN("the rules are those of EXPIRE") {
+				CHECK(server.run({"PEXPIRE", "k", "100000", "NX"}) == ":1\r\n");
+				CHECK(server.run({"PEXPIRE", "k", "50000", "GT"}) == ":0\r\n");
+				CHECK(server.run({"PEXPIRE", "k", "200000", "GT"}) == ":1\r\n");
+			}
+		}
+
+		WHEN("TC-267: EXPIREAT and PEXPIREAT get far-ahead times") {
+			THEN("an equal deadline fails GT and LT, a nearer one passes LT") {
+				CHECK(server.run({"EXPIREAT", "k", "4102444800", "NX"}) ==
+					  ":1\r\n");
+				CHECK(server.run({"EXPIREAT", "k", "4102444800", "GT"}) ==
+					  ":0\r\n");
+				CHECK(server.run({"EXPIREAT", "k", "4102444801", "GT"}) ==
+					  ":1\r\n");
+				CHECK(server.run({"EXPIREAT", "k", "4102444801", "LT"}) ==
+					  ":0\r\n");
+				CHECK(server.run({"PEXPIREAT", "k", "4102444800000", "LT"}) ==
+					  ":1\r\n");
+				CHECK(server.run({"PEXPIREAT", "k", "4102444800000", "XX"}) ==
+					  ":1\r\n");
+			}
+		}
+	}
+}
+
+SCENARIO("Options with a missing key, a due key and a past deadline",
+		 "[commands][expiry]") {
+	GIVEN("a missing key") {
+		test::Server server;
+
+		WHEN("TC-268: EXPIRE is sent with NX") {
+			THEN("the reply is 0") {
+				CHECK(server.run({"EXPIRE", "nokey", "10", "NX"}) == ":0\r\n");
+			}
+		}
+	}
+
+	GIVEN("a key whose deadline has passed but which nothing has removed") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		make_due(server, "k");
+
+		WHEN("TC-268: EXPIRE is sent with XX") {
+			THEN("the key is missing, so the reply is 0") {
+				CHECK(server.run({"EXPIRE", "k", "10", "XX"}) == ":0\r\n");
+				CHECK(server.run({"EXISTS", "k"}) == ":0\r\n");
+			}
+		}
+	}
+
+	GIVEN("a key with a deadline ahead") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		server.run({"EXPIRE", "k", "100"});
+
+		WHEN("TC-268: EXPIRE gets a zero amount with LT") {
+			THEN("the option passes, and the key is deleted as in A4") {
+				CHECK(server.run({"EXPIRE", "k", "0", "LT"}) == ":1\r\n");
+				CHECK(server.run({"EXISTS", "k"}) == ":0\r\n");
+			}
+		}
+	}
+}
+
+SCENARIO("Refused options and the order of the checks",
+		 "[commands][expiry]") {
+	GIVEN("a key") {
+		test::Server server;
+		server.run({"SET", "k", "v"});
+		constexpr auto UNSUPPORTED = "-ERR Unsupported option 11\r\n";
+
+		WHEN("TC-269: the argument is not an option") {
+			THEN("it is reported before the amount, and before a conflict") {
+				CHECK(server.run({"EXPIRE", "k", "10", "11"}) == UNSUPPORTED);
+				CHECK(server.run({"EXPIRE", "k", "abc", "11"}) == UNSUPPORTED);
+				CHECK(server.run({"EXPIRE", "k", "10", "11", "NX", "XX"}) ==
+					  UNSUPPORTED);
+			}
+		}
+
+		WHEN("TC-269: the options conflict") {
+			THEN("the reply is the error of Redis") {
+				for (const char *other : {"XX", "GT", "LT"})
+					CHECK(server.run({"EXPIRE", "k", "10", "NX", other}) ==
+						  "-ERR NX and XX, GT or LT options at the same time "
+						  "are not compatible\r\n");
+				CHECK(server.run({"EXPIRE", "k", "10", "GT", "LT"}) ==
+					  "-ERR GT and LT options at the same time are not "
+					  "compatible\r\n");
+			}
+		}
+
+		WHEN("TC-269: the options are fine and the amount is not") {
+			THEN("the amount is refused") {
+				CHECK(server.run({"EXPIRE", "k", "abc", "NX"}) ==
+					  "-ERR value is not an integer or out of range\r\n");
+			}
+		}
+
+		WHEN("TC-269: an option is in lower case and given twice") {
+			THEN("it is accepted") {
+				CHECK(server.run({"EXPIRE", "k", "10", "nx", "NX"}) ==
+					  ":1\r\n");
+			}
+		}
+	}
+}
+
 SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 		 "[commands][expiry]") {
 	GIVEN("a key") {
@@ -152,9 +310,6 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 			THEN("the error names the command in lower case") {
 				CHECK(
 					server.run({"EXPIRE", "k"}) ==
-					"-ERR wrong number of arguments for 'expire' command\r\n");
-				CHECK(
-					server.run({"EXPIRE", "k", "1", "2"}) ==
 					"-ERR wrong number of arguments for 'expire' command\r\n");
 				CHECK(server.run({"TTL"}) ==
 					  "-ERR wrong number of arguments for 'ttl' command\r\n");
@@ -339,7 +494,7 @@ SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 	}
 }
 
-// By design (LI-05), and not implemented (#41, #42). Pinned so that changing
+// By design (LI-05), and not implemented (#42). Pinned so that changing
 // one is deliberate: replace the test with a normal scenario when it changes.
 SCENARIO("Key expiry limits by design and commands not implemented",
 		 "[commands][expiry][limit]") {
@@ -358,13 +513,6 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 	GIVEN("a key") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
-
-		THEN("EXPIRE takes no NX, XX, GT or LT option (#41)") {
-			for (const char *option : {"NX", "XX", "GT", "LT"})
-				CHECK(
-					server.run({"EXPIRE", "k", "10", option}) ==
-					"-ERR wrong number of arguments for 'expire' command\r\n");
-		}
 
 		THEN("EXPIRETIME and PEXPIRETIME are unknown commands (#42)") {
 			CHECK(server.run({"EXPIRETIME", "k"}) ==

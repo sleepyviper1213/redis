@@ -291,16 +291,28 @@ public:
 		Keep,   ///< store the deadline; the key goes when read or swept
 	};
 
+	/// The conditions of EXPIRE's NX, XX, GT and LT options; none set means
+	/// always. A key without a deadline counts as infinite for GT and LT.
+	struct ExpireOptions {
+		bool nx = false; ///< only a key without a deadline
+		bool xx = false; ///< only a key with a deadline
+		bool gt = false; ///< only a later deadline (never for a key without one)
+		bool lt = false; ///< only an earlier deadline (always for a key without one)
+	};
+
 	/**
 	 * \brief Expire \p key at \p deadline. A deadline in the past deletes the
 	 * key immediately, as EXPIRE with a non-positive TTL does in Redis, unless
-	 * \p past is Keep, as for SET ... EXAT or PXAT in the past.
-	 * \return false if the key does not exist.
+	 * \p past is Keep, as for SET ... EXAT or PXAT in the past. \p options may
+	 * refuse to set the deadline, as EXPIRE's NX, XX, GT and LT do.
+	 * \return false if the key does not exist, or \p options refused.
 	 */
 	bool set_expiry(std::string_view key, DeadlineTimer timer,
-					PastDeadline past = PastDeadline::Delete) {
+					PastDeadline past = PastDeadline::Delete,
+					ExpireOptions options = {}) {
 		owner_.check();
 		if (!contains(key)) return false;
+		if (!allows(options, key, timer)) return false;
 		if (expiry_enabled_ && past == PastDeadline::Delete &&
 			timer.has_expired()) {
 			erase(key);
@@ -383,6 +395,19 @@ private:
 
 	[[nodiscard]] Key make_key(std::string_view key) const {
 		return Key(key, rebound<char>(alloc_));
+	}
+
+	/// Whether \p options let \p key, which exists, get the deadline \p timer.
+	bool allows(ExpireOptions options, std::string_view key,
+				DeadlineTimer timer) const {
+		const auto it      = expires_.find(key);
+		const bool has     = it != expires_.end();
+		const auto current = has ? it->second : time_point{};
+		if (options.nx && has) return false;
+		if (options.xx && !has) return false;
+		if (options.gt && (!has || timer.deadline() <= current)) return false;
+		if (options.lt && has && timer.deadline() >= current) return false;
+		return true;
 	}
 
 	/// Remove \p key if its deadline has passed. \return true if removed.

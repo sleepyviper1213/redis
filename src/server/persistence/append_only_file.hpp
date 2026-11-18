@@ -108,6 +108,12 @@ public:
 		replace(std::span<const std::string_view, N>(args));
 	}
 
+	/// Log nothing for the command that is running: it did not change the
+	/// keyspace, and what it was told (EXPIRE ... GT, say) could change it on a
+	/// replay. Call from a command while it runs, and only when `ctx.aof` is
+	/// set.
+	void discard() noexcept { discarded_ = true; }
+
 	/// Log the keys that expired since the last call (the periodic tick).
 	void log_expired(Database &db);
 
@@ -176,6 +182,7 @@ private:
 
 	std::string buf_;      ///< logged but not yet written
 	std::string replaced_; ///< what replace() set, until command_ran() takes it
+	bool discarded_ = false; ///< discard() was called, until command_ran()
 	/// The incremental file being appended to. Shared with the sync thread,
 	/// which keeps it open while it syncs even if a rewrite has moved on to the
 	/// next one. Replaced only under mutex_, and only by the keyspace thread.
