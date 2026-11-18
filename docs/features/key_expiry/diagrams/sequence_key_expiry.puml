@@ -1,0 +1,68 @@
+@startuml
+title Key Expiry - Set, Read, Lazy and Active Removal
+
+' One key from EXPIRE to removal, both ways. With --io-threads above 1 the
+' command and the sweep both run on the keyspace thread, so they never overlap.
+
+actor Client
+participant "Session" as Session
+participant "CommandHandler" as Handler
+database "Keyspace\n(deadline map +\nindex by deadline)" as DB
+participant "Cron\n(every 100 ms)" as Cron
+participant "AppendOnlyFile\n(--appendonly)" as Aof
+
+== Set a deadline ==
+Client -> Session : EXPIRE session:42 300
+Session -> Handler : execute
+Handler -> Handler : amount is an integer?\nseconds x 1000 + now: no overflow?
+alt not an integer
+  Handler --> Client : -ERR value is not an integer or out of range
+else overflow
+  Handler --> Client : -ERR invalid expire time in 'expire' command
+else valid
+  Handler -> DB : set_expiry("session:42", now + 300 s)
+  alt key missing
+    DB --> Handler : false
+    Handler --> Client : :0
+  else key exists, deadline already past\n(zero or negative amount, or a past timestamp)
+    DB -> DB : erase key and deadline now
+    DB --> Handler : true
+    Handler -> Aof : DEL session:42  (only if the file is on)
+    Handler --> Client : :1
+  else key exists, deadline in the future
+    DB --> Handler : true
+    Handler -> Aof : PEXPIREAT session:42 <absolute ms>
+    Handler --> Client : :1
+  end
+end
+
+== Read the time left ==
+Client -> Session : TTL session:42
+Session -> Handler : execute
+Handler -> DB : contains? expiry?
+alt key missing
+  Handler --> Client : :-2
+else no deadline
+  Handler --> Client : :-1
+else deadline
+  Handler --> Client : :<remaining, rounded to nearest second>
+end
+
+== Lazy removal: a command finds the key past its deadline ==
+Client -> Session : GET session:42   (after the deadline)
+Session -> Handler : execute
+Handler -> DB : find("session:42")
+DB -> DB : deadline passed:\nerase key and deadline,\nexpired_keys++
+DB --> Handler : not found
+Handler --> Client : $-1  (null bulk)
+Handler -> Aof : DEL session:42  (after the command)
+
+== Active removal: nobody asks for the key again ==
+loop every 100 ms
+  Cron -> DB : active_expire_cycle(1000)
+  DB -> DB : while the oldest deadline has passed\nand fewer than 1000 removed:\nerase it, expired_keys++
+  DB --> Cron : number removed
+  Cron -> Aof : log_expired(): DEL for each key removed
+end
+
+@enduml

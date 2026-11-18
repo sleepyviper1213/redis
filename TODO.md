@@ -45,7 +45,8 @@ Design notes and future work. Nothing here is implemented yet.
 - [ ] **Compare-and-set / compare-and-delete primitive** (or document that
   `WATCH` is the supported way), so clients can retry read-modify-write and
   release locks safely.
-- [ ] **Rewrite layer for AOF / replication, if either is added.** Turn
+- [ ] **Rewrite layer for AOF / replication, if either is added.** Deferred:
+  not in scope until one of them is added. Turn
   relative or non-deterministic commands into absolute, state-based ones before
   they leave the handler (`EX`/`PX` to absolute deadline, `INCRBYFLOAT` to the
   result, `SPOP` to `SREM`, ...). Snapshots already store absolute deadlines.
@@ -83,13 +84,13 @@ Design notes and future work. Nothing here is implemented yet.
   compared (cut from the stream by hand, so `$-1` and `*-1` differ), unordered
   replies sorted. Reports the first divergence with the requests before it;
   `--keep-going` lists up to 20 and counts them per command, `--loose-errors`
-  compares error codes only. Wired into CI's `linux-gcc-release` job against
+  compares error codes only. Wired into CI's `x86_64-linux-gnu-gcc-release` job against
   Debian's Redis, `continue-on-error` until its first findings are triaged
   (one is likely: `LPOP key count` on a missing key answers `$-1`, Redis
   `*-1`). Still open: run it, fix or accept each divergence, then make the
   step required.
 - [ ] **Run the multi-threaded mode under ThreadSanitizer** (`--io-threads N`).
-  CI's `linux-gcc-tsan` job runs the unit tests under TSan (passing), and now
+  CI's `x86_64-linux-gnu-gcc-tsan` job runs the unit tests under TSan (passing), and now
   also the integration suite and the stress test against a TSan server with 1
   and 4 I/O threads. `scripts/common.sh`'s `stop_server` stops the server with
   SIGTERM and fails on an unclean exit or any sanitizer report on its stderr
@@ -221,10 +222,9 @@ One command thread means one slow command stalls every client.
   (`BasicListener<FailingAcceptor>` in the listener test), but by design
   `retry` absorbs those, so the loop never fails from them. A FailFast end
   needs a failure outside `retry`: a seam in housekeeping (`cron()`), say.
-- [ ] **Decide: a final snapshot after a FailFast failure?** `run()` returns
-  the error without saving, so a dead accept loop loses the writes since the
-  last save. Saving anyway would keep them whenever the keyspace thread itself
-  is still healthy.
+- [ ] **Decided: after a FailFast failure, attempt a final snapshot; if it
+  fails, exit non-zero** (DX-76). `run()` still returns the error without
+  saving; the change is not implemented yet (TC-262).
 - [ ] **Fewer exceptions in the coroutines.** `serve()` catches the race's
   error with `try`/`catch` around the `co_await`, and the accept loop does the
   same around `retry`. Recording the error in an `upon_error` before the
@@ -341,7 +341,7 @@ IDs (A-n, B-n) refer to the test plan and the benchmark report.
 - [ ] **Close the test anomalies.** A-5 first (integration `save` tests
   TC-001 to TC-006 carry the hidden tag `[.]`, so they never run: confirm,
   then run or fix them), then A-2 (option parsing and config precedence), A-6
-  (`SIGTERM`: final save and exit status) and A-4 (re-enable `linux-gcc-asan`).
+  (`SIGTERM`: final save and exit status) and A-4 (re-enable `x86_64-linux-gnu-gcc-asan`).
   Add A-1's fix (wider margins in the `watchdog` and `every` tests). Update the
   traceability table when a gap closes.
 - [ ] **Rerun the benchmarks and republish the figures.** With the current

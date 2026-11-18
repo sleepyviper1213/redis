@@ -40,10 +40,40 @@
 /// All are no-ops on compilers that do not understand GNU attributes.
 #if defined(__GNUC__) || defined(__clang__)
 #define REDIS_CONST_FN [[gnu::const]]
-#define REDIS_PURE_FN  [[gnu::pure]]
-#define REDIS_HOT_FN   [[gnu::hot]]
+#define REDIS_PURE_FN [[gnu::pure]]
+#define REDIS_HOT_FN [[gnu::hot]]
 #else
 #define REDIS_CONST_FN
 #define REDIS_PURE_FN
 #define REDIS_HOT_FN
+#endif
+
+/// Function effects (clang 20+): a statically checked promise about what a
+/// function may do, enforced under -Wfunction-effects and, at run time, by
+/// RealtimeSanitizer (-fsanitize=realtime).
+/// - REDIS_NONBLOCKING: calls nothing that may block (no lock, I/O, sleep) and,
+///   because clang implies it, nothing that allocates or throws.
+/// - REDIS_NONALLOCATING: allocates nothing, but may still block.
+/// Placed after the declarator, as clang requires for a type attribute:
+///   int f() const noexcept REDIS_NONBLOCKING;
+/// Callees must carry the attribute or have a visible definition clang can
+/// infer it from. A call into code that is nonblocking in practice but cannot
+/// say so (a vDSO clock read) is vouched for with REDIS_TRUSTED_NONBLOCKING_*.
+/// No-ops elsewhere.
+#if defined(__clang__) && defined(__has_cpp_attribute)
+#if __has_cpp_attribute(clang::nonblocking)
+#define REDIS_NONBLOCKING [[clang::nonblocking]]
+#define REDIS_NONALLOCATING [[clang::nonallocating]]
+#define REDIS_TRUSTED_NONBLOCKING_BEGIN                                        \
+	_Pragma("clang diagnostic push")                                           \
+		_Pragma("clang diagnostic ignored \"-Wfunction-effects\"")
+#define REDIS_TRUSTED_NONBLOCKING_END _Pragma("clang diagnostic pop")
+#endif
+#endif
+
+#ifndef REDIS_NONBLOCKING
+#define REDIS_NONBLOCKING
+#define REDIS_NONALLOCATING
+#define REDIS_TRUSTED_NONBLOCKING_BEGIN
+#define REDIS_TRUSTED_NONBLOCKING_END
 #endif

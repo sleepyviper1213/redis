@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/utils/attributes.hpp"
+
 #include <chrono>
 
 namespace redis {
@@ -24,7 +26,7 @@ struct TickClock {
 
 	static constexpr bool is_steady = true;
 
-	[[nodiscard]] static time_point now() noexcept;
+	[[nodiscard]] static time_point now() noexcept REDIS_NONBLOCKING;
 };
 
 } // namespace redis

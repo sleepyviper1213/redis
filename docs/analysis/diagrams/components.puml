@@ -12,7 +12,8 @@ package "app (redis_server executable)" {
 
 package "server (redis_server_lib)" {
   package "net" {
-    [Listener\n(accept loop, admission)] as Listener
+    [Listener\n(accept loop)] as Listener
+    interface "AcceptSource\n(is_open, attempt, pause)" as AcceptSource
     [Session\n(read, parse, write)] as Session
     [Executor\n(the keyspace thread)] as Executor
     [NetGuard\n(limits, violation counters)] as Guard
@@ -38,7 +39,7 @@ package "common" {
 }
 
 package "core" {
-  [stdexec_ext\n(every, watchdog, retry, supervised)] as StdexecExt
+  [stdexec_ext\n(every, watchdog, retry, supervised,\ntask, erased)] as StdexecExt
   [logging, chrono, os, utils] as CoreUtils
 }
 
@@ -50,9 +51,10 @@ folder "files" {
 Client --> Listener : TCP (port 6379)
 App --> Server
 Server --> Listener
+Listener ..|> AcceptSource : implements
 Server --> Watchdog
 Listener --> Session : one per client
-Listener ..> Guard : admission
+Session ..> Guard : admission, limits
 Session --> Resp : parse requests
 Session --> Executor : batch
 Executor --> Handler

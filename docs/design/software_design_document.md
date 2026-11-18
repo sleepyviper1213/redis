@@ -9,6 +9,7 @@
 | Date        | Revision | Author             | Change        |
 |-------------|----------|--------------------|---------------|
 | 13 Nov 2026 | 1.0      | Khac Truong Nguyen | First version |
+| 17 Nov 2026 | 1.1      | Khac Truong Nguyen | Feature design moved to `features/<feature>/design.md`; decisions D1 to D10 linked to their ADRs; section 16 names the feature of each requirement |
 
 ## Table of contents
 
@@ -40,6 +41,10 @@ This document describes the design of a Redis-compatible in-memory key-value ser
 understand how the requirements in the Software Requirements Specification (SRS) [2] are met, and why the design is as
 it is.
 
+This document holds the design of the system as a whole. Design that belongs to one feature (its choices, code map and
+open questions) is in that feature's `design.md` under [docs/features/](../features/README.md) [9]; a decision with a
+real trade-off has an ADR [10].
+
 ### 1.2 Scope
 
 The design covers the server executable: networking, protocol, commands, keyspace, persistence, diagnostics and
@@ -62,7 +67,7 @@ Maintainers and contributors; examiners reviewing the project.
 | AOF              | Append-only file: a log of write commands replayed at startup                               |
 | COW              | Copy-on-write: pages shared between a parent and a forked child until one writes            |
 
-Module paths are relative to `src/`. Diagrams are in [docs/analysis/diagrams/](../analysis/diagrams/).
+Module paths are relative to `src/`. Diagrams are in [docs/analysis/diagrams/](../analysis/diagrams).
 
 ## 2. References
 
@@ -81,6 +86,10 @@ Module paths are relative to `src/`. Diagrams are in [docs/analysis/diagrams/](.
 [7] NVIDIA, "stdexec: `std::execution` reference implementation," https://github.com/NVIDIA/stdexec.
 
 [8] K. T. Nguyen, "User and Installation Guide," `docs/user/user_guide.md`, 2026.
+
+[9] K. T. Nguyen, "Features," `docs/features/README.md`, 2026.
+
+[10] K. T. Nguyen, "Architecture Decision Records," `docs/design/adr/README.md`, 2026.
 
 ## 3. Stakeholders and design concerns
 
@@ -273,7 +282,7 @@ the connection is closed.
 
 ### 11.1 Request path
 
-Diagrams: [sequence_client_server_interaction.puml](../analysis/diagrams/sequence_client_server_interaction.puml),
+Diagrams: [sequence_client_server_interaction.puml](../features/connection/diagrams/sequence_client_server_interaction.puml),
 [activity_command_execution_pipeline.puml](../analysis/diagrams/activity_command_execution_pipeline.puml).
 
 1. The listener accepts a connection, admits it against `--maxclients`, and starts a session on its own strand.
@@ -288,13 +297,13 @@ Diagrams: [sequence_client_server_interaction.puml](../analysis/diagrams/sequenc
 
 ### 11.2 Startup and shutdown
 
-Startup: [activity_startup.puml](../analysis/diagrams/activity_startup.puml). Load the append-only files, or else the
+Startup: [activity_startup.puml](../features/server_lifecycle/diagrams/activity_startup.puml). Load the append-only files, or else the
 snapshot; bind the port; start the I/O threads, the keyspace thread and housekeeping; log "Ready to accept
 connections". Failure to read data or to bind stops the server (FR-018).
 
-Shutdown: [sequence_threads_request_and_shutdown.puml](../analysis/diagrams/sequence_threads_request_and_shutdown.puml).
+Shutdown: [sequence_threads_request_and_shutdown.puml](../features/connection/diagrams/sequence_threads_request_and_shutdown.puml).
 On a signal: stop accepting and housekeeping; drain sessions; wait for the executing batch; cancel `BGSAVE` and an
-unfinished rewrite; close the append-only file; write the final snapshot; exit. A failed final save exits non-zero.
+unfinished rewrite; close the append-only file; write the final snapshot; exit. A failed final save exits non-zero. After a `FailFast` end, the same final save is attempted; if it fails, the server exits non-zero.
 
 ### 11.3 Guarantees to clients
 
@@ -306,7 +315,7 @@ reply, so retrying is safe only for idempotent commands. Detail: [directory_layo
 ## 12. State dynamics viewpoint
 
 A client connection moves through the states in
-[state_connection_lifecycle.puml](../analysis/diagrams/state_connection_lifecycle.puml): accepted or rejected at
+[state_connection_lifecycle.puml](../features/connection/diagrams/state_connection_lifecycle.puml): accepted or rejected at
 admission; waiting for a request (bounded by `--idle-timeout`); reading and parsing; executing; writing (bounded by
 `--request-timeout`); and closed, by the client, a limit, a protocol error or shutdown. Background work has its own
 states:
@@ -352,13 +361,13 @@ blocks other clients for the time that takes.
 ### 13.6 Fsync policy
 
 `always`: before the reply. `everysec`: a thread forces the log to disk once a second (default). `no`: left to the
-operating system.
+operating system. Data-loss bound: under `always` no acknowledged write is lost; under `everysec` a crash loses at most the writes of the last second.
 
 ## 14. Resource viewpoint
 
 ### 14.1 Threads
 
-Diagrams: [concurrency_threads.puml](../analysis/diagrams/concurrency_threads.puml).
+Diagrams: [concurrency_threads.puml](../features/connection/diagrams/concurrency_threads.puml).
 
 | Thread          | Runs                                                              | Exists                              |
 |-----------------|-------------------------------------------------------------------|-------------------------------------|
@@ -416,42 +425,44 @@ Violations are counted in `INFO stats` and `INFO clients`. Memory in use is coun
 
 ## 15. Design rationale
 
-| #  | Decision                                            | Alternatives                              | Reason                                                                                              |
-|----|-----------------------------------------------------|-------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| D1 | One thread executes commands, no locks              | Shards with a lock each                   | Redis' model; each command atomic; no lock cost; I/O still scales with `--io-threads`                |
-| D2 | stdexec senders over Boost.Asio                     | Callbacks; coroutines everywhere          | Structured cancellation; no frame per request; the shutdown race is a few lines                     |
-| D3 | Coroutines only for loops that branch per connection | Coroutines for the whole session         | A coroutine allocates a frame per call and turns errors into exceptions                             |
-| D4 | Zero-copy arguments                                 | Copy each argument                        | Fewer allocations; the main reason large-value `GET` beats Redis in the benchmarks [5]              |
-| D5 | Two expiry indexes                                  | One map with random sampling              | O(1) `TTL` and an ordered, bounded sweep                                                            |
-| D6 | Own snapshot format (CBOR records)                  | Redis RDB                                 | RDB is large and version-bound; CBOR via reflect-cpp is small to maintain and binary-safe           |
-| D7 | New incremental file before the rewrite fork        | Buffer writes during the rewrite          | No memory growth; a crash at any step leaves a replayable log                                       |
-| D8 | Refuse to start on unreadable data                  | Start empty and log                       | Serving empty and later saving would destroy the only copy                                          |
-| D9 | Errors as values                                    | Exceptions                                | Visible control flow, no hot-path cost, one source of wording                                       |
-| D10| `fork` for background save and rewrite              | A thread that copies the keyspace         | Copy-on-write snapshot, no locking, no up-front copy; costs portability (POSIX only)               |
+The full record of each decision is the ADR in the last column. D7 and D10 are recorded together in ADR-0007.
+
+| #  | Decision                                            | Alternatives                              | Reason                                                                                              | Record |
+|----|-----------------------------------------------------|-------------------------------------------|-----------------------------------------------------------------------------------------------------|--------|
+| D1 | One thread executes commands, no locks              | Shards with a lock each                   | Redis' model; each command atomic; no lock cost; I/O still scales with `--io-threads`                | [ADR-0001](../features/connection/adr/0001-single-threaded-command-executor.md) |
+| D2 | stdexec senders over Boost.Asio                     | Callbacks; coroutines everywhere          | Structured cancellation; no frame per request; the shutdown race is a few lines                     | [ADR-0002](../features/connection/adr/0002-stdexec-senders-over-callbacks.md) |
+| D3 | Coroutines only for loops that branch per connection | Coroutines for the whole session         | A coroutine allocates a frame per call and turns errors into exceptions                             | [ADR-0003](../features/connection/adr/0003-coroutines-only-for-branching-loops.md) |
+| D4 | Zero-copy arguments                                 | Copy each argument                        | Fewer allocations; the main reason large-value `GET` beats Redis in the benchmarks [5]              | [ADR-0004](../features/data_types/adr/0004-zero-copy-request-arguments.md) |
+| D5 | Two expiry indexes                                  | One map with random sampling              | O(1) `TTL` and an ordered, bounded sweep                                                            | [ADR-0005](../features/key_expiry/adr/0005-two-expiry-indexes.md) |
+| D6 | Own snapshot format (CBOR records)                  | Redis RDB                                 | RDB is large and version-bound; CBOR via reflect-cpp is small to maintain and binary-safe           | [ADR-0006](../features/persistence/adr/0006-own-snapshot-format.md) |
+| D7 | New incremental file before the rewrite fork        | Buffer writes during the rewrite          | No memory growth; a crash at any step leaves a replayable log                                       | [ADR-0007](../features/persistence/adr/0007-fork-for-background-save.md) |
+| D8 | Refuse to start on unreadable data                  | Start empty and log                       | Serving empty and later saving would destroy the only copy                                          | [ADR-0008](../features/server_lifecycle/adr/0008-refuse-to-start-on-unreadable-data.md) |
+| D9 | Errors as values                                    | Exceptions                                | Visible control flow, no hot-path cost, one source of wording                                       | [ADR-0009](adr/0009-errors-as-values.md) |
+| D10| `fork` for background save and rewrite              | A thread that copies the keyspace         | Copy-on-write snapshot, no locking, no up-front copy; costs portability (POSIX only)               | [ADR-0007](../features/persistence/adr/0007-fork-for-background-save.md) |
 
 ## 16. Requirements traceability
 
-| Requirement                          | Design element                                                      | Section        |
-|--------------------------------------|---------------------------------------------------------------------|----------------|
-| FR-001 to FR-005 Data commands       | Command families over typed lookups                                 | 5, 6.3         |
-| FR-006 Key expiry                    | Two indexes; lazy removal and bounded sweep                         | 6.2, 13.1      |
-| FR-007 Server commands               | `server` command table; `INFO` sections                             | 5.1            |
-| FR-008 TCP and protocol              | RESP parser, request framing, sessions                              | 5.1, 11.1      |
-| FR-009 Concurrent clients            | I/O threads and a single keyspace owner                             | 14.1, 14.2     |
-| FR-010 Error replies                 | `reply::*` helpers; handler checks                                  | 10.1, 14.5     |
-| FR-011 Snapshots                     | Snapshot format; atomic replacement; background save                | 8.1, 13.2, 13.3 |
-| FR-012 Append-only file              | Directory layout; fsync policy; rewrite                             | 8.2, 13.4, 13.6 |
-| FR-013 Configuration                 | CLI11 options, config file, environment                             | 8.3            |
-| FR-014 Client limits                 | Guard and admission                                                 | 14.4           |
-| FR-015 Logging                       | Channels; asynchronous logger                                       | 5.1            |
-| FR-016 Diagnostics                   | Watchdog; crash handler                                             | 14.1, 10.2     |
-| FR-017 Graceful shutdown             | Supervision; shutdown order                                         | 11.2, 14.3     |
-| FR-018 Startup safety                | A load failure is fatal                                             | 11.2, 14.5     |
-| FR-019 Benchmarking                  | Scripts and the benchmark workflow                                  | [5]            |
-| NFR-001 Performance                  | Zero-copy parsing; one write per batch; no locks                    | 6.4, 11.1      |
-| NFR-003 Reliability                  | Atomic files; replayable log; startup safety                        | 13.2, 13.4     |
-| NFR-005 Availability                 | Fork-based background work                                          | 13.3, 13.4     |
-| NFR-006 to NFR-009 Quality           | Layers; tables; one-way dependencies                                | 7, 9           |
+| Requirement                          | Design element                                                      | Section        | Feature design |
+|--------------------------------------|---------------------------------------------------------------------|----------------|-----------------|
+| FR-001 to FR-005 Data commands       | Command families over typed lookups                                 | 5, 6.3         | [data_types](../features/data_types/design.md), [keyspace](../features/keyspace/design.md) |
+| FR-006 Key expiry                    | Two indexes; lazy removal and bounded sweep                         | 6.2, 13.1      | [key_expiry](../features/key_expiry/design.md) |
+| FR-007 Server commands               | `server` command table; `INFO` sections                             | 5.1            | [observability](../features/observability/design.md) |
+| FR-008 TCP and protocol              | RESP parser, request framing, sessions                              | 5.1, 11.1      | [connection](../features/connection/design.md) |
+| FR-009 Concurrent clients            | I/O threads and a single keyspace owner                             | 14.1, 14.2     | [connection](../features/connection/design.md) |
+| FR-010 Error replies                 | `reply::*` helpers; handler checks                                  | 10.1, 14.5     | cross-cutting |
+| FR-011 Snapshots                     | Snapshot format; atomic replacement; background save                | 8.1, 13.2, 13.3 | [persistence](../features/persistence/design.md) |
+| FR-012 Append-only file              | Directory layout; fsync policy; rewrite                             | 8.2, 13.4, 13.6 | [persistence](../features/persistence/design.md) |
+| FR-013 Configuration                 | CLI11 options, config file, environment                             | 8.3            | [server_lifecycle](../features/server_lifecycle/design.md) |
+| FR-014 Client limits                 | Guard and admission                                                 | 14.4           | [connection](../features/connection/design.md) |
+| FR-015 Logging                       | Channels; asynchronous logger                                       | 5.1            | [observability](../features/observability/design.md) |
+| FR-016 Diagnostics                   | Watchdog; crash handler                                             | 14.1, 10.2     | [observability](../features/observability/design.md) |
+| FR-017 Graceful shutdown             | Supervision; shutdown order                                         | 11.2, 14.3     | [server_lifecycle](../features/server_lifecycle/design.md) |
+| FR-018 Startup safety                | A load failure is fatal                                             | 11.2, 14.5     | [server_lifecycle](../features/server_lifecycle/design.md) |
+| FR-019 Benchmarking                  | Scripts and the benchmark workflow                                  | [5]            | cross-cutting |
+| NFR-001 Performance                  | Zero-copy parsing; one write per batch; no locks                    | 6.4, 11.1      | cross-cutting |
+| NFR-003 Reliability                  | Atomic files; replayable log; startup safety                        | 13.2, 13.4     | [persistence](../features/persistence/design.md) |
+| NFR-005 Availability                 | Fork-based background work                                          | 13.3, 13.4     | [persistence](../features/persistence/design.md) |
+| NFR-006 to NFR-009 Quality           | Layers; tables; one-way dependencies                                | 7, 9           | cross-cutting |
 
 ## 17. Known limitations
 
@@ -464,3 +475,4 @@ Violations are counted in `INFO stats` and `INFO clients`. Memory in use is coun
 * **Not implemented** (FR-021 to FR-025): Pub/Sub, transactions, Lua, replication and clustering, memory limit and
   eviction. Design notes for transactions and retries are in [TODO.md](../../TODO.md).
 * **Snapshots are not RDB files:** tools that read RDB cannot read them.
+* **No snapshot checksum (deferred):** a flipped byte in a snapshot is not detected yet (SRS R-001).

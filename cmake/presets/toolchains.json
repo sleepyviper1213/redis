@@ -5,46 +5,98 @@
     ],
     "configurePresets": [
         {
-            "name": "linux-gcc-toolchain",
+            "name": "on-linux",
             "hidden": true,
-            "inherits": "vcpkg-base",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Linux"
-            },
-            "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "g++"
             }
         },
         {
-            "name": "linux-clang-toolchain",
+            "name": "on-darwin",
             "hidden": true,
-            "inherits": "vcpkg-base",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            },
-            "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "clang++"
-            }
-        },
-        {
-            "name": "macos-llvm-toolchain",
-            "hidden": true,
-            "inherits": "vcpkg-base",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Darwin"
-            },
+            }
+        },
+        {
+            "name": "own-triplets",
+            "hidden": true,
+            "description": "The vcpkg triplets in cmake/triplets.",
+            "cacheVariables": {
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets"
+            }
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-toolchain",
+            "hidden": true,
+            "inherits": [
+                "on-linux",
+                "own-triplets",
+                "vcpkg-base"
+            ],
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-gcc",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/x86_64-linux-gnu-gcc.cmake"
+            }
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-toolchain",
+            "hidden": true,
+            "inherits": [
+                "on-linux",
+                "own-triplets",
+                "vcpkg-base"
+            ],
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-clang",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/x86_64-linux-gnu-clang.cmake"
+            }
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-toolchain",
+            "hidden": true,
+            "inherits": [
+                "on-darwin",
+                "own-triplets",
+                "vcpkg-base"
+            ],
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
                 "VCPKG_TARGET_TRIPLET": "arm64-osx-llvm",
                 "VCPKG_HOST_TRIPLET": "arm64-osx-llvm",
-                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
                 "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/homebrew-llvm.cmake"
+            }
+        },
+        {
+            "name": "asan-deps-gcc",
+            "hidden": true,
+            "description": "Dependencies built with -fsanitize=address, so Abseil's poisoning and generations agree between library and code.",
+            "inherits": "own-triplets",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-gcc-asan"
+            }
+        },
+        {
+            "name": "asan-deps-clang",
+            "hidden": true,
+            "description": "Dependencies built with -fsanitize=address, so Abseil's poisoning and generations agree between library and code.",
+            "inherits": "own-triplets",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-clang-asan"
+            }
+        },
+        {
+            "name": "asan-deps-macos",
+            "hidden": true,
+            "description": "Dependencies built with -fsanitize=address, so Abseil's poisoning and generations agree between library and code.",
+            "inherits": "own-triplets",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-llvm-asan",
+                "VCPKG_HOST_TRIPLET": "arm64-osx-llvm"
             }
         }
     ]

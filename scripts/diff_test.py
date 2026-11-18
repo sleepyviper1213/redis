@@ -16,6 +16,11 @@ first divergence. Replies in an order Redis does not define (SMEMBERS, SINTER,
 KEYS, HGETALL) are compared sorted. Nothing time-dependent is sent (no TTL
 reads, no short expiries).
 
+--expiry adds the expiry commands, still without depending on time: deadlines
+are far ahead, already past or invalid, never short, and TTL and PTTL are
+compared by what they say (missing, no deadline, time left) and not by how much
+time is left, which the two servers cannot agree on to the millisecond.
+
     python3 scripts/diff_test.py --port 6380 --reference-port 6379 [--seed n]
 
 scripts/diff_server.sh starts both servers. A failing run prints its seed and
@@ -123,12 +128,18 @@ def elements(reply):
     return out
 
 
-DEFINED, UNORDERED, PAIRS = range(3)
+DEFINED, UNORDERED, PAIRS, TTL = range(4)
 
 
 def canonical(reply, order):
     """reply with an undefined element order made canonical."""
     if order == DEFINED:
+        return reply
+    if order == TTL:
+        # -2 (missing) and -1 (no deadline) are exact; time left is only
+        # "some".
+        if reply.startswith(b":") and not reply.startswith(b":-"):
+            return b":time-left\r\n"
         return reply
     items = elements(reply)
     if items is None:
@@ -174,8 +185,9 @@ class Connection:
 # ---------------------------------------------------------------------------
 
 class Generator:
-    def __init__(self, seed):
+    def __init__(self, seed, expiry=False):
         self.rng = random.Random(seed)
+        self.expiry_enabled = expiry
 
     def pick(self, n):
         return self.rng.randrange(n)
@@ -213,8 +225,86 @@ class Generator:
         return b"%d" % (self.pick(17) - 8)
 
     def next(self):
-        return (self.string, self.list, self.set, self.hash,
-                self.keyspace)[self.pick(5)]()
+        families = [self.string, self.list, self.set, self.hash, self.keyspace]
+        if self.expiry_enabled:
+            families.append(self.expiry)
+        return families[self.pick(len(families))]()
+
+    def relative_amount(self):
+        """An EXPIRE or PEXPIRE amount: far ahead, not positive, or invalid."""
+        return self.rng.choice([
+            b"100000", b"100000", b"100000", b"86400000",
+            b"0", b"-5",
+            b"abc", b"1.5", b"", b"9223372036854775807",
+            b"-9223372036854775808",
+        ])
+
+    def absolute_amount(self, millis):
+        """An EXPIREAT or PEXPIREAT time: far ahead, in the past, or invalid.
+        The year 2100 cannot pass during a run."""
+        far = b"4102444800000" if millis else b"4102444800"
+        return self.rng.choice([
+            far, far, far, b"1", b"0", b"-1",
+            b"abc", b"", b"9223372036854775807",
+        ])
+
+    def expiry(self):
+        """Expiry commands whose replies do not depend on the clock."""
+        k = self.any_key()
+        roll = self.pick(14)
+        if roll == 0:
+            return [b"EXPIRE", k, self.relative_amount()], DEFINED
+        if roll == 1:
+            return [b"PEXPIRE", k, self.relative_amount()], DEFINED
+        if roll == 2:
+            return [b"EXPIREAT", k, self.absolute_amount(False)], DEFINED
+        if roll == 3:
+            return [b"PEXPIREAT", k, self.absolute_amount(True)], DEFINED
+        if roll == 4:
+            return [b"TTL", k], TTL
+        if roll == 5:
+            return [b"PTTL", k], TTL
+        if roll == 6:
+            return [b"PERSIST", k], DEFINED
+        if roll == 7:
+            option = self.rng.choice([b"EXAT", b"PXAT"])
+            return [b"SET", k, self.value(), option,
+                    self.absolute_amount(option == b"PXAT")], DEFINED
+        if roll == 8:
+            args = [b"SET", self.key("s"), self.value()]
+            for _ in range(self.pick(3)):
+                option = self.rng.choice(
+                    [b"NX", b"XX", b"GET", b"KEEPTTL", b"EX", b"PX",
+                     b"EXAT", b"PXAT"])
+                args.append(option)
+                if option in (b"EX", b"PX"):
+                    args.append(self.relative_amount())
+                elif option in (b"EXAT", b"PXAT"):
+                    args.append(self.absolute_amount(option == b"PXAT"))
+            return args, DEFINED
+        if roll == 9:
+            # Wrong arity, and options the EXPIRE family may or may not take.
+            return self.rng.choice([
+                [b"EXPIRE", k], [b"EXPIRE", k, b"10", b"11"],
+                [b"TTL"], [b"PTTL", k, b"x"], [b"PERSIST", k, b"x"],
+                [b"EXPIREAT", k],
+            ]), DEFINED
+        if roll == 10:
+            return [self.rng.choice([b"GET", b"EXISTS", b"TYPE"]), k], DEFINED
+        if roll == 11:
+            # Writes: which of them keep a deadline and which clear it shows in
+            # the next TTL.
+            return self.rng.choice([
+                [b"MSET", k, self.value()],
+                [b"APPEND", k, self.value()],
+                [b"INCR", k],
+                [b"LPUSH", k, self.value()],
+                [b"HSET", k, self.member(), self.value()],
+                [b"SADD", k, self.member()],
+            ]), DEFINED
+        if roll == 12:
+            return [b"DEL", k], DEFINED
+        return [b"TTL", k], TTL
 
     def string(self):
         k = self.key("s")
@@ -328,6 +418,9 @@ def main():
                    help="RNG seed (0 picks one and prints it)")
     p.add_argument("--loose-errors", action="store_true",
                    help="compare error replies by their code only")
+    p.add_argument("--expiry", action="store_true",
+                   help="also send expiry commands (deadlines far ahead, "
+                        "past or invalid; TTL compared by sign)")
     p.add_argument("--keep-going", action="store_true",
                    help="report every divergence, then a count per command")
     opt = p.parse_args()
@@ -343,7 +436,7 @@ def main():
         if ours.call(flush) != reference.call(flush):
             raise Failure("FLUSHDB was answered differently")
 
-        gen = Generator(opt.seed)
+        gen = Generator(opt.seed, opt.expiry)
         history = collections.deque(maxlen=HISTORY)
         per_command = collections.Counter()
         diverged = 0

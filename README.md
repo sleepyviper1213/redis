@@ -129,9 +129,9 @@ the compiler must be GCC or Clang:
 
 | Platform    | Compiler | Preset prefix |
 |-------------|----------|---------------|
-| Linux       | GCC 14+  | `linux-gcc` |
-| Linux       | Clang 18+ | `linux-clang` |
-| macOS (Apple Silicon) | Homebrew LLVM (`brew install llvm ninja`) | `macos-arm64-llvm` |
+| Linux       | GCC 14+  | `x86_64-linux-gnu-gcc` |
+| Linux       | Clang 18+ | `x86_64-linux-gnu-clang` |
+| macOS (Apple Silicon) | Homebrew LLVM (`brew install llvm ninja`) | `aarch64-apple-darwin-llvm` |
 
 On macOS the presets use Homebrew's LLVM and libc++ rather than AppleClang,
 whose standard library lags behind on C++23. Every vcpkg dependency is built
@@ -146,27 +146,27 @@ are declared in [vcpkg.json](vcpkg.json) and installed by the configure step.
 git clone https://github.com/sleepyviper1213/redis.git && cd redis
 
 # Configure, build and run the unit tests in one step
-# (macOS: use the macos-arm64-llvm prefix instead of linux-gcc)
-cmake --workflow --preset linux-gcc-debug
+# (macOS: use the aarch64-apple-darwin-llvm prefix instead of x86_64-linux-gnu-gcc)
+cmake --workflow --preset x86_64-linux-gnu-gcc-debug
 
 # Integration tests: start a server and drive it through hiredis
-scripts/test_server.sh linux-gcc Debug
+scripts/test_server.sh x86_64-linux-gnu-gcc Debug
 
 # Run the server
-scripts/run.sh linux-gcc Release -- --port 6379 --dump ./dump.snap
+scripts/run.sh x86_64-linux-gnu-gcc Release -- --port 6379 --dump ./dump.snap
 ```
 
 `cmake --list-presets=all` shows every configuration. The ones CI runs:
 
 | Preset                   | What it checks |
 |--------------------------|----------------|
-| `linux-gcc-debug`        | GCC build, unit + integration tests |
-| `linux-gcc-release`      | Optimised build with LTO |
-| `linux-clang-debug`      | Clang build |
-| `linux-gcc-asan`         | AddressSanitizer + UndefinedBehaviorSanitizer |
-| `linux-gcc-tsan`         | ThreadSanitizer |
-| `macos-arm64-llvm-debug` | macOS build with Homebrew LLVM, unit + integration tests |
-| `linux-clang-analysis`   | clang-tidy and cppcheck over every file |
+| `x86_64-linux-gnu-gcc-debug`        | GCC build, unit + integration tests |
+| `x86_64-linux-gnu-gcc-release`      | Optimised build with LTO |
+| `x86_64-linux-gnu-clang-debug`      | Clang build |
+| `x86_64-linux-gnu-gcc-asan`         | AddressSanitizer + UndefinedBehaviorSanitizer |
+| `x86_64-linux-gnu-gcc-tsan`         | ThreadSanitizer |
+| `aarch64-apple-darwin-llvm-debug` | macOS build with Homebrew LLVM, unit + integration tests |
+| `x86_64-linux-gnu-clang-analysis`   | clang-tidy and cppcheck over every file |
 
 ### Server options
 

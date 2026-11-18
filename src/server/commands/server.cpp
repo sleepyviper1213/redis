@@ -2,12 +2,12 @@
 // CONFIG GET, CONFIG SET loglevel.
 #include "command.hpp"
 #include "common/store/allocator.hpp"
+#include "common/store/database.hpp" // IWYU pragma: keep
 #include "core/chrono/date_time.hpp"
-#include "server/log_channels.hpp"
 #include "core/utils/ascii.hpp"
 #include "core/utils/enum_name.hpp"
 #include "core/utils/glob.hpp"
-#include "common/store/database.hpp" // IWYU pragma: keep
+#include "server/log_channels.hpp"
 #include "server/net/guard.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/persist_error.hpp"
@@ -32,12 +32,9 @@ using resp::Value;
 
 namespace {
 Value ping(CommandContext & /*unused*/, Args args) {
-	if (args.size() > 2) {
+	if (args.size() > 2)
 		return reply::error("ERR wrong number of arguments for 'ping' command");
-	}
-	if (args.size() == 1) {
-		return reply::simple("PONG");
-	}
+	if (args.size() == 1) return reply::simple("PONG");
 	return reply::bulk(args[1]);
 }
 
@@ -70,12 +67,12 @@ Value lastsave(CommandContext &ctx, Args /*unused*/) {
 }
 
 Value bgrewriteaof(CommandContext &ctx, Args /*unused*/) {
-	if (ctx.aof == nullptr) {
+	if (ctx.aof == nullptr)
 		return reply::error("ERR Append only file is not enabled");
-	}
 	const auto result = ctx.aof->start_rewrite(ctx.db);
-	return result ? reply::simple("Background append only file rewriting started")
-				  : reply_failure(result.error());
+	return result
+			   ? reply::simple("Background append only file rewriting started")
+			   : reply_failure(result.error());
 }
 
 // CONFIG SET loglevel <level>: the one setting worth changing without a
@@ -83,14 +80,14 @@ Value bgrewriteaof(CommandContext &ctx, Args /*unused*/) {
 Value config_set(const CommandContext &ctx, Args args) {
 	if (!ctx.config_set_enabled) {
 		return reply::error("ERR CONFIG SET is disabled; start the server with "
-				  "--enable-config-set to allow it");
+							"--enable-config-set to allow it");
 	}
-	if (!iequals(args[2], "loglevel")) {
+	if (!iequals(args[2], "loglevel"))
 		return reply::error("ERR Unsupported CONFIG parameter: {}", args[2]);
-	}
 	if (!logging::set_level(args[3])) {
-		return reply::error("ERR Invalid argument '{}' for CONFIG SET 'loglevel'",
-						 args[3]);
+		return reply::error(
+			"ERR Invalid argument '{}' for CONFIG SET 'loglevel'",
+			args[3]);
 	}
 	// Warn, so the change is on record at any level short of error.
 	logging::logger_for(logging::channel::server)
@@ -101,12 +98,12 @@ Value config_set(const CommandContext &ctx, Args args) {
 // CONFIG GET <pattern>: read-only view of the settings clients commonly probe
 // (redis-benchmark asks for "save" and "appendonly" on startup).
 Value config(CommandContext &ctx, Args args) {
-	if (iequals(args[1], "SET") && args.size() == 4) {
+	if (iequals(args[1], "SET") && args.size() == 4)
 		return config_set(ctx, args);
-	}
 	if (!iequals(args[1], "GET") || args.size() != 3) {
-		return reply::error("ERR CONFIG supports only 'CONFIG GET <pattern>' and "
-				  "'CONFIG SET loglevel <level>'");
+		return reply::error(
+			"ERR CONFIG supports only 'CONFIG GET <pattern>' and "
+			"'CONFIG SET loglevel <level>'");
 	}
 
 	// Views, except for the two path parts, which have to live somewhere.

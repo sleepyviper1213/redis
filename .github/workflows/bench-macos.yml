@@ -1,0 +1,179 @@
+name: Benchmark (macOS)
+
+# Builds two revisions on one macOS runner and benchmarks them with
+# scripts/bench_server.sh, alternating between them, so that the host's noise
+# lands on both alike: only the gap between the two means anything, not the
+# absolute numbers (shared VMs). The compile time and peak memory of each build
+# are printed too.
+#
+# Push any commit to a bench-mac/ branch to compare it with BASE:
+#   git push origin HEAD:bench-mac/<name>
+
+on:
+  push:
+    branches: ["bench-mac/**"]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: revision to compare against
+        default: da674d4
+      threads:
+        description: redis-benchmark threads (THREADS)
+        default: "2"
+      requests:
+        description: requests per scenario (REQUESTS)
+        default: "200000"
+      runs:
+        description: repeats per scenario (RUNS)
+        default: "5"
+      rounds:
+        description: times each revision is benchmarked, alternating
+        default: "3"
+      ipo:
+        description: LTO for the Release link (REDIS_ENABLE_IPO)
+        default: "ON"
+
+env:
+  BASE: ${{ inputs.base || 'da674d4' }}
+  # As the Release preset has it. LTO linked fine here; the stall that looked
+  # like it was the base revision's session.cpp swapping (see the build report).
+  IPO: ${{ inputs.ipo || 'ON' }}
+  # Presets are named per revision: the base predates the arch-os-abi names.
+  BASE_PRESET: macos-arm64-llvm
+  NEW_PRESET: aarch64-apple-darwin-llvm
+  MallocNanoZone: 0
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 500M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  bench:
+    runs-on: macos-15
+    # Nothing here should run for hours: a build that thrashes is cut off.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both revisions are needed.
+          fetch-depth: 0
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+      - name: Install toolchain and Redis
+        # Homebrew LLVM, not AppleClang: see cmake/toolchains/homebrew-llvm.cmake.
+        # redis brings redis-benchmark and the reference redis-server.
+        run: brew install llvm ninja cmake ccache redis
+      - name: Bootstrap vcpkg
+        run: scripts/bootstrap_vcpkg.sh
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-macos-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-macos-
+      - name: Make the cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+      - name: Check out both revisions
+        run: |
+          git worktree add ../redis-base "$BASE"
+          git worktree add ../redis-new "$GITHUB_SHA"
+          git -C ../redis-base log --oneline -1
+          git -C ../redis-new log --oneline -1
+      - name: Build the new revision, timed
+        # /usr/bin/time -l: wall time, and "maximum resident set size" is the
+        # peak memory of the build's largest process. No ccache here: the point
+        # is the compile time.
+        timeout-minutes: 40
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ""
+          CMAKE_CXX_COMPILER_LAUNCHER: ""
+        run: |
+          set -o pipefail
+          # What the build is doing, for when it stalls: the biggest processes
+          # and the memory, every 30 s.
+          ( set +e +o pipefail
+            while sleep 30; do
+              date +%T; ps -axo pid,rss,etime,args | sort -k2 -nr | head -4 | cut -c1-160
+              vm_stat | grep -E 'free|swapped|compressor' | head -3
+            done ) &
+          monitor=$!
+          trap 'kill $monitor 2>/dev/null || true' EXIT
+          cd ../redis-new
+          cmake --preset aarch64-apple-darwin-llvm -DREDIS_ENABLE_IPO="$IPO"
+          /usr/bin/time -l cmake --build --preset aarch64-apple-darwin-llvm-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-new.txt"
+      - name: Build the base revision, timed
+        # The runner has about 7 GB, and the base compiles a file that took
+        # 8 GB on a Mac: it may thrash instead of finishing. Bounded, and
+        # allowed to fail, so that the new revision still gets its numbers.
+        timeout-minutes: 30
+        continue-on-error: true
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ""
+          CMAKE_CXX_COMPILER_LAUNCHER: ""
+        run: |
+          set -o pipefail
+          # What the build is doing, for when it stalls: the biggest processes
+          # and the memory, every 30 s.
+          ( set +e +o pipefail
+            while sleep 30; do
+              date +%T; ps -axo pid,rss,etime,args | sort -k2 -nr | head -4 | cut -c1-160
+              vm_stat | grep -E 'free|swapped|compressor' | head -3
+            done ) &
+          monitor=$!
+          trap 'kill $monitor 2>/dev/null || true' EXIT
+          cd ../redis-base
+          cmake --preset $BASE_PRESET -DREDIS_ENABLE_IPO="$IPO"
+          /usr/bin/time -l cmake --build --preset $BASE_PRESET-release             --target redis_server 2>&1 | tee "$GITHUB_WORKSPACE/build-base.txt"
+      - name: Build report
+        if: always()
+        run: |
+          preset_of() { if [[ "$1" == base ]]; then echo "$BASE_PRESET"; else echo "$NEW_PRESET"; fi; }
+          {
+            echo '```'
+            for side in new base; do
+              f="build-$side.txt"
+              if [[ -f "$f" ]]; then
+                echo "build $side: $(grep -E ' real|maximum resident' "$f" | tr -s ' ' | paste -sd ';' -)"
+              else
+                echo "build $side: no output"
+              fi
+              ls "../redis-$side/build/$(preset_of $side)/src/app/Release/redis_server" >/dev/null 2>&1 ||
+                echo "  ($side has no redis_server: the build did not finish)"
+            done
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Benchmark, alternating
+        env:
+          REF_SERVER: redis-server
+          THREADS: ${{ inputs.threads || '2' }}
+          REQUESTS: ${{ inputs.requests || '200000' }}
+          RUNS: ${{ inputs.runs || '5' }}
+        run: |
+          preset_of() { if [[ "$1" == base ]]; then echo "$BASE_PRESET"; else echo "$NEW_PRESET"; fi; }
+          mkdir -p bench
+          rounds="${{ inputs.rounds || '3' }}"
+          for i in $(seq "$rounds"); do
+            for side in base new; do
+              # A side that did not build is skipped: the reference server
+              # still gives the new one something to be compared with.
+              [[ -x "../redis-$side/build/$(preset_of $side)/src/app/Release/redis_server" ]] ||
+                continue
+              echo "== $side (round $i) ==" | tee -a bench/macos.txt
+              ( cd "../redis-$side" &&
+                bash scripts/bench_server.sh "$(preset_of $side)" Release ) |
+                tee -a bench/macos.txt
+            done
+          done
+          { echo '```'; cat bench/macos.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-macos
+          path: |
+            bench/macos.txt
+            build-base.txt
+            build-new.txt
+          if-no-files-found: warn

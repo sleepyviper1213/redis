@@ -150,9 +150,9 @@ idempotency" in `TODO.md`.
 
 `BGSAVE` and AOF rewrites fork a child process instead of a thread. The
 keyspace has no locks: one thread owns it at a time, which debug builds check.
-See [concurrency_threads.puml](analysis/diagrams/concurrency_threads.puml)
+See [concurrency_threads.puml](features/connection/diagrams/concurrency_threads.puml)
 for who hands what to whom, and
-[sequence_threads_request_and_shutdown.puml](analysis/diagrams/sequence_threads_request_and_shutdown.puml)
+[sequence_threads_request_and_shutdown.puml](features/connection/diagrams/sequence_threads_request_and_shutdown.puml)
 for one request across threads and the order they stop in.
 
 ## Background work

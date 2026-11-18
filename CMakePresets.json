@@ -5,8 +5,8 @@
         "cmake/presets/options.json",
         "cmake/presets/toolchains.json",
         "cmake/presets/testing.json",
-        "cmake/presets/linux-gcc.json",
-        "cmake/presets/linux-clang.json",
-        "cmake/presets/macos-arm64-llvm.json"
+        "cmake/presets/x86_64-linux-gnu-gcc.json",
+        "cmake/presets/x86_64-linux-gnu-clang.json",
+        "cmake/presets/aarch64-apple-darwin-llvm.json"
     ]
 }

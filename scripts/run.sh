@@ -2,12 +2,12 @@
 # Start the server from a preset's build tree.
 #
 #   scripts/run.sh [configure-preset] [configuration] [-- server args...]
-#   scripts/run.sh linux-gcc Release -- --port 6380 --log-level info
+#   scripts/run.sh x86_64-linux-gnu-gcc Release -- --port 6380 --log-level info
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
 
-PRESET="${1:-linux-gcc}"
+PRESET="${1:-x86_64-linux-gnu-gcc}"
 CONFIG="${2:-Debug}"
 shift $(( $# < 2 ? $# : 2 ))
 [ "${1:-}" = "--" ] && shift

@@ -1,0 +1,33 @@
+@startuml
+title Snapshot File Replacement - Redis-like Server
+
+' How a snapshot (or the AOF manifest) replaces the old file (SDD 13.2,
+' DX-PER-2). The target path always names a complete file: the old one until
+' the rename, the new one after it. Only the directory sync is left to make
+' the rename itself survive a power loss.
+
+[*] --> Temporary : create a new temporary file\nnext to the target\n(a leftover of the same name is removed first)
+
+state Temporary : writing the serialised entries\ntarget: still the old, complete file\na reader sees the old file
+state Synced : temporary file fsynced and closed\ntarget: still the old file\na reader sees the old file
+state Renamed : temporary renamed over the target\ntarget: the new, complete file\na reader sees the new file
+state Durable : directory fsynced\nthe rename survives a power loss\na reader sees the new file
+state Abandoned : temporary file removed\ntarget: the old file, untouched\na reader sees the old file
+
+Temporary --> Synced : write, flush, fsync\n(F_FULLFSYNC on macOS)
+Synced --> Renamed : rename
+Renamed --> Durable : fsync of the directory
+
+Temporary --> Abandoned : write or sync fails
+Synced --> Abandoned : rename fails
+Renamed --> [*] : directory sync fails:\nerror reported, the new file is already in place
+Durable --> [*] : success
+
+Abandoned --> [*] : error reported\n(SAVE: ERR and the reason)
+
+note right of Temporary
+  A crash here leaves the old file and a stray
+  temporary file; the next save removes it.
+end note
+
+@enduml

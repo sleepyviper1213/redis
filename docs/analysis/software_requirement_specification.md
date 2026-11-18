@@ -46,6 +46,7 @@
     * [[NFR-007] Portability](#nfr-007-portability)
     * [[NFR-008] Extensibility](#nfr-008-extensibility)
     * [[NFR-009] Reusability](#nfr-009-reusability)
+    * [[NFR-010] Key Expiry](#nfr-010-key-expiry)
   * [3.5 Object-Oriented Models](#35-object-oriented-models)
     * [3.5.1 Architecture Specification](#351-architecture-specification)
     * [3.5.2 Data Flow Diagrams](#352-data-flow-diagrams)
@@ -67,6 +68,8 @@
 | 7 Aug 2025  | 3        | Khac Truong Nguyen |                                                               |
 | 13 Nov 2026 | 4        | Khac Truong Nguyen | Brought in line with the implementation; requirement statuses |
 | 13 Nov 2026 | 5        | Khac Truong Nguyen | References in IEEE style; links to the design, test, user and benchmark documents; use cases split into one file each |
+| 17 Nov 2026 | 6        | Khac Truong Nguyen | Key expiry specified: FR-006.1 to FR-006.11, NFR-010, acceptance criteria, three diagrams        |
+| 17 Nov 2026 | 7        | Khac Truong Nguyen | Documents organised by feature: use cases, feature diagrams, ADRs and test plans moved under `features/`; references and appendices updated; risks filed as issues #31 to #39 |
 
 ---
 # 1. Introduction
@@ -147,6 +150,14 @@ https://redis.io/docs/latest/develop/reference/protocol-spec/.
 [12] K. T. Nguyen, "Benchmark and Evaluation Report," [../evaluation/benchmark_report.md](../evaluation/benchmark_report.md), 2026.
 
 [13] K. T. Nguyen, "Directory Layout," [../directory_layout.md](../directory_layout.md), 2026.
+
+[14] K. T. Nguyen, "Key Expiry feature," [features/key_expiry/README.md](../features/key_expiry/README.md), 2026.
+
+[15] K. T. Nguyen, "Key Expiry: Test Scenarios," [../features/key_expiry/test_plan.md](../features/key_expiry/test_plan.md), 2026.
+
+[16] K. T. Nguyen, "Features," [../features/README.md](../features/README.md), 2026.
+
+[17] K. T. Nguyen, "Architecture Decision Records," [../design/adr/README.md](../design/adr/README.md), 2026.
 
 ## 1.5 Overview
 
@@ -248,7 +259,7 @@ are mitigated.
 
 | Risk ID | Risk Description                                           | Impact                                                    | Likelihood | Mitigation                                                                                                                                                                                                     |
 |---------|------------------------------------------------------------|-----------------------------------------------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| R-001   | Snapshot file corrupted during save or load                | High: data loss, or no restore                            | Low        | Write to a temporary file, `fsync`, `rename`, then `fsync` the directory, so readers see the old file or the new one, never a partial one; a magic number and format version are checked on load; the server refuses to start rather than serve an empty keyspace (FR-011). A checksum is planned. |
+| R-001   | Snapshot file corrupted during save or load                | High: data loss, or no restore                            | Low        | Write to a temporary file, `fsync`, `rename`, then `fsync` the directory, so readers see the old file or the new one, never a partial one; a magic number and format version are checked on load; the server refuses to start rather than serve an empty keyspace (FR-011). A checksum is deferred (not in this release). |
 | R-002   | Dependency issues (versions, platforms)                    | Medium: build failures                                    | Medium     | Dependencies pinned through a vcpkg baseline; CMake presets per toolchain; CI builds on Linux (GCC, Clang) and macOS (NFR-007).                                                                                 |
 | R-003   | Performance bottlenecks under many connections             | High: latency targets missed (NFR-001)                    | Medium     | Asynchronous I/O; several network threads; replies of a batch sent in one write; benchmarked against Redis with redis-benchmark in CI.                                                                          |
 | R-004   | Malformed requests crashing the server                     | High: instability or downtime                             | Low        | Bounded parser (declared lengths checked); protocol errors answered then the client closed; query and output buffer limits (FR-010, FR-014); sanitizer and stress runs in CI.                                   |
@@ -257,6 +268,11 @@ are mitigated.
 | R-007   | Snapshot saving blocking clients                           | High: unavailability during `SAVE` (NFR-005)              | Medium     | `BGSAVE` saves in a forked child while the server keeps serving (POSIX); `SAVE` still blocks, as in Redis.                                                                                                     |
 | R-008   | Unhandled client input                                     | Medium: crash or wrong replies                            | Low        | Typed lookups return `WRONGTYPE`; integers parsed as Redis does; differential test against Redis; property-style stress test.                                                                                   |
 | R-009   | One long-running command stalling every client             | High: the whole server appears hung                       | Medium     | The command watchdog logs a command running past `--watchdog-ms` while it is still running (FR-016).                                                                                                            |
+
+The table is the baseline of 17 Nov 2026. The risks are tracked from here on as GitHub issues R-001 to R-009
+(#31 to #39, label `risk`), with the process and scales in
+[risk_management_plan.md](../management/risk_management_plan.md); when a risk changes, change the issue, then this
+table if the baseline itself is wrong.
 
 ## 2.7 Acceptance Criteria
 
@@ -296,7 +312,7 @@ are mitigated.
     * stdexec (with its Asio integration) for senders and coroutines
     * spdlog and {fmt} for logging and formatting
     * CLI11 for options, magic_enum for enum names, fast_float for number parsing
-    * cereal for the snapshot's portable binary encoding
+    * reflect-cpp (CBOR) for the snapshot's records
     * Catch2 for unit tests, hiredis for integration tests
 
 ### 3.1.4 Communication interfaces
@@ -305,13 +321,13 @@ are mitigated.
 * RESP2 requests (arrays of bulk strings) or inline commands; RESP2 replies.
 * Pipelined requests are answered in order; the replies to the requests one read delivered are sent in one write.
 
-Diagram: Client Connection State Machine ([state_connection_lifecycle.puml](diagrams/state_connection_lifecycle.puml))
+Diagram: Client Connection State Machine ([state_connection_lifecycle.puml](../features/connection/diagrams/state_connection_lifecycle.puml))
 
 The state machine follows one client connection: admission (refused past `--maxclients`), waiting for a request,
 parsing, executing, writing, and every way a connection closes: the client closing it, a protocol error, a buffer
 limit, the idle or request timeout, or server shutdown.
 
-Diagram: Client-Server Interaction ([sequence_client_server_interaction.puml](diagrams/sequence_client_server_interaction.puml))
+Diagram: Client-Server Interaction ([sequence_client_server_interaction.puml](../features/connection/diagrams/sequence_client_server_interaction.puml))
 
 The sequence diagram shows a client connecting, sending two pipelined requests in one write, the server executing
 both and answering in one write, a `WRONGTYPE` error, and the connection ending.
@@ -388,6 +404,17 @@ The server logs enough to support debugging and post-mortem analysis, without re
 | FR-004 | Set commands                   | `SADD`, `SREM`, `SCARD`, `SMEMBERS`, `SISMEMBER`, `SINTER`, `SPOP`.                                                                                                                          | Medium   | Implemented |
 | FR-005 | Keyspace commands              | `DEL`, `EXISTS`, `KEYS` (glob patterns), `TYPE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE`.                                                                                              | High     | Implemented |
 | FR-006 | Key expiry                     | A key with a deadline disappears once it passes: on access, and by a sweep every 100 ms that removes up to 1000 expired keys, oldest deadline first.                                       | High     | Implemented |
+| FR-006.1  | Set a deadline              | `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT` give a key of any type a deadline; reply `1`, or `0` if the key is missing.                                                                 | High     | Implemented |
+| FR-006.2  | Expiry on `SET`             | `SET` takes `EX`, `PX`, `EXAT`, `PXAT` (one at a time, the amount positive) and `KEEPTTL`; a plain `SET` clears the deadline.                                                            | High     | Implemented |
+| FR-006.3  | Read the time left          | `TTL` (nearest second) and `PTTL` (milliseconds) reply `-2` for a missing key and `-1` for a key without a deadline.                                                                       | High     | Implemented |
+| FR-006.4  | Cancel a deadline           | `PERSIST` removes a deadline: `1` if there was one, else `0`.                                                                                                                              | Medium   | Implemented |
+| FR-006.5  | Deadline already past       | A zero or negative amount, or an absolute time in the past, deletes the key at once; the reply is `1`.                                                                                     | Medium   | Implemented |
+| FR-006.6  | Validation                  | An amount that is not an integer gets `ERR value is not an integer or out of range`; one whose deadline overflows gets `ERR invalid expire time in '<command>' command`, with the command name in lower case (`expire`, `pexpire`, `expireat`, `set`).     | Medium   | Implemented |
+| FR-006.7  | Deadline and writes         | `SET` without `KEEPTTL`, and `MSET`, clear the deadline; in-place changes (`INCR`, `APPEND`, `LPUSH`, `HSET`, ...) keep it; `DEL` and `FLUSHDB` drop it with the key.                    | Medium   | Implemented |
+| FR-006.8  | Lazy expiry                 | A command that looks up a key past its deadline removes it and sees it as missing; `KEYS` skips it.                                                                                        | High     | Implemented |
+| FR-006.9  | Active expiry               | Every 100 ms, on the keyspace thread, the sweep removes up to 1000 keys past their deadline, oldest first.                                                                                 | High     | Implemented |
+| FR-006.10 | Persisting deadlines        | Snapshots store absolute deadlines and skip keys already due on load; the append-only file logs `PEXPIREAT` / `SET ... PXAT` with absolute times, `DEL` for keys that expire, and replays with expiry off; the base of the append-only file keeps deadlines that passed since it was written. | High | Implemented |
+| FR-006.11 | Expiry statistics           | `INFO stats` reports `expired_keys`; `INFO keyspace` reports `expires`.                                                                                                                    | Low      | Implemented |
 | FR-007 | Server commands                | `PING`, `ECHO`, `INFO` (sections `server`, `clients`, `memory`, `persistence`, `stats`, `commandstats`, `keyspace`), `CONFIG GET <pattern>`, `CONFIG SET loglevel`.                           | Medium   | Implemented |
 | FR-008 | TCP server and protocol        | Listen on `--host`:`--port`; parse RESP2 arrays and inline commands; handle requests split across reads and pipelined requests in one read.                                                | High     | Implemented |
 | FR-009 | Concurrent clients             | Serve many clients at once with asynchronous I/O on `--io-threads` threads; above one, commands execute on a single keyspace thread, so they never run concurrently.                        | High     | Implemented |
@@ -398,7 +425,7 @@ The server logs enough to support debugging and post-mortem analysis, without re
 | FR-014 | Client limits                  | `--maxclients`, `--client-query-buffer-limit`, `--client-output-buffer-limit`, `--idle-timeout`, `--request-timeout`; a client past a limit is disconnected and the event counted in `INFO`. | Medium   | Implemented |
 | FR-015 | Logging                        | Asynchronous logging by channel to stderr and `--log-file`; level set by `--log-level`, or at run time by `CONFIG SET loglevel` when `--enable-config-set` is given.                      | High     | Implemented |
 | FR-016 | Diagnostics                    | Crash reports with the running command and a backtrace (POSIX); a watchdog that logs a command running past `--watchdog-ms` (default 1000 ms) while it still runs.                         | Medium   | Implemented |
-| FR-017 | Graceful shutdown              | On `SIGINT` or `SIGTERM`: stop accepting, finish or drop pending work, save a final snapshot; exit non-zero if that save fails.                                                              | High     | Implemented |
+| FR-017 | Graceful shutdown              | On `SIGINT` or `SIGTERM`: stop accepting, finish or drop pending work, save a final snapshot; exit non-zero if that save fails. After a `FailFast` end (accept loop or housekeeping), the final snapshot is attempted too; if it fails, exit non-zero.                                                              | High     | Implemented |
 | FR-018 | Startup safety                 | Refuse to start when the snapshot or append-only file cannot be read, rather than serve an empty keyspace and overwrite the files later.                                                   | High     | Implemented |
 | FR-019 | Benchmarking                   | Throughput and latency measured with redis-benchmark against this server and Redis, in CI (`bench/` branches).                                                                              | Low      | Implemented |
 | FR-020 | Authentication and permissions | `AUTH` and client permissions.                                                                                                                                                             | Low      | Planned     |
@@ -434,6 +461,7 @@ Targets, measured with redis-benchmark (FR-019):
 ### [NFR-003] Reliability
 
 * Recovery after a crash from the latest snapshot, or from the append-only file when enabled.
+* Data-loss bound: with `--appendfsync always`, no acknowledged write is lost; with `everysec` (default), a crash loses at most the writes of the last second; with `no`, the bound is set by the operating system's writeback.
 * Snapshots and append-only file rewrites never leave a partial file in place.
 * The server refuses to start on unreadable persistence files (FR-018), and fails loudly when the final save fails.
 * Correctness is checked by unit, integration, stress and differential tests in CI, including under ThreadSanitizer.
@@ -472,12 +500,29 @@ Targets, measured with redis-benchmark (FR-019):
 * `core` and `common` (RESP parser and encoder, typed keyspace, logging, sender algorithms) are self-contained libraries
   usable outside the server.
 
+### [NFR-010] Key Expiry
+
+Qualities of FR-006; the use cases and acceptance criteria are in
+[features/key_expiry](../features/key_expiry/README.md).
+
+* **NFR-010.1 Correctness**: no command observes a key past its deadline, whether or not it has been swept.
+* **NFR-010.2 Timeliness**: when fewer than 1000 keys are due, the sweep removes them within one 100 ms period.
+* **NFR-010.3 Bounded cost**: one sweep run removes at most 1000 keys, so it never holds up commands for long; setting,
+  reading or clearing a deadline is O(1) and removing a due key is O(log n).
+* **NFR-010.4 Compatibility**: replies, rounding (`TTL` to the nearest second) and error texts match Redis for the
+  implemented commands (NFR-004).
+* **NFR-010.5 Durability**: persisted deadlines are absolute, so a restart or a replay never extends a lifetime
+  (NFR-003).
+* **NFR-010.6 Safety**: the sweep and the commands run on the keyspace thread, so they never overlap (FR-009).
+* **NFR-010.7 Observability**: `INFO` reports `expired_keys` and `expires`.
+
 ---
 
 ## 3.5 Object-Oriented Models
 
 This section presents the design models that describe the structure, behaviour, concurrency and deployment of the
-server. Each diagram is kept in the [`diagrams/`](diagrams/) folder as PlantUML.
+server. Each diagram is kept as PlantUML: system-wide ones in the [`diagrams/`](diagrams) folder, feature-specific ones in
+the `diagrams/` folder of their [feature](../features/README.md).
 
 ---
 
@@ -517,7 +562,7 @@ The data flow is modelled at three levels:
 
 ### 3.5.3 State Diagram
 
-* [`state_connection_lifecycle.puml`](diagrams/state_connection_lifecycle.puml)
+* [`state_connection_lifecycle.puml`](../features/connection/diagrams/state_connection_lifecycle.puml)
 
 The lifecycle of one client connection, from admission through waiting, parsing, executing and writing, to every way it
 closes, including where each timeout applies.
@@ -539,7 +584,7 @@ The server process on Linux or macOS; the clients that reach it over TCP; its fi
   One connection's rounds: reading, parsing a batch, executing each request with its checks, logging writes and
   answering in one write, and where each limit closes the connection.
 
-* [`activity_startup.puml`](diagrams/activity_startup.puml)
+* [`activity_startup.puml`](../features/server_lifecycle/diagrams/activity_startup.puml)
   Startup and shutdown: options, logging, loading persistence (or refusing to start), listening, the concurrent tasks
   while serving, and the shutdown order down to the final save.
 
@@ -557,21 +602,29 @@ Each has its own description, indexed in [use_cases/README.md](use_cases/README.
 
 ### 3.5.7 Sequence Diagrams
 
-* [`sequence_client_server_interaction.puml`](diagrams/sequence_client_server_interaction.puml)
+* [`sequence_client_server_interaction.puml`](../features/connection/diagrams/sequence_client_server_interaction.puml)
   A full interaction: admission, two pipelined requests answered in one write, a `WRONGTYPE` error, disconnection.
 
-* [`sequence_connection_ping_pong.puml`](diagrams/sequence_connection_ping_pong.puml)
+* [`sequence_connection_ping_pong.puml`](../features/connection/diagrams/sequence_connection_ping_pong.puml)
   `PING` and its replies, with the idle timeout and the client limit.
+
+* [`sequence_key_expiry.puml`](../features/key_expiry/diagrams/sequence_key_expiry.puml)
+  Key expiry (FR-006): `EXPIRE` and its error cases, `TTL`, lazy removal on access, and the periodic sweep, with what
+  each logs to the append-only file.
+
+Two more diagrams cover expiry: the lifecycle of a key with respect to its deadline
+([`state_key_expiry_lifecycle.puml`](../features/key_expiry/diagrams/state_key_expiry_lifecycle.puml)) and the active sweep
+([`activity_expiry_sweep.puml`](../features/key_expiry/diagrams/activity_expiry_sweep.puml)).
 
 ---
 
 ### 3.5.8 Concurrency Model
 
-* [`concurrency_threads.puml`](diagrams/concurrency_threads.puml)
+* [`concurrency_threads.puml`](../features/connection/diagrams/concurrency_threads.puml)
   Every thread and child process: what each runs, when it exists, what it hands to which, and the state they share
   (the lock-free keyspace with one owning thread, the watchdog's heartbeat).
 
-* [`sequence_threads_request_and_shutdown.puml`](diagrams/sequence_threads_request_and_shutdown.puml)
+* [`sequence_threads_request_and_shutdown.puml`](../features/connection/diagrams/sequence_threads_request_and_shutdown.puml)
   One request crossing from a network thread to the keyspace thread and back, and the order in which the threads stop
   at shutdown.
 
@@ -580,11 +633,12 @@ Each has its own description, indexed in [use_cases/README.md](use_cases/README.
 # 4. Appendix
 
 * A. Use Case Descriptions
-  One file per use case, indexed in [use_cases/README.md](use_cases/README.md)
+  One file per use case, kept in the folder of its feature (`features/<feature>/use_cases/`) and indexed in
+  [use_cases/README.md](use_cases/README.md)
 
 * B. Test Plan and Report
   See [test_plan_and_report.md](../test/test_plan_and_report.md) (this replaces the unchecked
-  [TEST_CHECKLIST.md](../test/TEST_CHECKLIST.md))
+  `TEST_CHECKLIST.md`, now removed)
 
 * C. Software Design Description
   See [software_design_document.md](../design/software_design_document.md); module layout and request path:
@@ -595,3 +649,25 @@ Each has its own description, indexed in [use_cases/README.md](use_cases/README.
 
 * E. Benchmark and Evaluation Report
   See [benchmark_report.md](../evaluation/benchmark_report.md)
+
+* F. Features
+  Everything that changes with a feature (use cases with acceptance criteria, design choices, test plan,
+  traceability, feature diagrams and feature ADRs) is in one folder, indexed in
+  [features/README.md](../features/README.md):
+
+  | Feature | Requirements |
+  |---------|--------------|
+  | [data_types](../features/data_types/README.md) | FR-001 to FR-004 |
+  | [keyspace](../features/keyspace/README.md) | FR-005 |
+  | [key_expiry](../features/key_expiry/README.md) | FR-006, NFR-010 |
+  | [connection](../features/connection/README.md) | FR-008, FR-009, FR-014 |
+  | [observability](../features/observability/README.md) | FR-007, FR-015, FR-016 |
+  | [persistence](../features/persistence/README.md) | FR-011, FR-012 |
+  | [server_lifecycle](../features/server_lifecycle/README.md) | FR-013, FR-017, FR-018 |
+  | [extensibility](../features/extensibility/README.md) | BR-009, FR-020 to FR-025 (planned) |
+
+  FR-010 (error replies), FR-019 (benchmarking) and the other NFRs cut across features; their tests are in the master
+  test plan.
+
+* G. Architecture Decision Records
+  See [adr/README.md](../design/adr/README.md).

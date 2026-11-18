@@ -36,6 +36,7 @@ add_executable(redis_unit_test
     unit/server/persistence/aof.test.cpp
     unit/server/diagnostics/command_watchdog.test.cpp
     unit/server/commands/config.test.cpp
+    unit/server/commands/expiry.test.cpp
     unit/server/commands/handler.test.cpp
     unit/server/commands/hash.test.cpp
     unit/server/commands/info.test.cpp
@@ -74,7 +75,11 @@ endif()
 # Integration tests: drive a running redis_server through hiredis, the C client
 # real applications use. Run via scripts/test_server.sh, which starts the server.
 add_executable(redis_integration_test
+    integration/appendfsync_bound.test.cpp
     integration/del.test.cpp
+    integration/expiry.test.cpp
+    integration/expiry_restart.test.cpp
+    integration/failfast_save.test.cpp
     integration/get.test.cpp
     integration/ping_pong.test.cpp
     integration/save.test.cpp

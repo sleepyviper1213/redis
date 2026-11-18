@@ -21,8 +21,10 @@
 #include <csignal>
 #include <exception>
 #include <expected>
+#include <functional>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -70,6 +72,30 @@ private:
 	std::once_flag once_;
 	std::optional<std::string> message_;
 };
+
+/**
+ * \brief Run \p io on this thread until it is stopped, which is serve()'s
+ * last step.
+ *
+ * Asio handlers can throw; this is where that ends. The failure is recorded
+ * and \p stop_serving asked to end the race, as for any fatal failure, and
+ * then the thread goes back to running \p io (Asio allows that after a
+ * throw): the shutdown that follows runs there too. A thread that gave up
+ * instead could leave none to run it (with one I/O thread, there would be
+ * none), and run() would destroy what serve() still uses.
+ */
+void run_until_stopped(boost::asio::io_context &io, FirstFailure &failure,
+					   stdexec::inplace_stop_source &stop_serving) {
+	while (true) {
+		try {
+			io.run();
+			return;
+		} catch (const std::exception &e) {
+			failure.record(e.what());
+		} catch (...) { failure.record("unknown exception"); }
+		stop_serving.request_stop();
+	}
+}
 
 /**
  * \brief Serve until the first of the accept loop, the housekeeping and the
@@ -120,8 +146,9 @@ serve(Listener &server, stdexec_ext::InlineTask<void> housekeeping,
 				supervised<FailPolicy::FailFast>(
 					server.run(),
 					[](const std::exception_ptr &error) noexcept {
-						log_error({.kind   = ConnectionKind::AcceptLoopFailed,
-								   .quoted = describe(error)});
+						log_error(
+							connection_error(ConnectionKind::AcceptLoopFailed,
+											 error));
 					}),
 				supervised<FailPolicy::FailFast>(std::move(housekeeping)),
 				signalled) |
@@ -197,27 +224,19 @@ std::expected<void, ServerError> RedisServer::run() {
 
 	log().info("Ready to accept connections");
 	{
-		// Asio handlers can throw; this is where that ends. A failed I/O
-		// thread stops the others, as it would a single-threaded io_.run().
-		const auto run_io = [&] {
-			try {
-				io_.run();
-			} catch (const std::exception &e) {
-				failure.record(e.what());
-				stop_serving.request_stop();
-			} catch (...) {
-				failure.record("unknown exception");
-				stop_serving.request_stop();
-			}
-		};
+		// A failed handler shuts the server down; see run_until_stopped.
 		std::vector<std::jthread> workers;
 		for (unsigned i = 1; i < config_.io_threads; ++i)
-			workers.emplace_back(run_io);
-		run_io();
+			workers.emplace_back(run_until_stopped,
+								 std::ref(io_),
+								 std::ref(failure),
+								 std::ref(stop_serving));
+		run_until_stopped(io_, failure, stop_serving);
 	} // joins the workers: from here on, nothing else touches failure
-	if (auto &message = failure.message())
-		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
-								 .detail = std::move(*message)});
+	// A FailFast end does not return here: the shutdown below still runs, so
+	// the final save keeps the writes since the last one. The failure is
+	// reported after it (UC-017 A2, DX-76).
+	std::optional<std::string> worker_failure = std::move(failure.message());
 
 	// A batch may still be executing: wait for it before reading the keyspace.
 	services_->keyspace.stop();
@@ -240,6 +259,10 @@ std::expected<void, ServerError> RedisServer::run() {
 	if (auto saved = services_->persistence.save(services_->db); !saved)
 		REDIS_FAILED(ServerError{.kind   = ServerKind::FinalSaveFailed,
 								 .source = saved.error()});
+	// After a successful save, a worker failure still ends the server non-zero.
+	if (worker_failure)
+		REDIS_FAILED(ServerError{.kind   = ServerKind::WorkerFailed,
+								 .detail = std::move(*worker_failure)});
 	log().info("Redis is now ready to exit, bye bye...");
 	return {};
 }
@@ -269,9 +292,15 @@ stdexec_ext::InlineTask<void> RedisServer::cron() {
 	// Housekeeping touches the keyspace on its thread and comes back here.
 	detail::AsioContext back(io_.get_executor());
 	const auto services = services_;
+	const auto fail_after = config_.fail_housekeeping_after;
+	unsigned ticks = 0;
 	while (true) {
 		timer.expires_after(CRON_PERIOD);
 		co_await timer.async_wait(exec::asio::use_sender);
+		// Test seam (ServerConfig::fail_housekeeping_after): ends the server
+		// through the FailFast path, as a real housekeeping failure would.
+		if (fail_after && ++ticks > *fail_after)
+			throw std::runtime_error("injected housekeeping failure");
 
 		// Touches the keyspace, so it runs where commands run.
 		co_await services->keyspace.run_on(

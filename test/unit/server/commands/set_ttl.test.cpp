@@ -11,18 +11,19 @@
 using namespace redis;
 using namespace std::chrono_literals;
 
-SCENARIO("SET applies each expiration option", "[commands][set]") {
+SCENARIO("SET applies each expiration option",
+		 "[commands][set]") {
 	GIVEN("an empty keyspace") {
 		test::Server server;
 
-		WHEN("a key is set with EX") {
+		WHEN("TC-093: a key is set with EX") {
 			REQUIRE(server.run({"SET", "k", "v", "EX", "100"}) == "+OK\r\n");
-			THEN("its TTL is in seconds") {
+			THEN("TC-104: its TTL is in seconds") {
 				CHECK(server.run({"TTL", "k"}) == ":100\r\n");
 			}
 		}
 
-		WHEN("a key is set with PX") {
+		WHEN("TC-093: a key is set with PX") {
 			REQUIRE(server.run({"SET", "k", "v", "PX", "50"}) == "+OK\r\n");
 			THEN("its TTL is in milliseconds") {
 				CHECK(server.run({"TTL", "k"}) == ":0\r\n");
@@ -35,7 +36,7 @@ SCENARIO("SET applies each expiration option", "[commands][set]") {
 			}
 		}
 
-		WHEN("keys are set with EXAT and PXAT") {
+		WHEN("TC-093: keys are set with EXAT and PXAT") {
 			const auto in_100s =
 				std::chrono::duration_cast<std::chrono::seconds>(
 					std::chrono::system_clock::now().time_since_epoch())
@@ -58,19 +59,20 @@ SCENARIO("SET applies each expiration option", "[commands][set]") {
 	}
 }
 
-SCENARIO("SET handles an existing TTL like Redis", "[commands][set]") {
+SCENARIO("SET handles an existing TTL like Redis",
+		 "[commands][set]") {
 	GIVEN("a key with a TTL") {
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v", "EX", "100"}) == "+OK\r\n");
 
-		WHEN("it is overwritten by a plain SET") {
+		WHEN("TC-094: it is overwritten by a plain SET") {
 			REQUIRE(server.run({"SET", "k", "v2"}) == "+OK\r\n");
 			THEN("the TTL is removed") {
 				CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
 			}
 		}
 
-		WHEN("it is overwritten with KEEPTTL") {
+		WHEN("TC-095: it is overwritten with KEEPTTL") {
 			REQUIRE(server.run({"SET", "k", "v2", "KEEPTTL"}) == "+OK\r\n");
 			THEN("the TTL is kept and the key stays readable") {
 				CHECK(server.run({"GET", "k"}) == "$2\r\nv2\r\n");
@@ -80,11 +82,12 @@ SCENARIO("SET handles an existing TTL like Redis", "[commands][set]") {
 	}
 }
 
-SCENARIO("SET option validation", "[commands][set]") {
+SCENARIO("SET option validation",
+		 "[commands][set]") {
 	GIVEN("an empty keyspace") {
 		test::Server server;
 
-		WHEN("options conflict or are incomplete") {
+		WHEN("TC-096: options conflict or are incomplete") {
 			THEN("the command is a syntax error") {
 				CHECK(server.run({"SET", "k", "v", "NX", "XX"}) ==
 					  "-ERR syntax error\r\n");
@@ -97,14 +100,14 @@ SCENARIO("SET option validation", "[commands][set]") {
 			}
 		}
 
-		WHEN("the expire time is not positive") {
+		WHEN("TC-102: the expire time is not positive") {
 			THEN("it is rejected") {
 				CHECK(server.run({"SET", "k", "v", "EX", "0"}) ==
 					  "-ERR invalid expire time in 'set' command\r\n");
 			}
 		}
 
-		WHEN("an option is repeated") {
+		WHEN("TC-097: an option is repeated") {
 			THEN("it is allowed and the last expiry wins, as in Redis") {
 				CHECK(server.run({"SET", "k", "v", "EX", "100000", "EX", "0"}) ==
 					  "-ERR invalid expire time in 'set' command\r\n");
@@ -121,7 +124,7 @@ SCENARIO("SET option validation", "[commands][set]") {
 			}
 		}
 
-		WHEN("a syntax error follows a bad expire time") {
+		WHEN("TC-096: a syntax error follows a bad expire time") {
 			THEN("the syntax error is reported, as in Redis") {
 				CHECK(server.run({"SET", "k", "v", "EX", "0", "BOGUS"}) ==
 					  "-ERR syntax error\r\n");
@@ -330,7 +333,7 @@ SCENARIO("A plain SET overwrites without looking at the old value",
 	}
 }
 
-SCENARIO("Expiry arguments that overflow the clock are rejected",
+SCENARIO("TC-101, TC-102: Expiry arguments that overflow the clock are rejected",
 		 "[commands][set][limits]") {
 	test::Server server;
 	const std::string huge = "9223372036854775807";
@@ -340,8 +343,15 @@ SCENARIO("Expiry arguments that overflow the clock are rejected",
 		CHECK(server.run({"SET", "k", "v", opt, huge}) ==
 			  "-ERR invalid expire time in 'set' command\r\n");
 	server.run({"SET", "k", "v"});
-	for (const char *cmd : {"EXPIRE", "PEXPIRE", "EXPIREAT"})
-		CHECK(server.run({cmd, "k", huge}) == "-ERR invalid expire time\r\n");
+	// Redis names the command, in lower case (#44).
+	for (const auto &[cmd, name] :
+		 {std::pair{"EXPIRE", "expire"},
+		  std::pair{"PEXPIRE", "pexpire"},
+		  std::pair{"EXPIREAT", "expireat"}})
+		CHECK(server.run({cmd, "k", huge}) ==
+			  fmt::format("-ERR invalid expire time in '{}' command\r\n", name));
+	CHECK(server.run({"EXPIRE", "k", "-9223372036854775808"}) ==
+		  "-ERR invalid expire time in 'expire' command\r\n");
 	CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
 	CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
 

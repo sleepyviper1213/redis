@@ -4,6 +4,7 @@
 
 #include <fmt/format.h>
 #include <fmt/std.h>
+
 #include <algorithm>
 #include <array>
 
@@ -22,12 +23,13 @@ struct SaveStep {
 	PersistKind persist;
 	os::SaveKind save;
 };
+
 constexpr std::array SAVE_STEPS{
-	SaveStep{.persist=SaveCreate, .save=os::SaveKind::Create},
-	SaveStep{.persist=SaveWrite, .save=os::SaveKind::Write},
-	SaveStep{.persist=SaveSync, .save=os::SaveKind::Sync},
-	SaveStep{.persist=SaveRename, .save=os::SaveKind::Rename},
-	SaveStep{.persist=SaveSyncDirectory, .save=os::SaveKind::SyncDirectory},
+	SaveStep{.persist = SaveCreate, .save = os::SaveKind::Create},
+	SaveStep{.persist = SaveWrite, .save = os::SaveKind::Write},
+	SaveStep{.persist = SaveSync, .save = os::SaveKind::Sync},
+	SaveStep{.persist = SaveRename, .save = os::SaveKind::Rename},
+	SaveStep{.persist = SaveSyncDirectory, .save = os::SaveKind::SyncDirectory},
 };
 
 /// A step of replacing a file, as the message names it.
@@ -42,9 +44,10 @@ std::string_view save_step(PersistKind kind) {
 
 PersistError to_persist_error(const os::SaveError &error) {
 	// NOLINTNEXTLINE(readability-qualified-auto): an iterator; see save_step.
-	const auto step = std::ranges::find(SAVE_STEPS, error.kind, &SaveStep::save);
+	const auto step =
+		std::ranges::find(SAVE_STEPS, error.kind, &SaveStep::save);
 	return PersistError{.kind   = step == SAVE_STEPS.end() ? SaveWrite
-															: step->persist,
+														   : step->persist,
 						.cause  = error.cause,
 						.path   = error.path,
 						.at     = error.at,

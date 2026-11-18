@@ -22,13 +22,15 @@ locate_binary() {
 
 # start_server <binary> <port> <workdir> [server args...]
 #
+# The log level is info unless SERVER_LOG_LEVEL says otherwise.
+#
 # Start the server in the background and wait up to 10s for its port. Its log
 # goes to <workdir>/redis_server.log, its stderr (where sanitizers report) to
 # <workdir>/server.stderr. Sets SERVER_PID.
 start_server() {
     local binary="$1" port="$2" workdir="$3"
     shift 3
-    "$binary" --port "$port" --log-level info --log-file "$workdir/redis_server.log" \
+    "$binary" --port "$port" --log-level "${SERVER_LOG_LEVEL:-info}" --log-file "$workdir/redis_server.log" \
         --dump "$workdir/dump.snap" "$@" >/dev/null 2>"$workdir/server.stderr" &
     SERVER_PID=$!
     for _ in $(seq 100); do
@@ -68,7 +70,7 @@ stop_server() {
     if [ "$status" -ne 0 ]; then
         echo "error: the server did not shut down cleanly (status $status)." >&2
     fi
-    if grep -q -E "WARNING: ThreadSanitizer|ERROR: (Address|Leak|ThreadSanitizer|UndefinedBehavior)Sanitizer|runtime error:" \
+    if grep -q -E "WARNING: ThreadSanitizer|ERROR: (Address|Leak|ThreadSanitizer|UndefinedBehavior|Realtime)Sanitizer|runtime error:" \
         "$workdir/server.stderr"; then
         echo "error: a sanitizer reported a problem in the server." >&2
         status=1

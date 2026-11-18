@@ -1,0 +1,276 @@
+{
+    "version": 6,
+    "include": [
+        "options.json",
+        "toolchains.json",
+        "testing.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "x86_64-linux-gnu-clang",
+            "displayName": "Linux Clang",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
+            "inherits": [
+                "dev-options",
+                "x86_64-linux-gnu-clang-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Thread;Undefined;Realtime"
+            }
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-asan",
+            "displayName": "Linux Clang / AddressSanitizer",
+            "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
+            "inherits": [
+                "asan-deps-clang",
+                "dev-options",
+                "x86_64-linux-gnu-clang-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address"
+            }
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-coverage",
+            "displayName": "Linux Clang / coverage",
+            "inherits": [
+                "coverage-options",
+                "x86_64-linux-gnu-clang-toolchain"
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-analysis",
+            "displayName": "Linux Clang / analysis",
+            "inherits": [
+                "analysis-options",
+                "x86_64-linux-gnu-clang-toolchain"
+            ]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "x86_64-linux-gnu-clang-debug",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-release",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "Release"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-relwithdebinfo",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-coverage",
+            "configurePreset": "x86_64-linux-gnu-clang-coverage",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-analysis",
+            "configurePreset": "x86_64-linux-gnu-clang-analysis",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-asan",
+            "configurePreset": "x86_64-linux-gnu-clang-asan",
+            "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-tsan",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "ThreadSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-ubsan",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-rtsan",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "RealtimeSanitizer"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "x86_64-linux-gnu-clang-debug",
+            "inherits": "test-base",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-release",
+            "inherits": "test-base",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "Release"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-coverage",
+            "inherits": "test-base",
+            "configurePreset": "x86_64-linux-gnu-clang-coverage",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-asan",
+            "inherits": "asan-test-base",
+            "configurePreset": "x86_64-linux-gnu-clang-asan",
+            "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-tsan",
+            "inherits": "tsan-test-base",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "ThreadSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-ubsan",
+            "inherits": "ubsan-test-base",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-rtsan",
+            "inherits": "rtsan-test-base",
+            "configurePreset": "x86_64-linux-gnu-clang",
+            "configuration": "RealtimeSanitizer"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "x86_64-linux-gnu-clang-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-debug"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-release",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-release"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-release"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-coverage",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang-coverage"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-coverage"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-coverage"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-analysis",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang-analysis"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-analysis"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-asan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang-asan"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-asan"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-asan"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-tsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-tsan"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-tsan"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-ubsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-ubsan"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-ubsan"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-rtsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-rtsan"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-rtsan"
+                }
+            ]
+        }
+    ]
+}

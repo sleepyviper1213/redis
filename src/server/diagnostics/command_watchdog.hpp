@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/chrono/tick_clock.hpp"
-#include "core/stdexec_ext/every.hpp"
-#include "core/stdexec_ext/watchdog.hpp"
+#include "core/stdexec_ext/watchdog/heartbeat.hpp"
+#include "core/stdexec_ext/watchdog/policy.hpp"
 #include "core/utils/attributes.hpp"
 #include "current_command.hpp"
 
@@ -11,7 +11,6 @@
 #include <stdexec/execution.hpp>
 
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <optional>
 
@@ -31,36 +30,13 @@ struct CommandWatchdogSettings {
 	std::chrono::milliseconds period = DEFAULT_PERIOD;
 };
 
-/// A command that has been running longer than the threshold.
-struct Stall {
-	CurrentCommand command;
-	std::chrono::milliseconds running;
-};
+/// A command that has been running longer than the threshold: which, and
+/// for how long.
+using Stall = stdexec_ext::Stall<CurrentCommand, TickClock>;
 
-/**
- * \brief Decides, from the heartbeat, whether the running command has
- * stalled, and whether to report it again under its ReportPolicy.
- *
- * Separate from CommandWatchdog so it can be tested without a thread or
- * real time: check() takes the time to judge by. Used by one thread at a time.
- */
-class StallDetector {
-public:
-	StallDetector(ReportPolicy policy,
-				  std::chrono::milliseconds threshold) noexcept
-		: policy_(policy), threshold_(threshold) {}
-
-	/// The running command, if it has run \p threshold by \p now and the
-	/// policy lets it be reported (again).
-	[[nodiscard]] std::optional<Stall>
-	check(TickClock::time_point now) noexcept;
-
-private:
-	ReportPolicy policy_;
-	std::chrono::milliseconds threshold_;
-	/// The generation last reported. Generations start at 1.
-	std::uint64_t reported_ = 0;
-};
+/// Decides, from command_heartbeat(), whether the running command has
+/// stalled; what CommandWatchdog judges with.
+using StallDetector = stdexec_ext::StallDetector<CurrentCommand, TickClock>;
 
 /**
  * \brief Reports a command running too long on the keyspace thread, while
@@ -74,7 +50,8 @@ private:
  * per-command stats once it ends.
  *
  * run() is the work, as a sender, so the server starts and stops it with
- * the rest of its long-running tasks.
+ * the rest of its long-running tasks: stdexec_ext::monitor() over
+ * command_heartbeat().
  */
 class CommandWatchdog {
 public:
@@ -100,42 +77,45 @@ public:
 	 * \brief Look every period until stopped. Without a threshold, it
 	 * completes at once instead, having nothing to do.
 	 *
-	 * The CommandWatchdog must outlive the sender, and run it once at a time:
-	 * the detector it judges with is its own.
+	 * The CommandWatchdog must outlive the sender.
 	 *
 	 * \return A sender; its type is deduced. Enabled, it completes only as
-	 *         stopped, and on the watchdog's own thread (see every()), so
+	 *         stopped, and on the watchdog's own thread (see monitor()), so
 	 *         whoever must carry on elsewhere hops back with continues_on().
 	 */
 	[[nodiscard]] stdexec::sender auto run() REDIS_LIFETIMEBOUND {
 		// Named once, so the type below and the sender returned agree: every
-		// lambda expression is a type of its own. A pointer, not the detector:
-		// every() copies it each round, and the detector must remember what it
-		// reported.
-		const auto look = [this]() noexcept { this->look(); };
-		using Watching  = decltype(stdexec_ext::every(
+		// lambda expression is a type of its own.
+		const auto report = [this](const Stall &stall) noexcept {
+			report_(stall);
+		};
+		const TickClock::duration threshold = settings_.threshold;
+		using Watching                      = decltype(stdexec_ext::monitor(
+			command_heartbeat(),
 			std::declval<exec::timed_thread_scheduler>(),
 			settings_.period,
-			look));
-		using Skip      = decltype(stdexec::just());
-		using Result    = exec::variant_sender<Watching, Skip>;
+			policy_,
+			threshold,
+			report));
+		using Skip                          = decltype(stdexec::just());
+		using Result = exec::variant_sender<Watching, Skip>;
 
 		if (!context_) return Result(stdexec::just());
-		return Result(stdexec_ext::every(context_->get_scheduler(),
-										 settings_.period,
-										 look));
+		return Result(stdexec_ext::monitor(command_heartbeat(),
+										   context_->get_scheduler(),
+										   settings_.period,
+										   policy_,
+										   threshold,
+										   report));
 	}
 
 	/// The default Report: a warning on the server channel.
 	static void log_stall(const Stall &stall);
 
 private:
-	/// One look: what run() calls every period.
-	void look() noexcept;
-
 	CommandWatchdogSettings settings_;
+	ReportPolicy policy_;
 	Report report_;
-	StallDetector detector_;
 	/// The thread run() waits and looks on; only with a threshold. Last, so
 	/// it is stopped and joined before what it uses goes away.
 	std::optional<exec::timed_thread_context> context_;

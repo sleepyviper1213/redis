@@ -17,15 +17,15 @@ namespace {
 const std::error_code DENIED =
 	std::make_error_code(std::errc::permission_denied);
 
-std::string text(const PersistError &error) {
-	return fmt::format("{}", error);
-}
+std::string text(const PersistError &error) { return fmt::format("{}", error); }
 } // namespace
 
 SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 	GIVEN("a failure to use a file, with the system's reason") {
 		const auto error = [](PersistKind kind) {
-			return PersistError{.kind = kind, .cause = DENIED, .path = "x.snap"};
+			return PersistError{.kind  = kind,
+								.cause = DENIED,
+								.path  = "x.snap"};
 		};
 
 		THEN("each kind names what was being done, the file, and the reason") {
@@ -43,7 +43,8 @@ SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 					  .starts_with("cannot truncate x.snap: "));
 			CHECK(text(error(PersistKind::CannotLock))
 					  .starts_with("cannot lock x.snap: "));
-			CHECK(text(error(PersistKind::CannotOpen)).ends_with(DENIED.message()));
+			CHECK(text(error(PersistKind::CannotOpen))
+					  .ends_with(DENIED.message()));
 		}
 	}
 
@@ -69,8 +70,8 @@ SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 			CHECK(step(PersistKind::SaveRename)
 					  .starts_with("cannot write x.snap: rename failed: "));
 			CHECK(step(PersistKind::SaveSyncDirectory)
-					  .starts_with(
-						  "cannot write x.snap: fsync of the directory failed: "));
+					  .starts_with("cannot write x.snap: fsync of the "
+								   "directory failed: "));
 		}
 	}
 
@@ -85,9 +86,11 @@ SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 				  "x.snap has format version 9, expected 1");
 			CHECK(text({.kind   = PersistKind::SnapshotCorrupt,
 						.path   = "x.snap",
-						.quoted = "eof"}) == "x.snap is corrupt or truncated: eof");
-			CHECK(text({.kind = PersistKind::SnapshotEncode, .path = "x.snap"}) ==
-				  "saving x.snap failed: write failed");
+						.quoted = "eof"}) ==
+				  "x.snap is corrupt or truncated: eof");
+			CHECK(
+				text({.kind = PersistKind::SnapshotEncode, .path = "x.snap"}) ==
+				"saving x.snap failed: write failed");
 			CHECK(text({.kind   = PersistKind::SnapshotEncode,
 						.path   = "x.snap",
 						.quoted = "boom"}) == "saving x.snap failed: boom");
@@ -115,12 +118,12 @@ SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 
 	GIVEN("the ways the log can be wrong") {
 		THEN("a corrupt log gives the byte and the parse error") {
-			const auto corrupt = text(
-				{.kind = PersistKind::LogCorrupt,
-				 .path = "l",
-				 .at   = 12,
-				 .code = static_cast<std::int64_t>(
-					 resp::Parser::RespError::PARSE_NUMBER)});
+			const auto corrupt =
+				text({.kind = PersistKind::LogCorrupt,
+					  .path = "l",
+					  .at   = 12,
+					  .code = static_cast<std::int64_t>(
+						  resp::Parser::RespError::PARSE_NUMBER)});
 			CHECK(corrupt.starts_with("l is corrupt at byte 12: "));
 		}
 		THEN("a log torn in the middle says so") {
@@ -149,12 +152,16 @@ SCENARIO("An error takes the format specification of a string",
 		 "[persist_error]") {
 	GIVEN("a short error") {
 		// "a is not a snapshot file" is 24 characters.
-		const PersistError error{.kind = PersistKind::NotASnapshot, .path = "a"};
+		const PersistError error{.kind = PersistKind::NotASnapshot,
+								 .path = "a"};
 
 		THEN("width, fill and alignment apply") {
-			CHECK(fmt::format("{:>30}", error) == "      a is not a snapshot file");
-			CHECK(fmt::format("{:<28}|", error) == "a is not a snapshot file    |");
-			CHECK(fmt::format("{:*^28}", error) == "**a is not a snapshot file**");
+			CHECK(fmt::format("{:>30}", error) ==
+				  "      a is not a snapshot file");
+			CHECK(fmt::format("{:<28}|", error) ==
+				  "a is not a snapshot file    |");
+			CHECK(fmt::format("{:*^28}", error) ==
+				  "**a is not a snapshot file**");
 		}
 		THEN("precision cuts it") {
 			CHECK(fmt::format("{:.10}", error) == "a is not a");

@@ -1,9 +1,8 @@
 #pragma once
 
 #include "core/stdexec_ext/task.hpp"
-#include "net_error.hpp"
-
 #include "detail/sessions.hpp"
+#include "net_error.hpp"
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -41,14 +40,13 @@ listen_on(boost::asio::ip::tcp::acceptor &acceptor, std::string_view host,
  * \tparam A The acceptor's type.
  */
 template <class A>
-concept Acceptor =
-	std::derived_from<A, boost::asio::ip::tcp::acceptor> &&
-	std::move_constructible<A> &&
-	requires(A &acceptor, boost::asio::any_io_executor ex) {
-		{
-			acceptor.async_accept(ex, exec::asio::use_sender)
-		} -> stdexec::sender;
-	};
+concept Acceptor = std::derived_from<A, boost::asio::ip::tcp::acceptor> &&
+				   std::move_constructible<A> &&
+				   requires(A &acceptor, boost::asio::any_io_executor ex) {
+					   {
+						   acceptor.async_accept(ex, exec::asio::use_sender)
+					   } -> stdexec::sender;
+				   };
 
 /**
  * \brief Accepts TCP connections and serves each with a Session.
@@ -134,7 +132,8 @@ private:
 	std::shared_ptr<Services> services_;
 	/// Whether several threads run ex_, and so each client needs a strand.
 	bool concurrent_;
-	/// Paces the accept loop after a failed accept, so it cannot spin.
+	/// Paces the accept loop after a failed accept, so it cannot spin. On the
+	/// acceptor's strand, like the rest of the loop.
 	boost::asio::steady_timer retry_timer_;
 	/// Every accepted client's session.
 	detail::Sessions sessions_;

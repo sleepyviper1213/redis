@@ -1,7 +1,7 @@
 #pragma once
+#include "common/store/database_fwd.hpp"
 #include "core/chrono/date_time.hpp"
 #include "core/chrono/elapsed_timer.hpp"
-#include "common/store/database_fwd.hpp"
 #include "core/os/child_process.hpp"
 #include "persist_error.hpp"
 

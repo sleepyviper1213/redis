@@ -28,7 +28,8 @@ namespace detail {
 class Sessions {
 public:
 	/// \p ex runs drained()'s completion: joining a scope needs a scheduler.
-	explicit Sessions(boost::asio::any_io_executor ex) : drain_context_(std::move(ex)) {}
+	explicit Sessions(boost::asio::any_io_executor ex)
+		: drain_context_(std::move(ex)) {}
 
 	/// Serves the client on \p socket with \p services until the client
 	/// leaves, the session fails (logged) or stop() is called.
@@ -38,7 +39,9 @@ public:
 					   scope_.get_token());
 	}
 
-	/// Cancels every session. May be called from any thread, more than once.
+	/// Cancels every session, each of which also closes its socket, so that
+	/// no pending operation can keep drained() waiting (see CloseOnStop). May
+	/// be called from any thread, more than once.
 	void stop() noexcept { scope_.request_stop(); }
 
 	/// Completes once every session has finished. Only meaningful after

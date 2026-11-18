@@ -1,0 +1,105 @@
+@startuml
+title Background Save and AOF Rewrite - Redis-like Server
+
+' BGSAVE (SDD 13.3) and BGREWRITEAOF (SDD 13.4). Both fork a child that
+' writes through a copy-on-write view and ends with _exit; housekeeping
+' collects it with a non-blocking wait. The parent keeps serving throughout.
+
+actor Client
+participant "Command\n(BGSAVE, BGREWRITEAOF)" as Cmd
+participant "SnapshotManager" as Snap
+participant "AppendOnlyFile" as Aof
+participant "Child process\n(fork_and_run)" as Child
+participant "Housekeeping\n(poll)" as Hk
+database "Files on disk" as Disk
+
+== BGSAVE ==
+Client -> Cmd : BGSAVE
+Cmd -> Snap : background_save(db)
+alt a child is already running
+  Snap --> Cmd : SaveInProgress
+  Cmd --> Client : -ERR Background save already in progress
+else free
+  Snap -> Child : fork_and_run(save_snapshot)
+  alt fork fails
+    Snap --> Cmd : CannotFork
+    Cmd --> Client : -ERR Can't fork: <reason>
+  else forked
+    Snap -> Snap : log "Background saving started by pid N"\nremember the fork time
+    Snap --> Cmd : ok
+    Cmd --> Client : +Background saving started
+    Child -> Disk : temporary file, fsync, rename, directory fsync\n(see state_snapshot_file_replacement)
+    Child -> Child : _exit(0) or _exit(1)
+  end
+end
+
+loop housekeeping tick
+  Hk -> Snap : poll()
+  Snap -> Child : reap, without blocking
+  alt child still running
+    Snap --> Hk : nothing yet
+  else child ended with success
+    Snap -> Snap : LASTSAVE = fork time\nlog "Background saving terminated with success in ..."
+  else child failed
+    Snap -> Disk : remove the child's temporary file
+    Snap -> Snap : log error "Background saving failed after ..."
+  end
+end
+
+== BGREWRITEAOF ==
+Client -> Cmd : BGREWRITEAOF
+alt --appendonly is off
+  Cmd --> Client : -ERR Append only file is not enabled
+else on
+  Cmd -> Aof : start_rewrite(db)
+  alt a rewrite is already running
+    Aof --> Cmd : RewriteInProgress
+    Cmd --> Client : -ERR Background append only file rewriting already in progress
+  else free
+    Aof -> Disk : flush the buffered log, sync it
+    Aof -> Disk : create the next incremental file,\nwrite the manifest listing it too
+    Aof -> Aof : later writes go to the new incremental file
+    Aof -> Child : fork_and_run(save_snapshot to the new base file)
+    alt fork fails
+      Aof --> Cmd : CannotFork
+      Cmd --> Client : -ERR Can't fork: <reason>
+      note right of Aof
+        Harmless: the manifest lists both incremental
+        files, which replay as one.
+      end note
+    else forked
+      Aof -> Aof : log "Background AOF rewriting started by pid N"
+      Aof --> Cmd : ok
+      Cmd --> Client : +Background append only file rewriting started
+      Child -> Disk : new base file\n(temporary file, fsync, rename, directory fsync)
+      Child -> Child : _exit(0) or _exit(1)
+    end
+  end
+end
+
+loop housekeeping tick
+  Hk -> Aof : poll()
+  Aof -> Child : reap, without blocking
+  alt child still running
+    Aof --> Hk : nothing yet
+  else child failed
+    Aof -> Disk : remove the child's temporary file
+    Aof -> Aof : log error "Background AOF rewrite failed: ..."\nold files stay in use
+  else child succeeded
+    Aof -> Disk : write the manifest: only the new base\nand the newest incremental file
+    alt manifest cannot be written
+      Aof -> Aof : log error "Background AOF rewrite finished but ..."\nold files stay in use
+    else written
+      Aof -> Disk : delete the old base and older incremental files
+      Aof -> Aof : log "Background AOF rewrite finished successfully"
+    end
+  end
+end
+
+== Shutdown while a child runs ==
+Server -> Snap : cancel_background_save()
+Snap -> Child : kill, wait, remove its temporary file
+Server -> Aof : cancel_rewrite()
+Aof -> Child : kill, wait, remove its temporary file
+
+@enduml

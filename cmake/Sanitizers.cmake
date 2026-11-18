@@ -105,6 +105,10 @@ function(_redis_normalize_sanitizer_token token out_var)
         set(${out_var}
             Undefined
             PARENT_SCOPE)
+    elseif(_u STREQUAL "REALTIME" OR _u STREQUAL "RTSAN")
+        set(${out_var}
+            Realtime
+            PARENT_SCOPE)
     else()
         set(${out_var}
             ""
@@ -120,7 +124,7 @@ foreach(_rd_san_token IN LISTS _rd_san_tokens)
         message(
             FATAL_ERROR
                 "REDIS_SANITIZER='${REDIS_SANITIZER}' has '${_rd_san_token}', "
-                "which is not one of: Address, Thread, Undefined.")
+                "which is not one of: Address, Thread, Undefined, Realtime.")
     endif()
     list(APPEND _rd_san_families "${_rd_san_family}")
 endforeach()

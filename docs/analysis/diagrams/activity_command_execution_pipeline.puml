@@ -4,6 +4,9 @@ title Command Execution Pipeline - Redis-like Server
 ' One connection's rounds: read | parse | execute | write, repeated.
 ' Reading, parsing and writing run on the session's I/O thread; executing
 ' runs on the keyspace thread with --io-threads above 1, or in line.
+' The repeat is Session::run(), a coroutine round loop; each round is one
+' sender chain. A round also ends the session when the client closes, a
+' timeout runs out or an I/O call fails.
 
 start
 :Accept the connection
@@ -43,9 +46,13 @@ repeat
   :Append the batch's writes to the AOF, if it is on
   (and fsync first with appendfsync always);
   :Write every reply of the batch in one write;
-repeat while (Protocol error, or output past the limit?) is (no)
+repeat while (Round ended the session?
+(client closed, idle or request timeout,
+I/O failure, protocol error,
+output past the limit)) is (no)
 -> yes;
-:Reply "-ERR Protocol error: ..." if that was the cause;
+:Reply "-ERR Protocol error: ..." if that was the cause
+(already written with the last batch);
 :Close the connection;
 stop
 @enduml

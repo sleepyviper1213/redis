@@ -44,7 +44,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/common.sh
 
-PRESET="${1:-linux-gcc}"
+PRESET="${1:-x86_64-linux-gnu-gcc}"
 CONFIG="${2:-Release}"
 PORT="${3:-6381}"
 RUNS="${RUNS:-3}"
@@ -168,6 +168,56 @@ scenario() {
     done
 }
 
+# tail_run <port> <redis-benchmark args...>: "p99 max" in milliseconds of one
+# run, from --csv (redis-benchmark 7.2 and later; "n/a n/a" when its columns are
+# missing).
+tail_run() {
+    local port="$1"
+    shift
+    ${CLIENT_PIN[@]+"${CLIENT_PIN[@]}"} \
+        redis-benchmark -p "$port" -t "${TEST:-set}" --csv "$@" | tr -d '\r"' |
+        awk -F, '
+            NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i }
+            NR == 2 {
+                p = col["p99_latency_ms"]; m = col["max_latency_ms"]
+                if (p && m) print $p, $m; else print "n/a n/a"
+            }'
+}
+
+# tail_scenario <label> <redis-benchmark args...>: like scenario(), but for the
+# slow end. A mean hides a request that waited behind an allocation or a
+# reallocation; p99 and the worst max across the runs do not.
+tail_scenario() {
+    local label="$1"
+    shift
+    local p99s=() maxs=() i round order p99 max
+    for i in "${!SERVER_PORTS[@]}"; do p99s[i]=""; maxs[i]=""; done
+    for round in $(seq 1 "$RUNS"); do
+        order=()
+        if (( round % 2 == 0 )); then
+            for ((i = ${#SERVER_PORTS[@]} - 1; i >= 0; i--)); do order+=("$i"); done
+        else
+            for i in "${!SERVER_PORTS[@]}"; do order+=("$i"); done
+        fi
+        for i in "${order[@]}"; do
+            read -r p99 max < <(tail_run "${SERVER_PORTS[i]}" "$@")
+            p99s[i]+="$p99 "
+            maxs[i]+="$max "
+        done
+    done
+    local median worst
+    for i in "${!SERVER_PORTS[@]}"; do
+        median="$(printf '%s\n' ${p99s[i]} | sort -n | awk '
+            $1 != "n/a" { a[++n] = $1 }
+            END { if (n) print (n % 2) ? a[(n + 1) / 2] : (a[n / 2] + a[n / 2 + 1]) / 2
+                  else print "n/a" }')"
+        worst="$(printf '%s\n' ${maxs[i]} | sort -n | awk '
+            $1 != "n/a" { w = $1 } END { print (w == "" ? "n/a" : w) }')"
+        REPORT[i]+="$(printf '  %-13s p99 %s median %s ms;  max %s worst %s ms' \
+            "$label" "${p99s[i]}" "$median" "${maxs[i]}" "$worst")"$'\n'
+    done
+}
+
 # Wait for every server first: the scenarios start straight away.
 for port in "${SERVER_PORTS[@]}"; do wait_for_port "$port"; done
 
@@ -184,6 +234,11 @@ for port in "${SERVER_PORTS[@]}"; do
         ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"} >/dev/null
 done
 TEST=get scenario bigget -n "$PIPE_REQUESTS" -r "$KEYSPACE" -P 16 \
+    ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
+
+# The slow end of the same load as clients and pipeline.
+tail_scenario tail-clients  -n "$REQUESTS" -c 50
+tail_scenario tail-pipeline -n "$PIPE_REQUESTS" -P 16 \
     ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
 
 for i in "${!SERVER_PORTS[@]}"; do

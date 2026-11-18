@@ -6,7 +6,7 @@ include_guard(GLOBAL)
 #
 # MSVC uses /fsanitize=address; Clang/AppleClang/GCC on macOS/Linux use
 # -fsanitize=address,undefined. GCC/Clang on Windows (MinGW) ship no libasan, so
-# the config is uninstrumented there — use the windows-msvc preset for ASan on
+# the config is uninstrumented there — use the x86_64-pc-windows-msvc-cl preset for ASan on
 # Windows.
 
 _redis_register_sanitizer_config(AddressSanitizer)
@@ -72,7 +72,7 @@ elseif(WIN32)
     message(
         STATUS
             "MinGW cannot link AddressSanitizer; 'AddressSanitizer' builds "
-            "WITHOUT instrumentation. Use the windows-msvc preset for ASan on Windows."
+            "WITHOUT instrumentation. Use the x86_64-pc-windows-msvc-cl preset for ASan on Windows."
     )
 else()
     # GCC/Clang need -fsanitize at BOTH compile and link. UBSan is folded in: it
@@ -82,6 +82,16 @@ else()
         AddressSanitizer -fsanitize=address,undefined ${REDIS_UBSAN_EXTRA_FLAGS}
         -fno-omit-frame-pointer -fno-sanitize-recover=all -g)
     message(STATUS "sanitizers: AddressSanitizer instruments with ASan+UBSan")
+endif()
+
+# Abseil keeps "generations" in its hash tables, and poisons their empty slots,
+# when compiled under ASan. Library and headers must agree on both. On Linux and
+# macOS the presets build the dependencies under ASan too (the *-asan triplets),
+# so they do. Elsewhere (MSVC) the vcpkg library is not instrumented: its
+# EmptyGeneration() returns null, which our instrumented code reads, and UBSan
+# reports that as fatal. NDEBUG_SANITIZER is Abseil's switch for turning them off.
+if(NOT VCPKG_TARGET_TRIPLET MATCHES "-asan$")
+    add_compile_definitions("$<$<CONFIG:AddressSanitizer>:NDEBUG_SANITIZER>")
 endif()
 
 # Put the AddressSanitizer runtime next to @p target's executable.

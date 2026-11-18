@@ -4,34 +4,52 @@ left to right direction
 
 actor Client
 actor Operator
+actor Server
 
 rectangle "Redis-like Server" {
-  usecase "UC-006 Connect over TCP\n(RESP or inline)" as UC006
-  usecase "UC-005 Ping the server\n(PING, ECHO)" as UC005
+  package "connection" {
+    usecase "UC-006 Connect over TCP\n(RESP or inline)" as UC006
+    usecase "UC-005 Ping the server\n(PING, ECHO)" as UC005
+  }
 
-  package "Data" {
+  package "data_types" {
     usecase "UC-002 Set a string\n(SET)" as UC002
     usecase "UC-003 Get a string\n(GET)" as UC003
     usecase "UC-007 Update strings and counters\n(MSET, MGET, APPEND, INCR...)" as UC007
     usecase "UC-008 Store and read lists\n(LPUSH, LPOP, LRANGE...)" as UC008
     usecase "UC-009 Store and read hashes\n(HSET, HGET, HGETALL...)" as UC009
     usecase "UC-010 Store and read sets\n(SADD, SINTER, SPOP...)" as UC010
+  }
+
+  package "keyspace" {
     usecase "UC-004 Delete keys\n(DEL, FLUSHDB)" as UC004
-    usecase "UC-011 Expire keys\n(EXPIRE, TTL, PERSIST)" as UC011
     usecase "UC-012 Inspect the keyspace\n(KEYS, TYPE, EXISTS, DBSIZE)" as UC012
   }
 
-  package "Persistence" {
+  package "key_expiry" {
+    usecase "UC-011 Expire keys\n(EXPIRE, TTL, PERSIST)" as UC011
+    usecase "UC-020 Remove expired keys\n(on access, sweep every 100 ms)" as UC020
+    usecase "UC-021 Keep deadlines across restarts\n(snapshot, append-only file)" as UC021
+    usecase "UC-022 Monitor key expiry\n(INFO expired_keys, expires)" as UC022
+  }
+
+  package "persistence" {
     usecase "UC-001 Save a snapshot\n(SAVE, BGSAVE, LASTSAVE)" as UC001
     usecase "UC-013 Rewrite the append-only file\n(BGREWRITEAOF)" as UC013
   }
 
-  package "Administration" {
+  package "observability" {
     usecase "UC-014 Inspect the server\n(INFO, CONFIG GET)" as UC014
     usecase "UC-015 Change the log level\n(CONFIG SET loglevel)" as UC015
+    usecase "UC-018 Watch the logs\n(watchdog warnings, crash reports)" as UC018
+  }
+
+  package "server_lifecycle" {
     usecase "UC-016 Configure and start the server\n(options, config file, environment)" as UC016
     usecase "UC-017 Stop the server\n(SIGINT/SIGTERM: final save)" as UC017
-    usecase "UC-018 Watch the logs\n(watchdog warnings, crash reports)" as UC018
+  }
+
+  package "extensibility" {
     usecase "UC-019 Extend system features" as UC019
   }
 }
@@ -56,10 +74,24 @@ Operator --> UC016
 Operator --> UC017
 Operator --> UC018
 Operator --> UC019
+Operator --> UC021
+Operator --> UC022
+
+Server --> UC020
 
 UC002 <.. UC011 : <<extend>>\nSET EX/PX
+UC011 ..> UC020 : <<include>>\na due key is removed
+UC021 ..> UC001 : <<include>>\ndeadlines in the snapshot
+UC021 ..> UC013 : <<include>>\ndeadlines in the log
 UC016 ..> UC001 : <<include>>\nload snapshot
 UC017 ..> UC001 : <<include>>\nfinal save
+UC014 <.. UC022 : <<extend>>\nINFO stats, INFO keyspace
+
+note right of UC011
+  Also sets a deadline from SET (UC-002).
+  UC-020 is run by the server's own timer
+  (FR-006, NFR-010), not by a client command.
+end note
 
 note right of UC006
   Every client use case runs

@@ -1,0 +1,278 @@
+{
+    "version": 6,
+    "include": [
+        "options.json",
+        "toolchains.json",
+        "testing.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "aarch64-apple-darwin-llvm",
+            "displayName": "macOS arm64 Homebrew LLVM",
+            "description": "One Ninja Multi-Config tree: Debug, Release, RelWithDebInfo, ThreadSanitizer, UndefinedSanitizer and RealtimeSanitizer. Only the sanitizer configurations are instrumented.",
+            "inherits": [
+                "dev-options",
+                "aarch64-apple-darwin-llvm-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Thread;Undefined;Realtime",
+                "CMAKE_MAKE_PROGRAM": "/opt/homebrew/bin/ninja"
+            }
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-asan",
+            "displayName": "macOS arm64 Homebrew LLVM / AddressSanitizer",
+            "description": "A tree of its own: the dependencies are built with AddressSanitizer too (see asan-deps-*), which a shared tree cannot do for one configuration only. Build only the AddressSanitizer configuration here.",
+            "inherits": [
+                "asan-deps-macos",
+                "dev-options",
+                "aarch64-apple-darwin-llvm-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address",
+                "CMAKE_MAKE_PROGRAM": "/opt/homebrew/bin/ninja"
+            }
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-coverage",
+            "displayName": "macOS arm64 Homebrew LLVM / coverage",
+            "inherits": [
+                "coverage-options",
+                "aarch64-apple-darwin-llvm-toolchain"
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-analysis",
+            "displayName": "macOS arm64 Homebrew LLVM / analysis",
+            "inherits": [
+                "analysis-options",
+                "aarch64-apple-darwin-llvm-toolchain"
+            ]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "aarch64-apple-darwin-llvm-debug",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "Debug"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-release",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "Release"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-relwithdebinfo",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-coverage",
+            "configurePreset": "aarch64-apple-darwin-llvm-coverage",
+            "configuration": "Debug"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-analysis",
+            "configurePreset": "aarch64-apple-darwin-llvm-analysis",
+            "configuration": "Debug"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-asan",
+            "configurePreset": "aarch64-apple-darwin-llvm-asan",
+            "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-tsan",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "ThreadSanitizer"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-ubsan",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-rtsan",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "RealtimeSanitizer"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "aarch64-apple-darwin-llvm-debug",
+            "inherits": "test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "Debug"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-release",
+            "inherits": "test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "Release"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-coverage",
+            "inherits": "test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm-coverage",
+            "configuration": "Debug"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-asan",
+            "inherits": "asan-test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm-asan",
+            "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-tsan",
+            "inherits": "tsan-test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "ThreadSanitizer"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-ubsan",
+            "inherits": "ubsan-test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-rtsan",
+            "inherits": "rtsan-test-base",
+            "configurePreset": "aarch64-apple-darwin-llvm",
+            "configuration": "RealtimeSanitizer"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "aarch64-apple-darwin-llvm-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-debug"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-release",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-release"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-release"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-coverage",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm-coverage"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-coverage"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-coverage"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-analysis",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm-analysis"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-analysis"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-asan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm-asan"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-asan"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-asan"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-tsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-tsan"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-tsan"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-ubsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-ubsan"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-ubsan"
+                }
+            ]
+        },
+        {
+            "name": "aarch64-apple-darwin-llvm-rtsan",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "aarch64-apple-darwin-llvm"
+                },
+                {
+                    "type": "build",
+                    "name": "aarch64-apple-darwin-llvm-rtsan"
+                },
+                {
+                    "type": "test",
+                    "name": "aarch64-apple-darwin-llvm-rtsan"
+                }
+            ]
+        }
+    ]
+}

@@ -21,8 +21,8 @@ option(REDIS_WARN_UNSAFE_BUFFERS
 set(REDIS_SANITIZER
     "OFF"
     CACHE STRING
-          "Which sanitizer configs to register (one or more, ';'-separated): Address | Thread | Undefined")
-set_property(CACHE REDIS_SANITIZER PROPERTY STRINGS OFF Address Thread Undefined)
+          "Which sanitizer configs to register (one or more, ';'-separated): Address | Thread | Undefined | Realtime")
+set_property(CACHE REDIS_SANITIZER PROPERTY STRINGS OFF Address Thread Undefined Realtime)
 
 # ---------------------------------------------------------------------------
 # Language / visibility / build type

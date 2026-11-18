@@ -184,3 +184,77 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 		}
 	}
 }
+
+// Deadlines that have passed are made without waiting: with
+// expiry off a deadline in the past is stored, not acted on, so the order and
+// the count do not depend on the clock.
+SCENARIO("The active expiry cycle is bounded and takes the oldest first",
+		 "[storage][expiry]") {
+	GIVEN("2500 keys whose deadlines have passed") {
+		Database db;
+		db.set_expiry_enabled(false);
+		for (int i = 0; i < 2500; ++i) {
+			const auto key = fmt::format("k{}", i);
+			db.set(key, String("v"));
+			db.set_expiry(key, DeadlineTimer::after(-1s));
+		}
+		db.set_expiry_enabled(true);
+
+		WHEN("TC-108: cycles run with a budget of 1000") {
+			THEN("each removes at most 1000, until none is left") {
+				CHECK(db.active_expire_cycle(1000) == 1000);
+				CHECK(db.active_expire_cycle(1000) == 1000);
+				CHECK(db.active_expire_cycle(1000) == 500);
+				CHECK(db.active_expire_cycle(1000) == 0);
+				CHECK(db.size() == 0);
+				CHECK(db.expired_keys() == 2500);
+			}
+		}
+	}
+
+	GIVEN("three due keys, added newest first, then oldest, then middle") {
+		Database db;
+		db.set_expiry_enabled(false);
+		for (const auto &[key, age] : {std::pair{"newest", 1s},
+									   std::pair{"oldest", 3s},
+									   std::pair{"middle", 2s}}) {
+			db.set(key, String("v"));
+			db.set_expiry(key, DeadlineTimer::after(-age));
+		}
+		db.set_expiry_enabled(true);
+
+		WHEN("TC-109: a cycle with a budget of 2 runs") {
+			REQUIRE(db.active_expire_cycle(2) == 2);
+
+			THEN("the two oldest deadlines went, whatever the order added") {
+				db.set_expiry_enabled(false); // look without removing
+				CHECK_FALSE(db.contains("oldest"));
+				CHECK_FALSE(db.contains("middle"));
+				CHECK(db.contains("newest"));
+			}
+		}
+	}
+
+	GIVEN("a due key, a key due in an hour and a key without a deadline") {
+		Database db;
+		db.set_expiry_enabled(false);
+		db.set("due", String("v"));
+		db.set_expiry("due", DeadlineTimer::after(-1s));
+		db.set_expiry_enabled(true);
+		db.set("later", String("v"));
+		db.set_expiry("later", DeadlineTimer::after(1h));
+		db.set("forever", String("v"));
+
+		WHEN("TC-110: a cycle runs") {
+			const auto removed = db.active_expire_cycle(100);
+
+			THEN("only the due key goes; the others keep their deadlines") {
+				CHECK(removed == 1);
+				CHECK(db.size() == 2);
+				CHECK(db.expiry("later").has_value());
+				CHECK_FALSE(db.expiry("forever").has_value());
+				CHECK(db.expiring() == 1);
+			}
+		}
+	}
+}

@@ -22,6 +22,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Whether the build uses ccache: the project's own switch (cmake/CCache.cmake
+  # reads it from the environment as well, as a workflow preset takes no -D).
+  # OFF: each job compiles from scratch. ON: objects are cached across runs.
+  REDIS_ENABLE_CCACHE: "OFF"
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   # Built dependencies live in this directory (vcpkg's default "files" binary
   # cache), saved and restored by actions/cache below. vcpkg removed x-gha.
@@ -43,14 +47,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { preset: linux-gcc-debug,   configure: linux-gcc,   config: Debug,            image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          - { preset: linux-gcc-release, configure: linux-gcc,   config: Release,          image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          - { preset: linux-clang-debug, configure: linux-clang, config: Debug,            image: "silkeh/clang:22", cc: clang, cxx: clang++ }
-          # linux-gcc-asan is off: GCC 16.2 rejects stdexec's let_value under
-          # -fsanitize=address,undefined ("__mtypeid_v ... is not a constant
-          # expression" in session.cpp). Re-enable once that is fixed.
-          # - { preset: linux-gcc-asan,    configure: linux-gcc,   config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          - { preset: linux-gcc-tsan,    configure: linux-gcc,   config: ThreadSanitizer,  image: "gcc:16.2",        cc: gcc,   cxx: g++, options: --privileged }
+          # Every sanitizer, on both compilers; coverage is left out.
+          - { preset: x86_64-linux-gnu-gcc-debug, configure: x86_64-linux-gnu-gcc, config: Debug, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: x86_64-linux-gnu-gcc-release, configure: x86_64-linux-gnu-gcc, config: Release, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: x86_64-linux-gnu-clang-debug, configure: x86_64-linux-gnu-clang, config: Debug, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          - { preset: x86_64-linux-gnu-gcc-asan, configure: x86_64-linux-gnu-gcc-asan, config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: x86_64-linux-gnu-gcc-ubsan, configure: x86_64-linux-gnu-gcc, config: UndefinedSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          - { preset: x86_64-linux-gnu-gcc-tsan, configure: x86_64-linux-gnu-gcc, config: ThreadSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++, options: --privileged }
+          - { preset: x86_64-linux-gnu-clang-asan, configure: x86_64-linux-gnu-clang-asan, config: AddressSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          - { preset: x86_64-linux-gnu-clang-ubsan, configure: x86_64-linux-gnu-clang, config: UndefinedSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
+          - { preset: x86_64-linux-gnu-clang-tsan, configure: x86_64-linux-gnu-clang, config: ThreadSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++, options: --privileged }
+          # RealtimeSanitizer aborts when a [[clang::nonblocking]] region (the
+          # request parser) allocates, frees or blocks. Clang only.
+          - { preset: x86_64-linux-gnu-clang-rtsan, configure: x86_64-linux-gnu-clang, config: RealtimeSanitizer, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
     env:
       # vcpkg builds the dependencies with the same compiler as the project.
       CC: ${{ matrix.cc }}
@@ -59,8 +68,6 @@ jobs:
       # changed files recompile.
       CCACHE_DIR: /root/.ccache
       CCACHE_MAXSIZE: 500M
-      CMAKE_C_COMPILER_LAUNCHER: ccache
-      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Install build tools
         run: |
@@ -127,6 +134,10 @@ jobs:
         env:
           SERVER_ARGS: --io-threads 4
         run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6382
+      # Key expiry across a restart: two servers over one snapshot, and the
+      # trace log of the sweep.
+      - name: Key expiry restart test
+        run: scripts/test_expiry_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6385
       # Every reply checked against a model, then the same-key
       # linearizability race. Smaller under TSan, which is ~10x slower.
       - name: Stress test
@@ -142,25 +153,43 @@ jobs:
       # command stream to both, every reply byte compared. Once is enough, on
       # the Release build. Any divergence fails the job.
       - name: Install Redis for the differential test
-        if: matrix.preset == 'linux-gcc-release'
+        if: matrix.preset == 'x86_64-linux-gnu-gcc-release'
         run: |
           apt-get install -y --no-install-recommends redis-server python3
           redis-server --version
       - name: Differential test against Redis
-        if: matrix.preset == 'linux-gcc-release'
+        if: matrix.preset == 'x86_64-linux-gnu-gcc-release'
         env:
           DIFF_ARGS: --keep-going --ops 200000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }}
+      # The expiry commands (deadlines far ahead, past or invalid; TTL by sign).
+      # Not gating until it has run against Redis and what it finds is dealt
+      # with (issue #43): a divergence is shown, and the job goes on.
+      - name: Differential test against Redis, expiry commands
+        if: matrix.preset == 'x86_64-linux-gnu-gcc-release'
+        continue-on-error: true
+        env:
+          DIFF_ARGS: --expiry --keep-going --ops 100000
+        run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6387 6388
 
   macos:
     name: ${{ matrix.preset }}
     runs-on: macos-15
+    # A build that thrashes the runner (about 7 GB, 3 cores) must not run for
+    # the default six hours.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
+        # Every workflow preset of aarch64-apple-darwin-llvm. configure is the tree the
+        # preset builds in; the sanitizers and Release share one.
         include:
-          - { preset: macos-arm64-llvm-debug, config: Debug }
-          - { preset: macos-arm64-llvm-tsan,  config: ThreadSanitizer }
+          - { preset: aarch64-apple-darwin-llvm-debug,    configure: aarch64-apple-darwin-llvm,          config: Debug }
+          - { preset: aarch64-apple-darwin-llvm-release,  configure: aarch64-apple-darwin-llvm,          config: Release }
+          - { preset: aarch64-apple-darwin-llvm-asan,     configure: aarch64-apple-darwin-llvm-asan,          config: AddressSanitizer }
+          - { preset: aarch64-apple-darwin-llvm-tsan,     configure: aarch64-apple-darwin-llvm,          config: ThreadSanitizer }
+          - { preset: aarch64-apple-darwin-llvm-ubsan,    configure: aarch64-apple-darwin-llvm,          config: UndefinedSanitizer }
+          - { preset: aarch64-apple-darwin-llvm-rtsan,    configure: aarch64-apple-darwin-llvm,          config: RealtimeSanitizer }
     env:
       # TSan's shadow memory leaves the nano allocator no room; it warns at
       # every start otherwise.
@@ -169,8 +198,6 @@ jobs:
       # changed files recompile.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
-      CMAKE_C_COMPILER_LAUNCHER: ccache
-      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
       - name: Use every core
@@ -200,12 +227,13 @@ jobs:
         if: always()
         run: ccache --show-stats
       - name: The unwinder libc++abi uses
+        if: ${{ !matrix.analysis }}
         # Homebrew's libc++abi unwinds with Homebrew's libunwind; the binary's
         # own _Unwind_* calls must go there too, not to libSystem's copy. See
         # cmake/toolchains/homebrew-llvm.cmake.
         run: |
           set -euo pipefail
-          tests="$(find build/macos-arm64-llvm -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
+          tests="$(find build/${{ matrix.configure }} -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
           otool -L "$tests"
           nm -m "$tests" | grep -E '_Unwind_|_personality_v0' || true
           otool -L "$tests" | grep -q 'libunwind\.1\.dylib'
@@ -214,7 +242,8 @@ jobs:
         if: matrix.config == 'ThreadSanitizer'
         run: echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$GITHUB_WORKSPACE/test/tsan.supp" >> "$GITHUB_ENV"
       - name: Integration test
-        run: scripts/test_server.sh macos-arm64-llvm ${{ matrix.config }}
+        if: ${{ !matrix.analysis }}
+        run: scripts/test_server.sh ${{ matrix.configure }} ${{ matrix.config }}
 
   analysis:
     name: Static analysis (clang-tidy, cppcheck)
@@ -256,4 +285,4 @@ jobs:
       # Clang rather than GCC: clang-tidy re-parses the compiler's own command
       # line, which needs no reconciliation on a Clang tree.
       - name: Configure and analyse
-        run: cmake --workflow --preset linux-clang-analysis
+        run: cmake --workflow --preset x86_64-linux-gnu-clang-analysis

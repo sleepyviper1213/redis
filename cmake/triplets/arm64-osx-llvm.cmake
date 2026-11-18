@@ -2,7 +2,7 @@
 #
 # Same as the built-in arm64-osx triplet, but chainloads the Homebrew LLVM
 # toolchain so vcpkg compiles every port with LLVM's Clang + libc++, matching
-# the compiler used for the project itself. Selected by the macos-arm64-llvm
+# the compiler used for the project itself. Selected by the aarch64-apple-darwin-llvm
 # presets (VCPKG_OVERLAY_TRIPLETS points at this directory).
 set(VCPKG_TARGET_ARCHITECTURE arm64)
 set(VCPKG_CRT_LINKAGE dynamic)

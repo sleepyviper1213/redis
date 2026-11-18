@@ -51,7 +51,7 @@ protected:
 	int sync() override { return flush_pending() ? -1 : 0; }
 
 private:
-	static constexpr std::size_t BUFFER_SIZE = std::size_t{64} * 1024;
+	static constexpr std::size_t BUFFER_SIZE = 64z * 1024;
 
 	void reset_buffer() {
 		setp(buffer_.data(), buffer_.data() + buffer_.size());
