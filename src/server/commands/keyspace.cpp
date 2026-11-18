@@ -26,7 +26,7 @@ namespace {
 Value del(CommandContext &ctx, Args args) {
 	int64_t removed = 0;
 	for (const std::string_view key : args.subspan(1))
-		removed += ctx.db.erase(key) ? 1 : 0;
+		removed += ctx.db.remove(key) ? 1 : 0;
 	return reply::integer(removed);
 }
 

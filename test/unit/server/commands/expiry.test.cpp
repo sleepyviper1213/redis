@@ -301,11 +301,9 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 	}
 }
 
-// Bug #40: the expectation is the correct one, and the test is expected to fail
-// until the bug is fixed. When it starts to "fail" because it passes, the bug
-// is fixed: remove [!shouldfail].
+// TC-264, bug #40 (fixed): DEL sees a due key as missing and counts it expired.
 SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
-		 "[commands][expiry][!shouldfail]") {
+		 "[commands][expiry]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
 		test::Server server;
 		server.run({"SET", "k", "v"});

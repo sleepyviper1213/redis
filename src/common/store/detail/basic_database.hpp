@@ -212,6 +212,18 @@ public:
 	}
 
 	/**
+	 * \brief Remove \p key as a command does (DEL): a key past its deadline is
+	 * expired first, so it counts in expired_keys() and is not reported as
+	 * removed. Unlike find(), it does not count a hit or a miss.
+	 * \return true if the key existed and was live.
+	 */
+	bool remove(std::string_view key) {
+		owner_.check();
+		if (expire_if_due(key)) return false;
+		return erase(key);
+	}
+
+	/**
 	 * \brief Remove \p key and its deadline.
 	 * \return true if the key existed.
 	 */
