@@ -56,6 +56,14 @@ redis::NetLimits net_limits(const CLI::App &app) {
 	};
 }
 
+/// Test seam for TC-262: REDIS_TEST_FAIL_HOUSEKEEPING_AFTER=<ticks> makes
+/// housekeeping fail after that many ticks. Not a documented option.
+std::optional<unsigned> test_fail_housekeeping_after() {
+	const char *env = std::getenv("REDIS_TEST_FAIL_HOUSEKEEPING_AFTER"); // NOLINT(concurrency-mt-unsafe): read before any thread starts
+	if (env == nullptr) return std::nullopt;
+	return static_cast<unsigned>(std::strtoul(env, nullptr, 10));
+}
+
 int run(int argc, char **argv) {
 	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
@@ -94,6 +102,7 @@ int run(int argc, char **argv) {
 				app->get_option("--enable-config-set")->as<bool>(),
 			.watchdog = {.threshold = std::chrono::milliseconds(
 							 app->get_option("--watchdog-ms")->as<int64_t>())},
+			.fail_housekeeping_after = test_fail_housekeeping_after(),
 		});
 		if (const auto ran = server.run(); !ran) {
 			log.critical("{}", ran.error());

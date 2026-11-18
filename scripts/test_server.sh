@@ -30,6 +30,7 @@ start_server "$SERVER" "$PORT" "$WORKDIR" ${SERVER_ARGS:-}
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
 echo "Running $TESTS against $SERVER on port $PORT ${SERVER_ARGS:-}"
+export REDIS_TEST_SERVER_BIN="$SERVER"
 if ! REDIS_TEST_PORT="$PORT" "$TESTS" --order rand; then
     echo "Integration tests failed. Server log: $WORKDIR/redis_server.log" >&2
     # A sanitizer reports on the server's stderr, and a crash ends the server:

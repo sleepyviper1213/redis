@@ -24,6 +24,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -291,9 +292,15 @@ stdexec_ext::InlineTask<void> RedisServer::cron() {
 	// Housekeeping touches the keyspace on its thread and comes back here.
 	detail::AsioContext back(io_.get_executor());
 	const auto services = services_;
+	const auto fail_after = config_.fail_housekeeping_after;
+	unsigned ticks = 0;
 	while (true) {
 		timer.expires_after(CRON_PERIOD);
 		co_await timer.async_wait(exec::asio::use_sender);
+		// Test seam (ServerConfig::fail_housekeeping_after): ends the server
+		// through the FailFast path, as a real housekeeping failure would.
+		if (fail_after && ++ticks > *fail_after)
+			throw std::runtime_error("injected housekeeping failure");
 
 		// Touches the keyspace, so it runs where commands run.
 		co_await services->keyspace.run_on(

@@ -75,7 +75,7 @@ one fixed sleep.
 | TC-250 | A server thread fails | An I/O thread, the accept loop or the housekeeping task fails | The failure is logged; shutdown runs from step 3; exit non-zero | Unit, Integration | None found (the listener tests check only that a clean stop reports no failure) | none | Gap |
 | TC-251 | Killed, not stopped | `SIGKILL` with `--appendonly`, then with a snapshot only; restart | No final save; recovery from the log (at most the unsynced writes lost) or from the last snapshot | Integration | `aof` torn-tail and `save_file` atomic-replace unit tests cover the pieces | Unit | Partial |
 | TC-252 | Log lines survive the stop | Messages queued in the async logger; shutdown | Everything queued is written out before exit | Unit | `lifecycle`: "shutting down the async logger writes out everything queued" | Unit | Covered |
-| TC-262 | A FailFast end still saves | The accept loop fails (for example its listener is closed) with `--dump` writable; read the snapshot after exit | The snapshot holds the keyspace after the last command; exit non-zero. With `--dump` unwritable: exit non-zero and the previous file is untouched | Integration | None found (A-6) | none | Gap |
+| TC-262 | A FailFast end still saves | Housekeeping fails after 20 ticks (seam `REDIS_TEST_FAIL_HOUSEKEEPING_AFTER`) with `--dump` writable; a write before it; read the snapshot after exit | The snapshot holds the write; exit non-zero. Not yet covered: `--dump` unwritable (exit non-zero, previous file untouched) | Integration | `failfast_save`: "TC-262" (POSIX only, runs in `scripts/test_server.sh`) | none | Partial |
 
 ## Entry and exit criteria
 

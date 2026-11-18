@@ -17,6 +17,7 @@ Choices specific to this feature. System-wide design stays in the
 | DX-64 | Lifecycle errors are `Failure<ServerKind>` that carry the stage's own error as source; the wording is in one place | One source of wording for log and exit | [ADR-0009](../../design/adr/0009-errors-as-values.md), SDD §14.5 |
 | DX-65 | Dependencies and toolchains are pinned and the CMake presets are layered | Reproducible builds on every platform | [ADR-0010](../../design/adr/0010-pinned-vcpkg-and-layered-presets.md), NFR-007 |
 | DX-76 | After a `FailFast` end the server attempts the final snapshot; if that fails, it exits non-zero | Keeps the writes since the last save when the keyspace thread is still healthy; a dead accept loop does not block the save | UC-017 A2, SDD §11.2, FR-017 |
+| DX-78 | Test seam: `ServerConfig::fail_housekeeping_after`, set from the environment variable `REDIS_TEST_FAIL_HOUSEKEEPING_AFTER` (not a command line option), makes housekeeping throw after that many ticks | The accept loop retries its errors, so no real condition ends the server through FailFast; TC-262 needs one | TC-262, `src/app/main.cpp`, `src/server/redis_server.cpp` |
 
 ## Code map
 

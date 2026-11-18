@@ -36,6 +36,9 @@ struct ServerConfig {
 	bool config_set_enabled = false;
 	/// Report a command that holds up the keyspace thread too long.
 	diagnostics::CommandWatchdogSettings watchdog;
+	/// Test seam, not a command line option: housekeeping fails after this many
+	/// ticks, to exercise the FailFast path (TC-262). Unset in production.
+	std::optional<unsigned> fail_housekeeping_after;
 };
 
 /**
