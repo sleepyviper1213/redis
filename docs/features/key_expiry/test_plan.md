@@ -42,8 +42,10 @@ agree on the remaining time to the millisecond. CI runs it as a step that does n
 against Redis, expiry commands") until its first results have been dealt with. The scenarios marked Differential are
 covered by it in that form; the marks below stay as they are until a run against Redis confirms them. The first run
 (CI run 49) found: the overflow error text (#44, fixed), `EXPIRE k 10 11` answered `Unsupported option` by Redis (#41),
-and a `DBSIZE` difference after `SET` with an already-past deadline (#45: confirmed, see [the finding](finding_45_set_past_deadline.md); decision: follow Redis, bug #48). The step stays non-gating
-until #41 and #45 are settled.
+and a `DBSIZE` difference after `SET` with an already-past deadline (#45: confirmed, see [the finding](finding_45_set_past_deadline.md); decision: follow Redis, bug #48, fixed). A later run (CI run 56) found a key lost by `SET` over a due key
+(#49, fixed). Both servers count a due key in `DBSIZE` until it is read or swept, and which sweep comes first is timing, so the
+generator reads the key at once (`EXISTS`) after a `SET` with a past deadline, and both servers then drop it the same
+way; the unit test TC-263 covers the counting. The step stays non-gating until #41 is settled.
 
 **Timing rules for integration tests.** Use `PEXPIRE` with a small millisecond amount, then poll with a timeout instead
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
