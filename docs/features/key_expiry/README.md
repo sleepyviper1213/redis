@@ -48,10 +48,8 @@ options (AC-03) belong to this feature.
 
 ## Bugs, unimplemented features and limits by design
 
-**Bug** (tracked, tested as expected to fail until fixed):
-
-* #40: `DEL` removes a due key without first checking its deadline, so it replies `:1` for a key that other commands
-  already see as missing. Redis replies `:0`.
+**Bug** (tracked, tested as expected to fail until fixed): none open. #40 (`DEL` of a due key replied `:1`, Redis
+`:0`) is fixed: `DEL` now expires a due key and counts it in `expired_keys` (TC-264).
 
 **Not implemented** (tracked):
 

@@ -24,4 +24,3 @@ Check this list against the source when the design changes.
 ## Open questions
 
 * Support `NX`/`XX`/`GT`/`LT` and `EXPIRETIME`? Not required by the SRS today; would add requirements and change #41 and #42.
-* `DEL` of a due key replies `:1`, where Redis replies `:0`: a bug, tracked in #40.
