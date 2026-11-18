@@ -41,7 +41,8 @@ Operator (restarts the server and relies on the files); the Client's commands pr
 ### A1: Append-only file on
 
 * `EXPIRE` and `PEXPIRE` are logged as the absolute `PEXPIREAT`; `SET` with an expiry as `SET ... PXAT`
-* A deadline already past is logged as `DEL`
+* A deadline already past, set by the `EXPIRE` family, is logged as `DEL`; `SET` with a past `PXAT` is logged as it was
+  received, and the `DEL` follows when the key is read or swept
 * A key that expired, by access or by the sweep, is logged as `DEL` ([UC-020](uc_020_remove_expired_keys.md))
 
 ### A2: Replay at startup
@@ -77,7 +78,8 @@ Requirements: FR-006.10, FR-011, FR-012, NFR-003, NFR-010.5
   whose deadline passed while the server was down are not restored.
 * Given `--appendonly`, then `EXPIRE` and `PEXPIRE` are logged as the absolute `PEXPIREAT`, and `SET` with an expiry as
   `SET ... PXAT`, so a replay does not extend the lifetime.
-* Given a deadline already past, then the log records a `DEL`.
+* Given a deadline already past set by the `EXPIRE` family, then the log records a `DEL`; given `SET` with a past
+  `PXAT`, then the log records the `SET`, and a `DEL` once the key is read or swept.
 * Given a key that expired, by access or by the sweep, then a `DEL` is logged, so the replay removes it too.
 * Given a replay of the log, then nothing expires while it runs; expiry resumes after.
 

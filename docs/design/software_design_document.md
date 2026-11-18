@@ -334,7 +334,7 @@ states:
 * **Active:** every 100 ms the housekeeping tick removes up to 1000 due keys, oldest deadline first, using the ordered
   index. The bound keeps one tick short so clients are not held up; a key may stay in memory a little past its
   deadline, but no command sees it.
-* A deadline already past, set by a command, deletes the key at once.
+* A deadline already past, set by `EXPIRE`, `PEXPIRE`, `EXPIREAT` or `PEXPIREAT`, deletes the key at once. `SET` with a past `EXAT` or `PXAT` keeps the key until it is read or swept, as in Redis (#45, #48).
 
 ### 13.2 Atomic file replacement
 

@@ -20,6 +20,8 @@ Volatile   --> Volatile : INCR, APPEND, LPUSH, HSET ...\nand SET ... KEEPTTL kee
 Persistent --> Gone : deadline already past\n(amount <= 0, or EXPIREAT in the past)
 Volatile   --> Gone : deadline already past\n(amount <= 0, or EXPIREAT in the past)
 
+Persistent --> Due : SET with EXAT or PXAT in the past
+(stored with that deadline)
 Volatile --> Due : the clock passes the deadline
 Due --> Gone : lazy: the next command that\nlooks the key up removes it
 Due --> Gone : active: the sweep removes it\n(every 100 ms, up to 1000 keys,\noldest deadline first)

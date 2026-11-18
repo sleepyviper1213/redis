@@ -79,6 +79,8 @@ Requirements: FR-001, FR-006.2
 * Given `SET k v` on a key with a deadline, then the deadline is cleared; given `SET k v KEEPTTL`, it is kept.
 * Given `SET k v EX 0`, `EX -1`, or a value that overflows, then the reply is
   `-ERR invalid expire time in 'set' command` and `k` is unchanged.
+* Given `SET k v EXAT <s>` or `PXAT <ms>` with a time in the past, then the reply is `+OK` and `k` holds `v` with that
+  deadline; every command but `DBSIZE` and `INFO` sees `k` as missing, and reading it removes it, as in Redis.
 * Given two different expiry options, or `KEEPTTL` with an expiry option, then the reply is a syntax error.
 
 ## Notes

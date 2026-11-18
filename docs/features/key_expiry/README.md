@@ -22,6 +22,7 @@ cases) are only referenced.
 | [adr/](adr/) | Decisions: ADR-0005 |
 | [test_plan.md](test_plan.md) | Test scenarios TC-nn, levels, timing rules |
 | [issues.md](issues.md) | Generated list of the GitHub issues labelled `feat:key_expiry` (not edited by hand) |
+| [finding_45_set_past_deadline.md](finding_45_set_past_deadline.md) | Spike #45: `SET` with a past `EXAT`/`PXAT` in Redis 8.0.2; decision: follow Redis (#48) |
 | [traceability.md](traceability.md) | Acceptance criteria ↔ use case ↔ requirement ↔ test, and how each NFR is verified |
 | [diagrams/](diagrams/) | State, sequence and activity diagrams |
 
@@ -60,7 +61,8 @@ options (AC-03) belong to this feature.
 **By design** (changing one is a change to this feature):
 
 * LI-05: a key past its deadline stays in memory until it is accessed or swept, so `DBSIZE` and `expires` may count
-  it, as in Redis.
+  it, as in Redis. This includes a key set by `SET` with a past `EXAT` or `PXAT` (#48, fixed;
+  [finding](finding_45_set_past_deadline.md)); the `EXPIRE` family deletes at once.
 * Deadlines use the wall clock, since `EXPIREAT`, `PXAT` and snapshots name calendar times. A clock set backwards
   extends lifetimes, and one set forwards shortens them.
 * Only one database exists, so expiry has no database dimension.

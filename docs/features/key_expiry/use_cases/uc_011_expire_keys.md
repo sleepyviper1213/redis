@@ -59,8 +59,9 @@ Client (redis-cli or any Redis client)
 
 ### A4: Deadline already past
 
-* A zero or negative amount, or a timestamp in the past, deletes the key at once; the reply is `1`, and the
-  append-only file logs a `DEL`
+* For `EXPIRE`, `PEXPIRE`, `EXPIREAT` and `PEXPIREAT`, a zero or negative amount, or a timestamp in the past, deletes
+  the key at once; the reply is `1`, and the append-only file logs a `DEL`
+* `SET` with a past `EXAT` or `PXAT` does not delete: see [UC-002](../../data_types/use_cases/uc_002_set_key_value.md) AC-03
 
 ### A5: Amount not an integer, or out of range
 

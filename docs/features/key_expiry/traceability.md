@@ -12,7 +12,7 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 |-----------|----------|-------------------------|-------------------------|-------------------------|---------|-------------|--------------|----------------------------|
 | AC-01 | UC-011 | FR-006.1, 006.6 | NFR-010.4 | TC-086 to 092, 100, 101 | Yes | n/a | None | sequence_key_expiry |
 | AC-02 | UC-011 | FR-006.1, 006.5, 006.6 | NFR-010.4 | TC-088, 089, 098, 099 | Yes | n/a | None | state_key_expiry_lifecycle |
-| AC-03 | UC-002 | FR-001, FR-006.2 | NFR-010.4 | TC-093 to 097, 102 | Yes | None | None | use_case (global) |
+| AC-03 | UC-002 | FR-001, FR-006.2 | NFR-010.4 | TC-093 to 097, 102, 263 | Yes | None | None | use_case (global) |
 | AC-04 | UC-011 | FR-005, FR-006.3 | NFR-010.4 | TC-104, 104a | Yes | n/a | None | sequence_key_expiry |
 | AC-05 | UC-011 | FR-005, FR-006.4 | NFR-010.4 | TC-104b | Yes | n/a | None | state_key_expiry_lifecycle |
 | AC-06 | UC-011 | FR-006.7 | NFR-010.4 | TC-094, 095, 104c to 104e | Yes | n/a | None | state_key_expiry_lifecycle |
