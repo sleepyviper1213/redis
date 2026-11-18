@@ -422,7 +422,12 @@ def main():
                    help="also send expiry commands (deadlines far ahead, "
                         "past or invalid; TTL compared by sign)")
     p.add_argument("--keep-going", action="store_true",
-                   help="report every divergence, then a count per command")
+                   help="go on after a divergence, then print a count per "
+                        "command")
+    p.add_argument("--max-report", type=int, default=MAX_REPORTED,
+                   help="divergences to print in full, with the requests "
+                        "before each (0: all); the count per command always "
+                        "covers every one")
     opt = p.parse_args()
     if opt.seed == 0:
         opt.seed = random.SystemRandom().randrange(1, 2**32)
@@ -450,7 +455,7 @@ def main():
             if not same:
                 diverged += 1
                 per_command[args[0].decode()] += 1
-                if diverged <= MAX_REPORTED:
+                if opt.max_report == 0 or diverged <= opt.max_report:
                     before = "".join("    %s\n" % h for h in history)
                     print("\nDIVERGED at request #%d: %s\n"
                           "  redis_server: %s\n"

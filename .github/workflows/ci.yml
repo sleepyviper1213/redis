@@ -160,7 +160,7 @@ jobs:
       - name: Differential test against Redis
         if: matrix.preset == 'x86_64-linux-gnu-gcc-release'
         env:
-          DIFF_ARGS: --keep-going --ops 200000
+          DIFF_ARGS: --keep-going --max-report 0 --ops 200000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }}
       # The expiry commands (deadlines far ahead, past or invalid; TTL by sign).
       # Not gating until it has run against Redis and what it finds is dealt
@@ -169,7 +169,7 @@ jobs:
         if: matrix.preset == 'x86_64-linux-gnu-gcc-release'
         continue-on-error: true
         env:
-          DIFF_ARGS: --expiry --keep-going --ops 100000
+          DIFF_ARGS: --expiry --keep-going --max-report 0 --ops 100000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6387 6388
 
   macos:

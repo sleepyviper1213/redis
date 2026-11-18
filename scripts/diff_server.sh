@@ -9,6 +9,7 @@
 # test go in DIFF_ARGS, e.g. to compare error replies by code only and list
 # every divergence:
 #   DIFF_ARGS="--loose-errors --keep-going" scripts/diff_server.sh
+# --max-report 0 prints every divergence in full, not the first 20.
 #
 # A failing run prints its seed; replay it with DIFF_ARGS="--seed <n>".
 set -euo pipefail
