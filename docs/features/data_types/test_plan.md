@@ -109,7 +109,7 @@ Coverage per use case is in [traceability.md](traceability.md).
 ## Known limits: tests to write when they change
 
 | ID       | Behaviour pinned                           | Given / When      | Today's result                                           |
-|----------|--------------------------------------------|-------------------|----------------------------------------------------------|----------|
+|----------|--------------------------------------------|-------------------|----------------------------------------------------------
 | LI-01 | Blocking pops are not supported            | `BLPOP l 0`       | An unknown-command error, worded as the server words it |
 
 ## Entry and exit criteria
