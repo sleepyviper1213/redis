@@ -24,14 +24,9 @@ void make_due(test::Server &server, const std::string &key) {
 	REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) == ":1\r\n");
 	std::this_thread::sleep_for(PAST_DEADLINE);
 }
-
-bool contains(const std::string &text, const char *part) {
-	return absl::StrContains(text, part);
-}
 } // namespace
 
-SCENARIO("Every value type takes a deadline",
-		 "[commands][expiry]") {
+SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
 	GIVEN("a string, a list, a hash and a set") {
 		test::Server server;
 		server.run({"SET", "str", "v"});
@@ -77,6 +72,35 @@ SCENARIO("SET with a past EXAT or PXAT keeps the key until it is read",
 				CHECK(server.run({"DBSIZE"}) == ":1\r\n");
 				CHECK(server.run({"GET", "b"}) == "$-1\r\n");
 				CHECK(server.run({"DBSIZE"}) == ":0\r\n");
+			}
+		}
+	}
+}
+
+SCENARIO("SET over a key that is already due",
+		 "[commands][expiry]") {
+	GIVEN("a key set with a deadline in the past, which nothing has removed") {
+		test::Server server;
+		server.run({"SET", "k", "a", "PXAT", "1"});
+		const auto before = server.db.expired_keys();
+
+		WHEN("TC-265: SET gives it a new value and a deadline in the future (#49)") {
+			CHECK(server.run({"SET", "k", "b", "PXAT", "4102444800000"}) ==
+				  "+OK\r\n");
+
+			THEN("the new value is there, and the old key counted as expired") {
+				CHECK(server.run({"GET", "k"}) == "$1\r\nb\r\n");
+				CHECK(server.db.expired_keys() == before + 1);
+			}
+		}
+
+		WHEN("TC-265: SET KEEPTTL stores a new value") {
+			CHECK(server.run({"SET", "k", "d", "KEEPTTL"}) == "+OK\r\n");
+
+			THEN("the due key was missing, so the new one has no deadline") {
+				CHECK(server.run({"GET", "k"}) == "$1\r\nd\r\n");
+				CHECK(server.run({"TTL", "k"}) == ":-1\r\n");
+				CHECK(server.db.expired_keys() == before + 1);
 			}
 		}
 	}
@@ -142,8 +166,7 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 	}
 }
 
-SCENARIO("Writes keep or drop a deadline",
-		 "[commands][expiry]") {
+SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
 	GIVEN("keys of each type, each with a deadline") {
 		test::Server server;
 		server.run({"SET", "n", "1"});
@@ -233,7 +256,8 @@ SCENARIO("A key past its deadline is missing to every command",
 			CHECK(server.run({"KEYS", "*"}) == "*1\r\n$4\r\nlive\r\n");
 		}
 
-		THEN("TC-106a, TC-106b: a write starts from an empty key, of any type") {
+		THEN(
+			"TC-106a, TC-106b: a write starts from an empty key, of any type") {
 			CHECK(server.run({"LPUSH", "str", "x"}) == ":1\r\n");
 			CHECK(server.run({"LRANGE", "str", "0", "-1"}) ==
 				  "*1\r\n$1\r\nx\r\n");
@@ -264,16 +288,16 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 		server.run({"EXPIRE", "b", "100"});
 
 		THEN("TC-120: INFO keyspace counts both") {
-			CHECK(contains(server.run({"INFO", "keyspace"}),
-						   "db0:keys=3,expires=2\r\n"));
+			CHECK(server.run({"INFO", "keyspace"})
+					  .contains("db0:keys=3,expires=2\r\n"));
 		}
 
 		WHEN("TC-120: one deadline is removed with PERSIST") {
 			server.run({"PERSIST", "a"});
 
 			THEN("TC-120: expires drops by one") {
-				CHECK(contains(server.run({"INFO", "keyspace"}),
-							   "db0:keys=3,expires=1\r\n"));
+				CHECK(server.run({"INFO", "keyspace"})
+						  .contains("db0:keys=3,expires=1\r\n"));
 			}
 		}
 	}
@@ -291,12 +315,10 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 		server.db.active_expire_cycle(100);
 
 		THEN("TC-121: expired_keys is 5 and FLUSHDB adds nothing") {
-			CHECK(
-				contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
+			CHECK(server.run({"INFO", "stats"}).contains("expired_keys:5\r\n"));
 			server.run({"SET", "x", "v"});
 			server.run({"FLUSHDB"});
-			CHECK(
-				contains(server.run({"INFO", "stats"}), "expired_keys:5\r\n"));
+			CHECK(server.run({"INFO", "stats"}).contains("expired_keys:5\r\n"));
 		}
 	}
 }
@@ -373,9 +395,10 @@ SCENARIO("Deadlines in the future are read back in their unit",
 	GIVEN("a key, and EXPIREAT 100 seconds from now") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-							 std::chrono::system_clock::now().time_since_epoch())
-							 .count();
+		const auto now =
+			std::chrono::duration_cast<std::chrono::seconds>(
+				std::chrono::system_clock::now().time_since_epoch())
+				.count();
 		REQUIRE(server.run({"EXPIREAT", "k", fmt::format("{}", now + 100)}) ==
 				":1\r\n");
 
@@ -389,16 +412,18 @@ SCENARIO("Deadlines in the future are read back in their unit",
 	GIVEN("a key, and PEXPIREAT 100000 milliseconds from now") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-							 std::chrono::system_clock::now().time_since_epoch())
-							 .count();
-		REQUIRE(server.run({"PEXPIREAT", "k", fmt::format("{}", now + 100000)}) ==
-				":1\r\n");
+		const auto now =
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::system_clock::now().time_since_epoch())
+				.count();
+		REQUIRE(
+			server.run({"PEXPIREAT", "k", fmt::format("{}", now + 100'000)}) ==
+			":1\r\n");
 
 		THEN("TC-089: PTTL is about 100000 milliseconds") {
 			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
 			CHECK(ms > 98000);
-			CHECK(ms <= 100000);
+			CHECK(ms <= 100'000);
 		}
 	}
 }

@@ -202,10 +202,13 @@ public:
 
 	/**
 	 * \brief Store \p value at \p key, replacing any previous value. An
-	 * existing deadline is kept; callers decide whether to clear it.
+	 * existing deadline is kept; callers decide whether to clear it. A key
+	 * already past its deadline is expired first, as Redis does, so it counts
+	 * in expired_keys() and its stale deadline does not outlive the old value.
 	 */
 	void set(std::string_view key, Object value) {
 		owner_.check();
+		expire_if_due(key);
 		if (auto it = dict_.find(key); it != dict_.end())
 			it->second = std::move(value);
 		else dict_.emplace(make_key(key), std::move(value));
