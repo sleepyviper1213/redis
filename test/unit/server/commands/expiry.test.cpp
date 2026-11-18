@@ -62,6 +62,26 @@ SCENARIO("Every value type takes a deadline",
 	}
 }
 
+SCENARIO("SET with a past EXAT or PXAT keeps the key until it is read",
+		 "[commands][expiry]") {
+	GIVEN("an empty keyspace") {
+		test::Server server;
+
+		WHEN("TC-263: SET gets an EXAT and a PXAT in the past (#48)") {
+			CHECK(server.run({"SET", "a", "v", "EXAT", "1"}) == "+OK\r\n");
+			CHECK(server.run({"SET", "b", "v", "PXAT", "1"}) == "+OK\r\n");
+
+			THEN("DBSIZE counts both, as Redis does, until each is read") {
+				CHECK(server.run({"DBSIZE"}) == ":2\r\n");
+				CHECK(server.run({"EXISTS", "a"}) == ":0\r\n");
+				CHECK(server.run({"DBSIZE"}) == ":1\r\n");
+				CHECK(server.run({"GET", "b"}) == "$-1\r\n");
+				CHECK(server.run({"DBSIZE"}) == ":0\r\n");
+			}
+		}
+	}
+}
+
 SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 		 "[commands][expiry]") {
 	GIVEN("a key") {

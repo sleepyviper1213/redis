@@ -270,15 +270,24 @@ public:
 		by_deadline_.clear();
 	}
 
+	/// What set_expiry() does with a deadline that has already passed.
+	enum class PastDeadline : uint8_t {
+		Delete, ///< delete the key at once, as the EXPIRE family does
+		Keep,   ///< store the deadline; the key goes when read or swept
+	};
+
 	/**
 	 * \brief Expire \p key at \p deadline. A deadline in the past deletes the
-	 * key immediately, as EXPIRE with a non-positive TTL does in Redis.
+	 * key immediately, as EXPIRE with a non-positive TTL does in Redis, unless
+	 * \p past is Keep, as for SET ... EXAT or PXAT in the past.
 	 * \return false if the key does not exist.
 	 */
-	bool set_expiry(std::string_view key, DeadlineTimer timer) {
+	bool set_expiry(std::string_view key, DeadlineTimer timer,
+					PastDeadline past = PastDeadline::Delete) {
 		owner_.check();
 		if (!contains(key)) return false;
-		if (expiry_enabled_ && timer.has_expired()) {
+		if (expiry_enabled_ && past == PastDeadline::Delete &&
+			timer.has_expired()) {
 			erase(key);
 			return true;
 		}

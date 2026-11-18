@@ -617,7 +617,7 @@ size_t occurrences(const std::string &text, const std::string &part) {
 }
 } // namespace
 
-SCENARIO("A deadline already past is logged as DEL",
+SCENARIO("A deadline already past is logged",
 		 "[aof][expiry]") {
 	GIVEN("a server with an append-only file and a key") {
 		TempDir const dir;
@@ -630,10 +630,15 @@ SCENARIO("A deadline already past is logged as DEL",
 			CHECK(server.run({"EXPIRE", "k", "0"}) == ":1\r\n");
 			CHECK(server.run({"SET", "k", "v", "PXAT", "1"}) == "+OK\r\n");
 
-			THEN("each is logged as a DEL of the key, not as itself") {
-				CHECK(server.log() == logged({"SET", "k", "old"}) +
-										  logged({"DEL", "k"}) +
-										  logged({"DEL", "k"}));
+			THEN("EXPIRE is logged as a DEL; SET as received, then a DEL "
+				 "once the key is read (#48)") {
+				CHECK(server.run({"EXISTS", "k"}) == ":0\r\n");
+				server.aof.log_expired(server.db);
+				server.aof.after_batch();
+				CHECK(server.log() ==
+					  logged({"SET", "k", "old"}) + logged({"DEL", "k"}) +
+						  logged({"SET", "k", "v", "PXAT", "1"}) +
+						  logged({"DEL", "k"}));
 			}
 		}
 	}

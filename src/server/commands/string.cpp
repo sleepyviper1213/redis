@@ -157,21 +157,20 @@ Value set(CommandContext &ctx, Args args) {
 
 	ctx.db.set(key, String(args[2]));
 	// Like Redis, a plain SET discards any previous TTL unless KEEPTTL.
-	if (opts->deadline)
-		ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline));
-	else if (!opts->keep_ttl) ctx.db.persist(key);
+	if (opts->deadline) {
+		// A past EXAT or PXAT keeps the key, as Redis does: it goes when it is
+		// read or swept (#48). Only the EXPIRE family deletes at once.
+		ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline),
+						  Database::PastDeadline::Keep);
+	} else if (!opts->keep_ttl) ctx.db.persist(key);
 
 	// EX and PX are relative to now, which a replay does not share: log the
 	// deadline itself. NX, XX and GET are dropped; they only decided to get
-	// here. A deadline already past deleted the key again.
+	// here. A deadline already past is logged as received too: the key stays
+	// until it is read or swept, and that logs the DEL.
 	if (ctx.aof != nullptr && opts->deadline) {
-		if (DeadlineTimer::at(*opts->deadline).has_expired()) {
-			ctx.aof->replace({"DEL", key});
-		} else {
-			const auto at =
-				DeadlineTimer::at(*opts->deadline).millis_since_epoch();
-			ctx.aof->replace({"SET", key, args[2], "PXAT", fmt::to_string(at)});
-		}
+		const auto at = DeadlineTimer::at(*opts->deadline).millis_since_epoch();
+		ctx.aof->replace({"SET", key, args[2], "PXAT", fmt::to_string(at)});
 	}
 
 	return opts->get ? std::move(previous) : reply::ok();
