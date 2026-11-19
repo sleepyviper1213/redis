@@ -163,11 +163,9 @@ jobs:
           DIFF_ARGS: --keep-going --max-report 0 --ops 200000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }}
       # The expiry commands (deadlines far ahead, past or invalid; TTL by sign).
-      # Not gating until it has run against Redis and what it finds is dealt
-      # with (issue #43): a divergence is shown, and the job goes on.
+      # Gating since run 59, the first with no divergence (issue #43).
       - name: Differential test against Redis, expiry commands
         if: matrix.preset == 'x86_64-linux-gnu-gcc-release'
-        continue-on-error: true
         env:
           DIFF_ARGS: --expiry --keep-going --max-report 0 --ops 100000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6387 6388
