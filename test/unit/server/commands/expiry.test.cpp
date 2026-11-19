@@ -24,6 +24,19 @@ void make_due(test::Server &server, const std::string &key) {
 	REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) == ":1\r\n");
 	std::this_thread::sleep_for(PAST_DEADLINE);
 }
+
+/// \p key has about \p seconds left. TTL rounds to the nearest second, so a slow
+/// step (a sanitizer build on a loaded runner) reads one second low: accept
+/// seconds - 1 to seconds. Only -1 and -2 are exact, and are asserted as such.
+void expect_ttl(test::Server &server, const std::string &key,
+				long long seconds) {
+	CAPTURE(key, seconds);
+	const auto reply = server.run({"TTL", key});
+	REQUIRE(reply.starts_with(':'));
+	const auto ttl = std::stoll(reply.substr(1));
+	CHECK(ttl <= seconds);
+	CHECK(ttl >= seconds - 1);
+}
 } // namespace
 
 SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
@@ -42,7 +55,7 @@ SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
 				CHECK(server.run({"TYPE", "list"}) == "+list\r\n");
 				CHECK(server.run({"TYPE", "hash"}) == "+hash\r\n");
 				CHECK(server.run({"TYPE", "set"}) == "+set\r\n");
-				CHECK(server.run({"TTL", "list"}) == ":100\r\n");
+				expect_ttl(server, "list", 100);
 			}
 		}
 
@@ -51,7 +64,7 @@ SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
 			server.run({"EXPIRE", "str", "500"});
 
 			THEN("the new one replaces the old") {
-				CHECK(server.run({"TTL", "str"}) == ":500\r\n");
+				expect_ttl(server, "str", 500);
 			}
 		}
 	}
@@ -116,14 +129,14 @@ SCENARIO("Options decide whether EXPIRE sets a deadline",
 		WHEN("TC-266: GT, NX, XX and LT are tried in turn (#41)") {
 			THEN("only the deadline that passes its option is set") {
 				CHECK(server.run({"EXPIRE", "k", "50", "GT"}) == ":0\r\n");
-				CHECK(server.run({"TTL", "k"}) == ":100\r\n");
+				expect_ttl(server, "k", 100);
 				CHECK(server.run({"EXPIRE", "k", "200", "GT"}) == ":1\r\n");
-				CHECK(server.run({"TTL", "k"}) == ":200\r\n");
+				expect_ttl(server, "k", 200);
 				CHECK(server.run({"EXPIRE", "k", "10", "NX"}) == ":0\r\n");
 				CHECK(server.run({"EXPIRE", "k", "10", "XX"}) == ":1\r\n");
 				CHECK(server.run({"EXPIRE", "k", "5", "LT"}) == ":1\r\n");
 				CHECK(server.run({"EXPIRE", "k", "9999", "LT"}) == ":0\r\n");
-				CHECK(server.run({"TTL", "k"}) == ":5\r\n");
+				expect_ttl(server, "k", 5);
 			}
 		}
 	}
@@ -141,8 +154,8 @@ SCENARIO("Options decide whether EXPIRE sets a deadline",
 				CHECK(server.run({"TTL", "b"}) == ":-1\r\n");
 				CHECK(server.run({"EXPIRE", "c", "10", "LT"}) == ":1\r\n");
 				CHECK(server.run({"EXPIRE", "d", "10", "NX"}) == ":1\r\n");
-				CHECK(server.run({"TTL", "c"}) == ":10\r\n");
-				CHECK(server.run({"TTL", "d"}) == ":10\r\n");
+				expect_ttl(server, "c", 10);
+				expect_ttl(server, "d", 10);
 			}
 		}
 	}
@@ -340,7 +353,7 @@ SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
 
 			THEN("each keeps its deadline") {
 				for (const char *key : {"n", "list", "hash", "set"})
-					CHECK(server.run({"TTL", key}) == ":100\r\n");
+					expect_ttl(server, key, 100);
 			}
 		}
 

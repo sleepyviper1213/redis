@@ -50,6 +50,11 @@ way; the unit test TC-263 covers the counting. The step gates the job since CI r
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
 memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millisecond; assert a range.
 
+**Timing rules for unit tests.** The same rule holds: `TTL` rounds to the nearest second, so a slow step (a sanitizer
+build on a loaded runner) reads one second low. A test that sets a deadline of N seconds and reads `TTL` later asserts
+N - 1 to N, through the `expect_ttl` helper in `expiry.test.cpp`. Only `-1` and `-2` are exact. CI run 64 on
+`aarch64-apple-darwin-llvm-asan` read `99` for `100` in TC-266.
+
 ## 1. Setting a deadline (AC-01, 02, 03)
 
 | ID        | Scenario                         | Given / When                                       | Then                                                      | Req            | Level                | Existing test                              | Tested at | Status |
@@ -143,7 +148,7 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 ## Bugs, unimplemented features and limits by design
 
 Three kinds of behaviour that differ from what a reader might expect, each handled differently. The tests are in
-`test/unit/server/commands/expiry.test.cpp`. Issues are listed in [issues.md](issues.md).
+`test/unit/server/commands/expiry.test.cpp`.
 
 | Kind | Meaning | ID | Test |
 |------|---------|----|------|
