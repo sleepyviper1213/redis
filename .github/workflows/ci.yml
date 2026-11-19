@@ -78,6 +78,9 @@ jobs:
           ${CXX} --version | head -n 1
           command -v ninja
           ninja --version
+      - name: Install the autotools the jemalloc port builds with
+        if: contains(matrix.preset, 'jemalloc')
+        run: apt-get install -y --no-install-recommends autoconf autoconf-archive automake libtool
       - name: Allow ThreadSanitizer's memory layout
         # The default mmap ASLR entropy collides with TSan's shadow memory and
         # every instrumented binary aborts at startup.
