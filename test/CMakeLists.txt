@@ -32,6 +32,7 @@ add_executable(redis_unit_test
     unit/common/resp/parser.test.cpp
     unit/common/resp/request.test.cpp
     unit/common/store/allocator.test.cpp
+    unit/common/store/default_allocator.test.cpp
     unit/common/store/database.test.cpp
     unit/server/persistence/aof.test.cpp
     unit/server/diagnostics/command_watchdog.test.cpp
@@ -59,6 +60,9 @@ add_executable(redis_unit_test
     unit/core/os/save_file.test.cpp
     unit/server/persistence/snapshot.test.cpp
 )
+if(REDIS_USE_JEMALLOC)
+    target_sources(redis_unit_test PRIVATE unit/core/jemalloc_allocator.test.cpp)
+endif()
 target_link_libraries(redis_unit_test PRIVATE Catch2::Catch2WithMain
                                               redis::server_lib)
 target_include_directories(redis_unit_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

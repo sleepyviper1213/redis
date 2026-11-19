@@ -46,6 +46,20 @@
                 "analysis-options",
                 "x86_64-linux-gnu-gcc-toolchain"
             ]
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc",
+            "displayName": "Linux GCC / jemalloc",
+            "description": "The keyspace allocated by jemalloc (ADR-0011). No sanitizers: mallocx bypasses their interception of malloc.",
+            "inherits": [
+                "dev-options",
+                "x86_64-linux-gnu-gcc-toolchain"
+            ],
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+                "REDIS_USE_JEMALLOC": "ON",
+                "VCPKG_MANIFEST_FEATURES": "jemalloc"
+            }
         }
     ],
     "buildPresets": [
@@ -88,6 +102,16 @@
             "name": "x86_64-linux-gnu-gcc-ubsan",
             "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc-debug",
+            "configurePreset": "x86_64-linux-gnu-gcc-jemalloc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc-release",
+            "configurePreset": "x86_64-linux-gnu-gcc-jemalloc",
+            "configuration": "Release"
         }
     ],
     "testPresets": [
@@ -126,6 +150,18 @@
             "inherits": "ubsan-test-base",
             "configurePreset": "x86_64-linux-gnu-gcc",
             "configuration": "UndefinedSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc-debug",
+            "inherits": "test-base",
+            "configurePreset": "x86_64-linux-gnu-gcc-jemalloc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc-release",
+            "inherits": "test-base",
+            "configurePreset": "x86_64-linux-gnu-gcc-jemalloc",
+            "configuration": "Release"
         }
     ],
     "workflowPresets": [
@@ -241,6 +277,40 @@
                 {
                     "type": "test",
                     "name": "x86_64-linux-gnu-gcc-ubsan"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-gcc-jemalloc"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-gcc-jemalloc-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-gcc-jemalloc-debug"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-gcc-jemalloc-release",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-gcc-jemalloc"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-gcc-jemalloc-release"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-gcc-jemalloc-release"
                 }
             ]
         }

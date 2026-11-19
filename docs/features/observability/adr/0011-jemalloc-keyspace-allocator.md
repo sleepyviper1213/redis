@@ -17,10 +17,10 @@ work runs through GitHub Actions; the sanitizer presets must keep seeing every a
 
 ## Decision
 
-Add `JemallocAllocator<T>`, a stateless standard Allocator over `je_mallocx` and `je_sdallocx`, and make it
+Add `JemallocAllocator<T>`, a stateless standard Allocator over jemalloc's extended API (`mallocx`, `nallocx`, `sdallocx`, the unprefixed names `jemalloc.h` provides), and make it
 `DefaultAllocator` when the build option `REDIS_USE_JEMALLOC` is on and the platform has jemalloc. Otherwise
 `DefaultAllocator` stays `CountingAllocator`. The allocator keeps the process-wide byte counter, and counts the usable
-size (`je_nallocx`) rather than the requested size, so `used_memory` is what the allocator really holds.
+size (`nallocx`) rather than the requested size, so `used_memory` is what the allocator really holds.
 
 The option is off until the benchmark (TC-276) shows a gain.
 

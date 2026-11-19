@@ -33,6 +33,16 @@ if(MINGW AND CMAKE_USE_PTHREADS_INIT)
     add_compile_definitions(BOOST_ASIO_HAS_PTHREADS=1)
 endif()
 
+# The keyspace allocator (ADR-0011). Off by default; the sanitizer presets keep
+# it off, because mallocx bypasses their interception of malloc.
+if(REDIS_USE_JEMALLOC)
+    if(WIN32)
+        message(FATAL_ERROR "REDIS_USE_JEMALLOC: jemalloc is not supported on Windows")
+    endif()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(JEMALLOC REQUIRED IMPORTED_TARGET jemalloc)
+endif()
+
 if(REDIS_BUILD_TESTS)
     find_package(Catch2 3 CONFIG REQUIRED)
     find_package(Hiredis REQUIRED)

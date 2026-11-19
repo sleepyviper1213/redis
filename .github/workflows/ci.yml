@@ -50,6 +50,8 @@ jobs:
           # Every sanitizer, on both compilers; coverage is left out.
           - { preset: x86_64-linux-gnu-gcc-debug, configure: x86_64-linux-gnu-gcc, config: Debug, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: x86_64-linux-gnu-gcc-release, configure: x86_64-linux-gnu-gcc, config: Release, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
+          # The keyspace on jemalloc (ADR-0011): the suite must pass with it, as with the default.
+          - { preset: x86_64-linux-gnu-gcc-jemalloc-debug, configure: x86_64-linux-gnu-gcc-jemalloc, config: Debug, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: x86_64-linux-gnu-clang-debug, configure: x86_64-linux-gnu-clang, config: Debug, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
           - { preset: x86_64-linux-gnu-gcc-asan, configure: x86_64-linux-gnu-gcc-asan, config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: x86_64-linux-gnu-gcc-ubsan, configure: x86_64-linux-gnu-gcc, config: UndefinedSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }

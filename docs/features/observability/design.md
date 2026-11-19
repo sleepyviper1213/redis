@@ -23,7 +23,7 @@ Choices specific to this feature. System-wide design stays in the
 
 * `src/server/commands/server.cpp`: `INFO`, `CONFIG`; `src/server/stats.hpp`: `ServerStats`, `CommandStat`.
 * `src/core/logging/channels.cpp`, `src/core/logging/lifecycle.cpp`, `src/core/logging/guard.cpp`, `src/core/logging/settings.hpp`: the logging mechanism.
-* `src/core/counting_allocator.hpp`, `src/common/store/allocator.hpp`: the keyspace allocator and the `DefaultAllocator` alias (planned: `jemalloc_allocator.hpp`, DX-80).
+* `src/core/counting_allocator.hpp`, `src/common/store/allocator.hpp`: the keyspace allocator and the `DefaultAllocator` alias `src/core/jemalloc_allocator.hpp` (DX-80, built with `REDIS_USE_JEMALLOC`).
 * `src/server/log_channels.hpp`: the channel list.
 * `src/server/diagnostics/command_watchdog.cpp`, `src/server/diagnostics/current_command.cpp`, `src/server/diagnostics/crash.hpp`, `src/server/diagnostics/crash_posix.cpp`: watchdog, running-command record, crash report.
 * `src/core/stdexec_ext/watchdog/`: the generic stall detection the command watchdog uses.

@@ -22,6 +22,15 @@
     },
     "cli11"
   ],
+  "features": {
+    "jemalloc": {
+      "description": "jemalloc for the keyspace allocator (REDIS_USE_JEMALLOC)",
+      "supports": "linux|osx",
+      "dependencies": [
+        "jemalloc"
+      ]
+    }
+  },
   "overrides": [
     {
       "name": "abseil",

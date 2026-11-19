@@ -15,6 +15,8 @@ option(REDIS_ENABLE_COVERAGE "Instrument for coverage reporting" OFF)
 option(REDIS_ENABLE_STATIC_ANALYZERS "Run clang-tidy and cppcheck" OFF)
 option(REDIS_ENABLE_CLANG_TIDY "Run clang-tidy only" OFF)
 option(REDIS_ENABLE_CPPCHECK "Run cppcheck only" OFF)
+option(REDIS_USE_JEMALLOC
+       "Allocate the keyspace with jemalloc (Linux and macOS; needs the vcpkg feature jemalloc)" OFF)
 option(REDIS_WARN_UNSAFE_BUFFERS
        "Enable Clang -Wunsafe-buffer-usage (noisy; never promoted to error)" OFF)
 

@@ -37,5 +37,12 @@ target_link_libraries(redis_core PUBLIC fmt::fmt spdlog::spdlog
     reflectcpp::reflectcpp)
 target_link_libraries(redis_core PRIVATE FastFloat::fast_float)
 
+# The keyspace allocator is chosen in common/store/allocator.hpp from this
+# definition, so every target that sees the allocator must see it too: public.
+if(REDIS_USE_JEMALLOC)
+    target_compile_definitions(redis_core PUBLIC REDIS_HAS_JEMALLOC=1)
+    target_link_libraries(redis_core PUBLIC PkgConfig::JEMALLOC)
+endif()
+
 set_warnings(redis_core)
 enable_coverage(redis_core)

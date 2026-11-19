@@ -92,16 +92,17 @@ Coverage per use case is in [traceability.md](traceability.md).
 
 ## 5. Allocate the keyspace with jemalloc (DX-80, #50)
 
-Planned; no code yet. The scenarios run in the Linux CI job that builds with `REDIS_USE_JEMALLOC=ON`, except TC-274,
-which every build runs.
+Written; the allocator tests run in the Linux CI job `x86_64-linux-gnu-gcc-jemalloc-debug` (preset with
+`REDIS_USE_JEMALLOC=ON`), except TC-274, which every build runs. Before CI they were run on Windows against a stand-in
+`jemalloc.h`, which checks the logic and not jemalloc itself.
 
 | ID | Behaviour | Given / When | Expected | Level | Existing test | Tested at | Status |
 |-----------|-----------|--------------|----------|-------|---------------|----------|----------|
-| TC-271 | The allocator meets the Allocator requirements | `JemallocAllocator<T>` under `std::vector`, `std::basic_string` and a `Database` | Allocate and deallocate work; all instances and rebinds compare equal; a `Database` stores and reads back keys of every type | Unit | None (planned) | none | Gap |
-| TC-272 | `used_memory` follows the keyspace | As TC-201, with jemalloc | `used_memory` rises by at least the value stored and falls back after the delete | Unit | None (planned; TC-201 is the model) | none | Gap |
-| TC-273 | Counting does not drift | Allocate and free blocks of many sizes (1 byte to 1 MiB), in mixed order | The counter returns exactly to its start; usable size is counted on both sides | Unit | None (planned) | none | Gap |
-| TC-274 | The fallback is the default | Option off, or a platform without jemalloc | `DefaultAllocator` is `CountingAllocator` (`static_assert`); every existing test passes unchanged | Unit | None (planned) | none | Gap |
-| TC-275 | The whole suite passes with jemalloc | Linux CI, option on | Unit and integration tests pass; sanitizer presets build with the option off | CI | None (planned) | none | Gap |
+| TC-271 | The allocator meets the Allocator requirements | `JemallocAllocator<T>` under `std::vector`, `std::basic_string` and a `Database` | Allocate and deallocate work; all instances and rebinds compare equal; a `Database` stores and reads back keys of every type | Unit | `jemalloc_allocator`: "JemallocAllocator is a standard allocator" (containers, alignment, overflow) | Unit (Linux CI) | Written |
+| TC-272 | `used_memory` follows the keyspace | As TC-201, with jemalloc | `used_memory` rises by at least the value stored and falls back after the delete | Unit | `info`: "INFO reports the memory the keyspace holds" runs with the chosen `DefaultAllocator` | Unit (Linux CI) | Covered |
+| TC-273 | Counting does not drift | Allocate and free blocks of many sizes (1 byte to 1 MiB), in mixed order | The counter returns exactly to its start; usable size is counted on both sides | Unit | `jemalloc_allocator`: "The count returns to where it started" | Unit (Linux CI) | Written |
+| TC-274 | The fallback is the default | Option off, or a platform without jemalloc | `DefaultAllocator` is `CountingAllocator` (`static_assert`); every existing test passes unchanged | Unit | `default_allocator`: "The keyspace allocator is the one the build chose" | Unit | Covered |
+| TC-275 | The whole suite passes with jemalloc | Linux CI, option on | Unit and integration tests pass; sanitizer presets build with the option off | CI | CI job `x86_64-linux-gnu-gcc-jemalloc-debug` (unit and integration) | CI | Written; not yet run |
 | TC-276 | Measured gain | `redis-benchmark` (SET/GET throughput), and resident memory after filling then deleting most keys, with and without the option | Both results recorded in this folder; the option's default is decided from them | Benchmark | None (planned) | none | Gap |
 
 ## Entry and exit criteria
