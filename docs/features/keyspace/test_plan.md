@@ -21,7 +21,7 @@ Two columns, one question each:
 
 So a row with Level `Unit, Integration`, Tested at `Unit` and Status `Partial` has its unit test and lacks its
 integration test. `Differential` counts as tested only where the differential script sends the scenario and the run is
-gating (the differential step is not gating for expiry; see the key-expiry plan).
+gating (the differential step for expiry has gated since CI run 59; see the key-expiry plan).
 
 ## Levels
 

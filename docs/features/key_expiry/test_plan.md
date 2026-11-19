@@ -38,14 +38,13 @@ server restart by `scripts/test_expiry_server.sh` (CI step "Key expiry restart t
 server and to real Redis: `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT`, `PERSIST`, `SET` with `EX`, `PX`, `EXAT`, `PXAT`,
 `KEEPTTL`, wrong arity, and writes that keep or clear a deadline. Deadlines are far ahead, already past or invalid, never
 short, and `TTL` and `PTTL` are compared as missing, no deadline, or "some time left", because the two servers cannot
-agree on the remaining time to the millisecond. CI runs it as a step that does not fail the job ("Differential test
-against Redis, expiry commands") until its first results have been dealt with. The scenarios marked Differential are
+agree on the remaining time to the millisecond. CI runs it as a gating step ("Differential test against Redis, expiry commands"): the first run with no divergence in 100000 requests was CI run 59. The scenarios marked Differential are
 covered by it in that form; the marks below stay as they are until a run against Redis confirms them. The first run
 (CI run 49) found: the overflow error text (#44, fixed), `EXPIRE k 10 11` answered `Unsupported option` by Redis (#41, FR-006.12),
 and a `DBSIZE` difference after `SET` with an already-past deadline (#45: confirmed, see [the finding](finding_45_set_past_deadline.md); decision: follow Redis, bug #48, fixed). A later run (CI run 56) found a key lost by `SET` over a due key
 (#49, fixed). Both servers count a due key in `DBSIZE` until it is read or swept, and which sweep comes first is timing, so the
 generator reads the key at once (`EXISTS`) after a `SET` with a past deadline, and both servers then drop it the same
-way; the unit test TC-263 covers the counting. The step can become gating once a run shows no divergence.
+way; the unit test TC-263 covers the counting. The step gates the job since CI run 59, which showed no divergence. The Differential marks of the scenarios below have not been reviewed against that run.
 
 **Timing rules for integration tests.** Use `PEXPIRE` with a small millisecond amount, then poll with a timeout instead
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
