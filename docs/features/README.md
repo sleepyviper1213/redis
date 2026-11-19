@@ -48,12 +48,12 @@ another document means one thing. Take the next free number from the table, then
 | keyspace | TC-065 to TC-085 | LI-02, LI-03; #40 | DX-10 to DX-16 | |
 | key_expiry | TC-086 to TC-123, TC-263 to TC-270 | LI-05; #40 to #42, #45, #48, #49 | DX-17 to DX-23, DX-79 | AC-01 to AC-11 |
 | persistence | TC-124 to TC-159, TC-261 | | DX-24 to DX-33, DX-77 | |
-| connection | TC-160 to TC-192 | | DX-34 to DX-44 | |
+| connection | TC-160 to TC-192, TC-271 | | DX-34 to DX-44 | |
 | observability | TC-193 to TC-226 | | DX-45 to DX-55 | |
 | server_lifecycle | TC-227 to TC-252, TC-262 | | DX-56 to DX-65, DX-76, DX-78 | |
 | extensibility | TC-253 to TC-260 | | DX-66 to DX-75 | |
 
-Next free: `TC-271`, `LI-09`, `DX-80`, `AC-12`. Legacy scenario IDs outside these ranges keep their numbers and are not
+Next free: `TC-272`, `LI-09`, `DX-80`, `AC-12`. Legacy scenario IDs outside these ranges keep their numbers and are not
 renumbered: `TC-1001` to `TC-1004` (ping and echo, in `connection`) and `TC-2001`, `TC-2002` (RESP encoding and
 decoding, in `connection`). Sub-scenarios keep a letter suffix (`TC-104a`). Use cases keep their
 own numbering (`UC-nnn`).

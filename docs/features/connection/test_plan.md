@@ -87,6 +87,7 @@ counted it, not an exact instant.
 | TC-189 | Request timeout, request queued | Limit 1 s; keyspace thread busy 2 s; the client sends a write | Server hangs up and counts `RequestTimeout`; the write never runs | Unit | `session`: "A session closes clients whose requests are not answered in time" | Unit | Covered |
 | TC-190 | Request timeout, client that does not read | Limit 1 s; a 4 MiB value requested and left unread | Write abandoned, connection closed, violation counted | Unit | `session`: same scenario; "A session stalled on a client that does not read still stops" (no limit; stops on shutdown) | Unit | Covered |
 | TC-191 | A large reply arrives whole | 4 MiB value read back by a reading client | The socket takes part at once and the rest follows; value intact | Unit | `session`: "A reply larger than the socket buffer arrives whole" | Unit | Covered |
+| TC-271 | Admission holds under contention (FR-014, NFR-002) | Guard allows 4; 16 threads released together race for slots, then churn admit and release | Exactly 4 admitted while all tickets are held; concurrent holders never exceed 4; `clients()` is 0 at the end | Unit | `guard`: "The guard never admits more clients than its limit under contention" | Unit | Covered |
 | TC-192 | Limits are observable on a live server | Real server with `--maxclients 1`; a second client connects; read `INFO` | Second client refused with the error of TC-172; `INFO` counts it | Integration | None found (master plan A-7) | none | Gap |
 
 Coverage per use case is in [traceability.md](traceability.md).

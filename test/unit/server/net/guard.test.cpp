@@ -4,10 +4,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <latch>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 using namespace redis;
 
@@ -50,6 +55,77 @@ SCENARIO("The guard admits clients up to its limit", "[net][guard]") {
 				CHECK(guard.clients() == 1);
 				kept.reset();
 				CHECK(guard.clients() == 0);
+			}
+		}
+	}
+}
+
+SCENARIO("The guard never admits more clients than its limit under contention",
+		 "[net][guard][concurrency]") {
+	constexpr size_t LIMIT   = 4;
+	constexpr size_t THREADS = 16;
+	constexpr size_t ATTEMPTS_PER_THREAD = 100;
+	constexpr size_t CHURN_ROUNDS        = 5000;
+
+	GIVEN("a guard that allows four clients and sixteen racing threads") {
+		NetGuard guard(NetLimits{.max_clients = LIMIT});
+
+		WHEN("every thread tries to take a slot and keeps it") {
+			std::latch start(THREADS);
+			std::atomic<size_t> granted{0};
+			std::vector<std::vector<NetGuard::Ticket>> held(THREADS);
+			{
+				std::vector<std::jthread> threads;
+				for (size_t t = 0; t < THREADS; ++t)
+					threads.emplace_back([&, t] {
+						start.arrive_and_wait();
+						for (size_t i = 0; i < ATTEMPTS_PER_THREAD; ++i)
+							if (auto ticket = guard.admit()) {
+								held[t].push_back(std::move(*ticket));
+								granted.fetch_add(1);
+							}
+					});
+			}
+			THEN("exactly the limit is admitted, however the race falls") {
+				CHECK(granted.load() == LIMIT);
+				CHECK(guard.clients() == LIMIT);
+				CHECK(guard.admitted() == LIMIT);
+			}
+			AND_WHEN("all the tickets are released") {
+				held.clear();
+				THEN("no slot is left behind") {
+					CHECK(guard.clients() == 0);
+				}
+			}
+		}
+
+		WHEN("every thread takes and releases slots over and over") {
+			std::latch start(THREADS);
+			std::atomic<size_t> holders{0};
+			std::atomic<size_t> peak{0};
+			{
+				std::vector<std::jthread> threads;
+				for (size_t t = 0; t < THREADS; ++t)
+					threads.emplace_back([&] {
+						start.arrive_and_wait();
+						for (size_t i = 0; i < CHURN_ROUNDS; ++i) {
+							auto ticket = guard.admit();
+							if (!ticket) continue;
+							const size_t now = holders.fetch_add(1) + 1;
+							size_t seen      = peak.load();
+							while (now > seen &&
+								   !peak.compare_exchange_weak(seen, now)) {}
+							holders.fetch_sub(1);
+						}
+					});
+			}
+			THEN("the holders at one moment never pass the limit") {
+				CHECK(peak.load() <= LIMIT);
+				CHECK(peak.load() >= 1);
+			}
+			THEN("every slot comes back") {
+				CHECK(guard.clients() == 0);
+				CHECK(holders.load() == 0);
 			}
 		}
 	}
