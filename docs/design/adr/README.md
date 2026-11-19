@@ -23,3 +23,4 @@ and the git history; dates are those of the commit that first implemented the de
 | [0008](../../features/server_lifecycle/adr/0008-refuse-to-start-on-unreadable-data.md) | Refuse to start on unreadable data | Accepted |
 | [0009](0009-errors-as-values.md) | Errors as values, not exceptions | Accepted |
 | [0010](0010-pinned-vcpkg-and-layered-presets.md) | Pinned vcpkg baseline and layered CMake presets | Accepted |
+| [0011](../../features/observability/adr/0011-jemalloc-keyspace-allocator.md) | jemalloc as the keyspace allocator | Proposed |

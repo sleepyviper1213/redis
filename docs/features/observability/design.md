@@ -17,11 +17,13 @@ Choices specific to this feature. System-wide design stays in the
 | DX-53 | `CONFIG SET loglevel` sets every channel and logs the change at warning level | The change is on record at any level short of error | UC-015 |
 | DX-54 | The dispatcher records the running command (name, argument count, start); the watchdog thread reads it every 100 ms and warns while it runs past `--watchdog-ms`; `0` turns it off | One slow command stalls every client (ADR-0001); the warning is written while it runs, so a command that never ends is reported too | [ADR-0001](../connection/adr/0001-single-threaded-command-executor.md), SDD §14.1, §17, FR-016, UC-018 A1 |
 | DX-55 | The crash report is written with `write(2)` to stderr and the log file, not through the logger; then the signal's default action runs | An async logger's queue dies with the process; core dumps stay available | SDD §10.2, FR-016, `src/server/diagnostics/crash.hpp` |
+| DX-80 | The keyspace allocator is `JemallocAllocator<T>` when `REDIS_USE_JEMALLOC` is on and the platform has jemalloc, else `CountingAllocator`; it counts usable size; only the `DefaultAllocator` alias changes. No traits parameter beside the allocator | Less fragmentation under churn, as Redis does; the database is already generic over its allocator, and nothing else varies | [ADR-0011](adr/0011-jemalloc-keyspace-allocator.md), #50, `src/common/store/allocator.hpp` |
 
 ## Code map
 
 * `src/server/commands/server.cpp`: `INFO`, `CONFIG`; `src/server/stats.hpp`: `ServerStats`, `CommandStat`.
 * `src/core/logging/channels.cpp`, `src/core/logging/lifecycle.cpp`, `src/core/logging/guard.cpp`, `src/core/logging/settings.hpp`: the logging mechanism.
+* `src/core/counting_allocator.hpp`, `src/common/store/allocator.hpp`: the keyspace allocator and the `DefaultAllocator` alias (planned: `jemalloc_allocator.hpp`, DX-80).
 * `src/server/log_channels.hpp`: the channel list.
 * `src/server/diagnostics/command_watchdog.cpp`, `src/server/diagnostics/current_command.cpp`, `src/server/diagnostics/crash.hpp`, `src/server/diagnostics/crash_posix.cpp`: watchdog, running-command record, crash report.
 * `src/core/stdexec_ext/watchdog/`: the generic stall detection the command watchdog uses.

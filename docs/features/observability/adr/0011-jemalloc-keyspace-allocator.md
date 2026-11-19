@@ -1,0 +1,42 @@
+# ADR-0011: jemalloc as the keyspace allocator
+
+- **Status:** Proposed
+- **Date:** 2026-11-19
+- **Requirements:** FR-007 (`INFO memory`), NFR performance
+- **Issue / PR:** #50
+
+## Context
+
+The keyspace is parameterised on a standard Allocator (`BasicDatabase<Allocator>`, `BasicValueTypes<Allocator>`);
+`DefaultAllocator` is `CountingAllocator`, which forwards to `std::allocator` and adds up the bytes for
+`INFO used_memory` (DX-48). A server that creates and deletes many keys of mixed sizes fragments the C library's heap:
+resident memory stays above `used_memory`. Redis itself ships jemalloc for this reason.
+
+Constraints: jemalloc builds on Linux and macOS but not on MinGW or MSVC here; there is no Linux machine, so Linux
+work runs through GitHub Actions; the sanitizer presets must keep seeing every allocation.
+
+## Decision
+
+Add `JemallocAllocator<T>`, a stateless standard Allocator over `je_mallocx` and `je_sdallocx`, and make it
+`DefaultAllocator` when the build option `REDIS_USE_JEMALLOC` is on and the platform has jemalloc. Otherwise
+`DefaultAllocator` stays `CountingAllocator`. The allocator keeps the process-wide byte counter, and counts the usable
+size (`je_nallocx`) rather than the requested size, so `used_memory` is what the allocator really holds.
+
+The option is off until the benchmark (TC-276) shows a gain.
+
+## Alternatives considered
+
+- **Replace the global allocator (link jemalloc, change no code):** simplest, and covers connection buffers too. Not
+  chosen: the counter would no longer be tied to the keyspace, and the whole process depends on the link order.
+- **mimalloc or tcmalloc:** comparable gains; jemalloc is what Redis uses, so `INFO` fields and behaviour are known
+  quantities. Revisit if jemalloc does not build in CI.
+- **A traits parameter beside the allocator:** nothing but the allocator varies, so no (see DX-80).
+
+## Consequences
+
+- Easier: lower fragmentation under churn; sized frees (`sdallocx`) use the count `deallocate` already receives;
+  `INFO` can later report jemalloc's `allocated` and `resident` through `mallctl`.
+- Harder: the store depends on a non-standard API behind an `#ifdef`; a second allocator to test; two configurations
+  in CI.
+- Must be true: sanitizer presets build with the option off, because `je_mallocx` bypasses ASan's interception and
+  would hide heap errors in the keyspace.

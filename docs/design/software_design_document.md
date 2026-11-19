@@ -147,7 +147,7 @@ The server is built from layers, one library per directory
   is a typed error; a client-declared length is bounded before anything is allocated. `Value` is a variant of simple
   string, error, integer, bulk string, array and the nulls; replies are encoded with `{fmt}` format specs.
 * **`common/store`:** `Object` (string, list, set or hash), `Database` (the map and expiry indexes), a counting
-  allocator so `INFO memory` reports real bytes, and, in debug builds, an owner-thread check.
+  allocator (jemalloc-backed where built with it, [ADR-0011](../features/observability/adr/0011-jemalloc-keyspace-allocator.md)) so `INFO memory` reports real bytes, and, in debug builds, an owner-thread check.
 * **`server/commands`:** `CommandInfo` (name, function, arity, write flag), one table per family (`string`, `list`,
   `hash`, `set`, `keyspace`, `server`), and the handler that merges the tables into one hash table.
 * **`server/net`:** `Listener` (accept loop), `Session` (read, parse, execute, write), `Executor` (the keyspace

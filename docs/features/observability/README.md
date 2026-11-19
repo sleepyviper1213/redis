@@ -5,7 +5,7 @@
 | Feature ID   | FEAT-OBSERVABILITY |
 | Status       | Implemented; documented retroactively |
 | Requirements | FR-007, FR-015, FR-016 (defined in the [SRS](../../analysis/software_requirement_specification.md); not repeated here) |
-| Issue / epic | TODO |
+| Issue / epic | #50 (jemalloc keyspace allocator); others TODO |
 
 Inspecting the server and its logs at run time.
 
@@ -28,4 +28,5 @@ Inspecting the server and its logs at run time.
 | [test_plan.md](test_plan.md) | Test scenarios `TC-nn` |
 | [traceability.md](traceability.md) | Use cases to requirements, scenarios and tests |
 | [design.md](design.md) | Design choices `DX-n`, code map, open questions |
+| [adr/](adr/) | [ADR-0011](adr/0011-jemalloc-keyspace-allocator.md) |
 | [diagrams/](diagrams/) | PlantUML |
