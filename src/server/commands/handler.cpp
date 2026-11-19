@@ -154,6 +154,7 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 				 args.empty() ? std::string_view{} : args[0],
 				 args.size());
 
+	if (ctx.aof != nullptr) ctx.aof->command_starting();
 	const size_t reply_start = out.size();
 	const CommandInfo *ran   = nullptr;
 	bool failed              = false;

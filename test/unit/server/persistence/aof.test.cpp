@@ -671,6 +671,29 @@ SCENARIO("Only an EXPIRE that was applied is logged",
 	}
 }
 
+SCENARIO("A discard does not outlive its command",
+		 "[aof][expiry]") {
+	GIVEN("a server with an append-only file") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		AofServer server(dir.path(), snapshot.path());
+		REQUIRE(server.start().has_value());
+
+		WHEN("a command called discard() but never reached command_ran()") {
+			server.aof.command_starting();
+			server.aof.discard();
+
+			AND_WHEN("the next command starts and a write runs") {
+				server.run({"SET", "a", "b"});
+
+				THEN("the write is logged") {
+					CHECK(server.log() == logged({"SET", "a", "b"}));
+				}
+			}
+		}
+	}
+}
+
 SCENARIO("A key that expires is logged as DEL, once",
 		 "[aof][expiry]") {
 	GIVEN("two keys that expire and one that does not") {

@@ -108,6 +108,13 @@ public:
 		replace(std::span<const std::string_view, N>(args));
 	}
 
+	/// A command is about to run: forget what the last one left (replace(),
+	/// discard()), whether or not it reached command_ran().
+	void command_starting() noexcept {
+		replaced_.clear();
+		discarded_ = false;
+	}
+
 	/// Log nothing for the command that is running: it did not change the
 	/// keyspace, and what it was told (EXPIRE ... GT, say) could change it on a
 	/// replay. Call from a command while it runs, and only when `ctx.aof` is
