@@ -9,7 +9,7 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 
 | Use case | FR | NFR | Scenarios | Unit | Integration | Stress / Differential |
 |----------|----|-----|-----------|------|-------------|-----------------------|
-| [UC-014](use_cases/uc_014_inspect_server.md) Inspect the server | FR-007, FR-014 | NFR-004, NFR-006 | TC-193 to 209, TC-271 to 276 | Partial: counters, memory, one-section and connection fields tested; selectors, persistence fields, `CONFIG GET` patterns and the unsupported form are Gap | None | None (differential does not send `INFO`/`CONFIG`) |
+| [UC-014](use_cases/uc_014_inspect_server.md) Inspect the server | FR-007, FR-014 | NFR-004, NFR-006 | TC-193 to 209, TC-272 to 277 | Partial: counters, memory, one-section and connection fields tested; selectors, persistence fields, `CONFIG GET` patterns and the unsupported form are Gap | None | None (differential does not send `INFO`/`CONFIG`) |
 | [UC-015](use_cases/uc_015_change_log_level.md) Change the log level | FR-007, FR-015 | NFR-002, NFR-006 | TC-210 to 216 | Mostly: apply, refusals, invalid level; one level of seven tested | None; the warning line and the default-off start-up are Gap | None |
 | [UC-018](use_cases/uc_018_watch_logs.md) Watch the logs | FR-015, FR-016 | NFR-003, NFR-006 | TC-217 to 226 | Partial: watchdog and async flush tested; log format, wording, crash report and error logging are Gap | None (A-3) | None |
 

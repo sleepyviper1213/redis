@@ -266,18 +266,39 @@ class Generator:
             b"abc", b"", b"9223372036854775807",
         ])
 
+    def options(self, relative):
+        """The options of the EXPIRE family: none, or NX, XX, GT, LT, in
+        combinations that Redis accepts or refuses, and an argument that is no
+        option. GT and LT compare two deadlines, which for a relative amount
+        depend on the clock (the two servers add "100 s" a millisecond apart),
+        so a relative amount gets only NX and XX, and the combinations refused
+        before any comparison."""
+        if relative:
+            choices = [[], [], [], [b"NX"], [b"XX"], [b"nx", b"NX"],
+                       [b"NX", b"XX"], [b"GT", b"LT"], [b"NX", b"GT"],
+                       [b"11"]]
+        else:
+            choices = [[], [], [b"NX"], [b"XX"], [b"GT"], [b"LT"],
+                       [b"XX", b"GT"], [b"XX", b"LT"], [b"NX", b"LT"],
+                       [b"GT", b"LT"], [b"gt"], [b"11"]]
+        return self.rng.choice(choices)
+
     def expiry(self):
         """Expiry commands whose replies do not depend on the clock."""
         k = self.any_key()
         roll = self.pick(14)
         if roll == 0:
-            return [b"EXPIRE", k, self.relative_amount()], DEFINED
+            return ([b"EXPIRE", k, self.relative_amount()]
+                    + self.options(True)), DEFINED
         if roll == 1:
-            return [b"PEXPIRE", k, self.relative_amount()], DEFINED
+            return ([b"PEXPIRE", k, self.relative_amount()]
+                    + self.options(True)), DEFINED
         if roll == 2:
-            return [b"EXPIREAT", k, self.absolute_amount(False)], DEFINED
+            return ([b"EXPIREAT", k, self.absolute_amount(False)]
+                    + self.options(False)), DEFINED
         if roll == 3:
-            return [b"PEXPIREAT", k, self.absolute_amount(True)], DEFINED
+            return ([b"PEXPIREAT", k, self.absolute_amount(True)]
+                    + self.options(False)), DEFINED
         if roll == 4:
             return [b"TTL", k], TTL
         if roll == 5:

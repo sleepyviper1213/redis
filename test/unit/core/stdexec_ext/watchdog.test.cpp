@@ -67,7 +67,7 @@ SCENARIO("watched() reports work still running past the threshold",
 
 	GIVEN("work that runs past the threshold, under Once") {
 		const auto [value] =
-			ex::sync_wait(watched<ReportPolicy::Once>(slow(work_on, 50ms),
+			ex::sync_wait(watched<ReportPolicy::Once>(slow(work_on, 300ms),
 													  watch_on,
 													  5ms,
 													  on_stall))
@@ -80,7 +80,7 @@ SCENARIO("watched() reports work still running past the threshold",
 	}
 
 	GIVEN("work that runs past the threshold, under EveryPeriod") {
-		ex::sync_wait(watched<ReportPolicy::EveryPeriod>(slow(work_on, 60ms),
+		ex::sync_wait(watched<ReportPolicy::EveryPeriod>(slow(work_on, 300ms),
 														 watch_on,
 														 5ms,
 														 on_stall));
@@ -120,7 +120,7 @@ SCENARIO("watched() reports work still running past the threshold",
 
 	GIVEN("the adaptor form") {
 		const auto [value] =
-			ex::sync_wait(slow(work_on, 50ms) |
+			ex::sync_wait(slow(work_on, 300ms) |
 						  watched<ReportPolicy::Once>(watch_on, 5ms, on_stall))
 				.value();
 		THEN("it is the same watch") {

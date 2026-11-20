@@ -13,6 +13,7 @@ Choices specific to this feature. System-wide design stays in the
 | DX-21 | Deadlines are absolute wall-clock times | `EXPIREAT`, `PXAT` and snapshots name calendar times; the cost is clock sensitivity (see known limits in the [README](README.md)) | FR-006.10 |
 | DX-22 | Snapshots and the append-only file store absolute deadlines; expired keys are logged as `DEL`; replay runs with expiry off | A restart or a replay can never extend a lifetime | [ADR-0006](../persistence/adr/0006-own-snapshot-format.md), FR-006.10, NFR-010.5 |
 | DX-23 | A deadline already past, set by the `EXPIRE` family, deletes the key at once; `SET` with a past `EXAT` or `PXAT` keeps the key with that deadline until it is read or swept | Matches Redis 8.0.2, which deletes in `expireGenericCommand` and not in `setGenericCommand` | FR-006.5, [finding](finding_45_set_past_deadline.md), #48 |
+| DX-79 | The `EXPIRE` family parses its options before the amount, and only an applied command is logged; a key without a deadline counts as infinite for `GT` and `LT` | Matches Redis 8.0.2 (`parseExtendedExpireArgumentsOrReply`, `expireGenericCommand`); a replay then repeats only what changed the keyspace | FR-006.12, #41 |
 
 ## Code map
 
@@ -23,4 +24,4 @@ Check this list against the source when the design changes.
 
 ## Open questions
 
-* Support `NX`/`XX`/`GT`/`LT` and `EXPIRETIME`? Not required by the SRS today; would add requirements and change #41 and #42.
+* Support `EXPIRETIME` and `PEXPIRETIME`? Not required by the SRS today; would add requirements and change #42.

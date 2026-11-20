@@ -68,6 +68,17 @@ TEST_CASE("a child allocates freely though other threads were allocating at "
 	// allocator lock at the fork, an allocator without fork handlers would
 	// leave it locked forever in the child. glibc's and macOS' have them;
 	// this guards a future custom allocator.
+	//
+	// AddressSanitizer replaces the allocator with one that does not, and the
+	// child hangs (A-11), so the test says nothing about the allocator the
+	// server runs with there.
+#if defined(__SANITIZE_ADDRESS__)
+	SKIP("AddressSanitizer's allocator has no fork handlers (A-11)");
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+	SKIP("AddressSanitizer's allocator has no fork handlers (A-11)");
+#endif
+#endif
 	std::atomic<bool> stop{false};
 	std::vector<std::thread> busy;
 	for (int i = 0; i < 4; ++i)

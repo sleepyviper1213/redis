@@ -1,6 +1,9 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
+#include "core/error/failed.hpp"
+#include "core/error/failure_format.hpp"
+#include "core/utils/ascii.hpp"
 #include "core/utils/parse_number.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
 #include "common/store/object.hpp"
@@ -14,6 +17,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <span>
 #include <string>
 #include <utility>
@@ -67,10 +71,58 @@ constexpr std::string_view expire_name(detail::ExpireUnit unit,
 	return seconds ? "expireat" : "pexpireat";
 }
 
+/// Why the options of the EXPIRE family were refused.
+enum class ExpireOptionKind : std::uint8_t {
+	Unsupported,  ///< [quoted = the argument that is none of NX, XX, GT, LT]
+	NxConflict,   ///< NX with XX, GT or LT
+	GtLtConflict, ///< GT with LT
+};
+
+using ExpireOptionError = Failure<ExpireOptionKind>;
+
+/// The sentence for \p error, worded as Redis words it; the reply puts "ERR "
+/// in front.
+std::string display(const ExpireOptionError &error) {
+	switch (error.kind) {
+	case ExpireOptionKind::Unsupported:
+		return fmt::format("Unsupported option {}", error.quoted);
+	case ExpireOptionKind::NxConflict:
+		return "NX and XX, GT or LT options at the same time are not "
+			   "compatible";
+	case ExpireOptionKind::GtLtConflict:
+		return "GT and LT options at the same time are not compatible";
+	}
+	std::unreachable();
+}
+
+// Parses what follows the amount: NX, XX, GT and LT, in any case and any number.
+// As in Redis, an unsupported argument is reported before a conflict among the
+// others, and both before the amount is looked at.
+std::expected<Database::ExpireOptions, ExpireOptionError>
+parse_expire_options(Args args) {
+	Database::ExpireOptions options;
+	for (const std::string_view arg : args.subspan(3)) {
+		if (iequals(arg, "NX")) options.nx = true;
+		else if (iequals(arg, "XX")) options.xx = true;
+		else if (iequals(arg, "GT")) options.gt = true;
+		else if (iequals(arg, "LT")) options.lt = true;
+		else
+			REDIS_FAILED(ExpireOptionError{.kind   = ExpireOptionKind::Unsupported,
+										   .quoted = std::string(arg)});
+	}
+	if (options.nx && (options.xx || options.gt || options.lt))
+		REDIS_FAILED(ExpireOptionError{.kind = ExpireOptionKind::NxConflict});
+	if (options.gt && options.lt)
+		REDIS_FAILED(ExpireOptionError{.kind = ExpireOptionKind::GtLtConflict});
+	return options;
+}
+
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
 template <detail::ExpireUnit Unit, detail::ExpireBase Base>
 Value expire_generic(CommandContext &ctx, Args args) {
+	const auto options = parse_expire_options(args);
+	if (!options) return reply::error("ERR {}", display(options.error()));
 	const auto amount = parse_integer(args[2]);
 	if (!amount) {
 		return reply::not_integer();
@@ -81,19 +133,30 @@ Value expire_generic(CommandContext &ctx, Args args) {
 							expire_name(Unit, Base));
 	}
 	const DeadlineTimer timer = *deadline;
-	const bool applied        = ctx.db.set_expiry(args[1], timer);
+	const auto result = ctx.db.set_expiry(
+		args[1], timer, Database::PastDeadline::Delete, *options);
 
 	// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay
 	// does not share: log the absolute deadline. One already past deleted the
-	// key.
-	if (applied && ctx.aof != nullptr) {
-		if (timer.has_expired()) {
+	// key. What was done comes from set_expiry, not from the clock again.
+	if (ctx.aof != nullptr) {
+		switch (result) {
+		case Database::ExpiryResult::Refused:
+			// An option said no, or there is no key: nothing changed, and the
+			// command as received could change something on a replay.
+			ctx.aof->discard();
+			break;
+		case Database::ExpiryResult::Deleted:
 			ctx.aof->replace({"DEL", args[1]});
-		} else {
-			const auto at = timer.millis_since_epoch();
-			ctx.aof->replace({"PEXPIREAT", args[1], fmt::to_string(at)});
+			break;
+		case Database::ExpiryResult::Set:
+			ctx.aof->replace({"PEXPIREAT",
+							  args[1],
+							  fmt::to_string(timer.millis_since_epoch())});
+			break;
 		}
 	}
+	const bool applied = result != Database::ExpiryResult::Refused;
 	return reply::integer(applied ? 1 : 0);
 }
 
@@ -138,22 +201,22 @@ constexpr std::array COMMANDS{
 	CommandInfo{.name  = "EXPIRE",
 				.fn    = expire_generic<detail::ExpireUnit::Seconds,
 										detail::ExpireBase::Relative>,
-				.arity = 3,
+				.arity = -3,
 				.write = true},
 	CommandInfo{.name  = "PEXPIRE",
 				.fn    = expire_generic<detail::ExpireUnit::Milliseconds,
 										detail::ExpireBase::Relative>,
-				.arity = 3,
+				.arity = -3,
 				.write = true},
 	CommandInfo{.name  = "EXPIREAT",
 				.fn    = expire_generic<detail::ExpireUnit::Seconds,
 										detail::ExpireBase::Absolute>,
-				.arity = 3,
+				.arity = -3,
 				.write = true},
 	CommandInfo{.name  = "PEXPIREAT",
 				.fn    = expire_generic<detail::ExpireUnit::Milliseconds,
 										detail::ExpireBase::Absolute>,
-				.arity = 3,
+				.arity = -3,
 				.write = true},
 	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .write = true},
 	CommandInfo{.name = "TTL", .fn = ttl_generic<false>, .arity = 2},

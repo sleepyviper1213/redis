@@ -81,8 +81,10 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		db.set("short", String("v"));
 		db.set("long", String("v"));
 		db.set("forever", String("v"));
-		REQUIRE(db.set_expiry("short", DeadlineTimer::after(20ms)));
-		REQUIRE(db.set_expiry("long", DeadlineTimer::after(1h)));
+		REQUIRE(db.set_expiry("short", DeadlineTimer::after(20ms)) ==
+			Database::ExpiryResult::Set);
+		REQUIRE(db.set_expiry("long", DeadlineTimer::after(1h)) ==
+			Database::ExpiryResult::Set);
 
 		THEN("only keys with a deadline report one") {
 			CHECK(db.expiry("short").has_value());
@@ -144,18 +146,18 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		db.set("k", String("v"));
 
 		WHEN("its deadline is set in the past") {
-			const bool existed = db.set_expiry("k", DeadlineTimer::after(-1s));
+			const auto result = db.set_expiry("k", DeadlineTimer::after(-1s));
 
 			THEN("the key is deleted at once") {
-				CHECK(existed);
+				CHECK(result == Database::ExpiryResult::Deleted);
 				CHECK_FALSE(db.contains("k"));
 			}
 		}
 
 		WHEN("a deadline is set on a missing key") {
 			THEN("nothing happens") {
-				CHECK_FALSE(
-					db.set_expiry("missing", DeadlineTimer::after(1s)));
+				CHECK(db.set_expiry("missing", DeadlineTimer::after(1s)) ==
+					  Database::ExpiryResult::Refused);
 			}
 		}
 	}

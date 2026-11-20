@@ -38,18 +38,22 @@ server restart by `scripts/test_expiry_server.sh` (CI step "Key expiry restart t
 server and to real Redis: `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT`, `PERSIST`, `SET` with `EX`, `PX`, `EXAT`, `PXAT`,
 `KEEPTTL`, wrong arity, and writes that keep or clear a deadline. Deadlines are far ahead, already past or invalid, never
 short, and `TTL` and `PTTL` are compared as missing, no deadline, or "some time left", because the two servers cannot
-agree on the remaining time to the millisecond. CI runs it as a step that does not fail the job ("Differential test
-against Redis, expiry commands") until its first results have been dealt with. The scenarios marked Differential are
+agree on the remaining time to the millisecond. CI runs it as a gating step ("Differential test against Redis, expiry commands"): the first run with no divergence in 100000 requests was CI run 59. The scenarios marked Differential are
 covered by it in that form; the marks below stay as they are until a run against Redis confirms them. The first run
-(CI run 49) found: the overflow error text (#44, fixed), `EXPIRE k 10 11` answered `Unsupported option` by Redis (#41),
+(CI run 49) found: the overflow error text (#44, fixed), `EXPIRE k 10 11` answered `Unsupported option` by Redis (#41, FR-006.12),
 and a `DBSIZE` difference after `SET` with an already-past deadline (#45: confirmed, see [the finding](finding_45_set_past_deadline.md); decision: follow Redis, bug #48, fixed). A later run (CI run 56) found a key lost by `SET` over a due key
 (#49, fixed). Both servers count a due key in `DBSIZE` until it is read or swept, and which sweep comes first is timing, so the
 generator reads the key at once (`EXISTS`) after a `SET` with a past deadline, and both servers then drop it the same
-way; the unit test TC-263 covers the counting. The step stays non-gating until #41 is settled.
+way; the unit test TC-263 covers the counting. The step gates the job since CI run 59, which showed no divergence. The Differential marks of the scenarios below have not been reviewed against that run.
 
 **Timing rules for integration tests.** Use `PEXPIRE` with a small millisecond amount, then poll with a timeout instead
 of one fixed sleep. A key is gone for commands the moment its deadline passes (TC-105); the sweep removes it from
 memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millisecond; assert a range.
+
+**Timing rules for unit tests.** The same rule holds: `TTL` rounds to the nearest second, so a slow step (a sanitizer
+build on a loaded runner) reads one second low. A test that sets a deadline of N seconds and reads `TTL` later asserts
+N - 1 to N, through the `expect_ttl` helper in `expiry.test.cpp`. Only `-1` and `-2` are exact. CI run 64 on
+`aarch64-apple-darwin-llvm-asan` read `99` for `100` in TC-266.
 
 ## 1. Setting a deadline (AC-01, 02, 03)
 
@@ -77,10 +81,15 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 | TC-263 | `SET` with a past `EXAT` or `PXAT` keeps the key until it is read | `DBSIZE` (n); `SET k v PXAT 1`; `DBSIZE`; `EXISTS k`; `DBSIZE` | `+OK`; `n + 1`; `:0`; `n` | FR-006.5, 006.8 | Unit, Differential | `expiry`: "SET with a past EXAT or PXAT keeps the key until it is read" | Unit | Partial |
 | TC-264 | `DEL` of a due key | A key is due and not yet swept; `DEL k` | `:0`; `expired_keys` + 1 (#40, fixed) | FR-006.8, NFR-010.1 | Unit, Differential | `expiry`: "DEL of a key past its deadline replies 0, as Redis does" | Unit | Covered |
 | TC-265 | `SET` over a key that is already due | `SET k a PXAT 1`; `SET k b PXAT 4102444800000`; `GET k`; then `SET k c PXAT 1`; `SET k d KEEPTTL`; `GET k`; `TTL k` | `$1 b`; then `d` and `:-1` (the due key is missing, so `KEEPTTL` keeps nothing); `expired_keys` + 2 (#49) | FR-006.5, 006.8 | Unit, Differential | `expiry`: "SET over a key that is already due" | Unit | Covered |
+| TC-266 | Options decide whether a deadline is set | A key with a deadline 100 s ahead: `EXPIRE k 50 GT`; `EXPIRE k 200 GT`; `EXPIRE k 10 NX`; `EXPIRE k 10 XX`; `EXPIRE k 5 LT`; `EXPIRE k 9999 LT`. A key without a deadline: `XX`, `GT`, `LT`, `NX` | `:0`, `:1`, `:0`, `:1`, `:1`, `:0`; then `:0`, `:0`, `:1`, `:1`; `TTL` shows what was applied | FR-006.12 | Unit | `expiry`: "Options decide whether EXPIRE sets a deadline" | Unit | Covered |
+| TC-267 | The other three commands take the options | `PEXPIRE`, `EXPIREAT`, `PEXPIREAT` with far-ahead deadlines and each option | The same rules; equal deadlines fail `GT` and `LT` | FR-006.12 | Unit, Differential | `expiry`: "The other EXPIRE commands take the options too" | Unit | Covered |
+| TC-268 | Missing key, due key, past deadline | `EXPIRE nokey 10 NX`; a due key with `XX`; `EXPIRE k 0 LT` on a key with a deadline ahead | `:0`; `:0`; `:1` and the key is deleted | FR-006.12, 006.5 | Unit | `expiry`: "Options with a missing key, a due key and a past deadline" | Unit | Covered |
+| TC-269 | Option errors | `EXPIRE k 10 11`; `EXPIRE k abc 11`; `EXPIRE k 10 NX XX`; `EXPIRE k 10 GT LT`; `EXPIRE k 10 11 NX XX`; `EXPIRE k abc NX`; `EXPIRE k 10 nx NX` | `-ERR Unsupported option 11` (also for the invalid amount, and before the incompatibility check); the two incompatibility errors; `-ERR value is not an integer or out of range`; `:1` | FR-006.12, 006.6 | Unit, Differential | `expiry`: "Refused options and the order of the checks" | Unit | Covered |
+| TC-270 | Only an applied command is logged | `--appendonly`; key with a deadline; `EXPIRE k 50 GT` (not applied); `EXPIRE k 200 GT` (applied) | The log holds one `PEXPIREAT k <ms>`, for the applied one | FR-006.12, 006.10 | Unit | `aof`: "Only an EXPIRE that was applied is logged" | Unit | Covered |
 | TC-100 | Not an integer | `EXPIRE k abc`; `EXPIRE k 1.5`; `PEXPIRE k ""` | `-ERR value is not an integer or out of range` | FR-006.6, 010 | Unit, Differential | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit | Partial |
 | TC-101 | Deadline overflows | `EXPIRE k 9223372036854775807`; `PEXPIRE k 9223372036854775807` | `-ERR invalid expire time in 'expire' command` (`'pexpire'`, `'expireat'`; fixed in #44); the previous deadline is kept | FR-006.6 | Unit, Differential | `set_ttl`: "Expiry arguments that overflow the clock are rejected" | Unit | Partial |
 | TC-102 | `SET` with a non-positive or overflowing expiry | `SET k v EX 0`; `EX -1`; `PX 9223372036854775807` | `-ERR invalid expire time in 'set' command`; `k` unchanged | FR-006.6 | Unit, Differential | `set_ttl`: "SET option validation", "Expiry arguments that overflow the clock are rejected" | Unit | Partial |
-| TC-103 | Wrong arity | `EXPIRE k`; `EXPIRE k 1 2`; `TTL`; `PERSIST k x` | `-ERR wrong number of arguments for '...' command` | FR-010 | Unit, Differential | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit | Partial |
+| TC-103 | Wrong arity | `EXPIRE k`; `TTL`; `PERSIST k x` (`EXPIRE k 1 2` is an unsupported option, TC-269) | `-ERR wrong number of arguments for '...' command` | FR-010 | Unit, Differential | `expiry`: "Deadlines already past, invalid amounts and wrong arity" | Unit | Partial |
 
 ## 3. Reading and cancelling (AC-04, 05, 06)
 
@@ -139,7 +148,7 @@ memory within one 100 ms period (TC-107). Never assert `TTL` to the exact millis
 ## Bugs, unimplemented features and limits by design
 
 Three kinds of behaviour that differ from what a reader might expect, each handled differently. The tests are in
-`test/unit/server/commands/expiry.test.cpp`. Issues are listed in [issues.md](issues.md).
+`test/unit/server/commands/expiry.test.cpp`.
 
 | Kind | Meaning | ID | Test |
 |------|---------|----|------|
@@ -149,7 +158,6 @@ Three kinds of behaviour that differ from what a reader might expect, each handl
 
 | ID    | Kind            | Behaviour                                             | Given / When                              | Today's result                                        | Test |
 |-------|-----------------|-------------------------------------------------------|-------------------------------------------|-------------------------------------------------------|------|
-| #41   | Not implemented | No `NX`/`XX`/`GT`/`LT` on `EXPIRE`                    | `EXPIRE k 10 NX`                          | `-ERR wrong number of arguments for 'expire' command` | "Key expiry limits by design and commands not implemented" |
 | #42   | Not implemented | No `EXPIRETIME`/`PEXPIRETIME`                         | `EXPIRETIME k`                            | `-ERR unknown command 'EXPIRETIME'` (as the server words it) | same |
 | LI-05 | By design       | `DBSIZE` counts a due key not yet swept (as Redis)    | A key is due; sweep not yet run; `DBSIZE` | The key is counted                                    | same |
 

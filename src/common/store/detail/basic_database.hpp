@@ -48,8 +48,7 @@ class BasicDatabase {
 	using KeyMap = Types::template KeyMap<V>;
 
 	template <typename T>
-	using rebound =
-		std::allocator_traits<Allocator>::template rebind_alloc<T>;
+	using rebound = std::allocator_traits<Allocator>::template rebind_alloc<T>;
 
 public:
 	using allocator_type = Allocator;
@@ -291,26 +290,48 @@ public:
 		Keep,   ///< store the deadline; the key goes when read or swept
 	};
 
+	/// The conditions of EXPIRE's NX, XX, GT and LT options; none set means
+	/// always. A key without a deadline counts as infinite for GT and LT.
+	struct ExpireOptions {
+		bool nx = false; ///< only a key without a deadline
+		bool xx = false; ///< only a key with a deadline
+		bool gt =
+			false; ///< only a later deadline (never for a key without one)
+		bool lt =
+			false; ///< only an earlier deadline (always for a key without one)
+	};
+
+	/// What set_expiry() did.
+	enum class ExpiryResult : uint8_t {
+		Refused, ///< no such key, or the options said no: nothing changed
+		Deleted, ///< the deadline was already past: the key is gone
+		Set,     ///< the key has the deadline
+	};
+
 	/**
 	 * \brief Expire \p key at \p deadline. A deadline in the past deletes the
 	 * key immediately, as EXPIRE with a non-positive TTL does in Redis, unless
-	 * \p past is Keep, as for SET ... EXAT or PXAT in the past.
-	 * \return false if the key does not exist.
+	 * \p past is Keep, as for SET ... EXAT or PXAT in the past. \p options may
+	 * refuse to set the deadline, as EXPIRE's NX, XX, GT and LT do.
+	 * \return what was done, decided once: the caller need not look at the
+	 * clock again to learn it.
 	 */
-	bool set_expiry(std::string_view key, DeadlineTimer timer,
-					PastDeadline past = PastDeadline::Delete) {
+	ExpiryResult set_expiry(std::string_view key, DeadlineTimer timer,
+							PastDeadline past     = PastDeadline::Delete,
+							ExpireOptions options = {}) {
 		owner_.check();
-		if (!contains(key)) return false;
+		if (!contains(key)) return ExpiryResult::Refused;
+		const auto old = expires_.find(key);
+		if (!allows(options, old, timer)) return ExpiryResult::Refused;
 		if (expiry_enabled_ && past == PastDeadline::Delete &&
 			timer.has_expired()) {
 			erase(key);
-			return true;
+			return ExpiryResult::Deleted;
 		}
-		if (auto it = expires_.find(key); it != expires_.end())
-			erase_deadline(it);
+		if (old != expires_.end()) erase_deadline(old);
 		auto [it, _] = expires_.emplace(make_key(key), timer.deadline());
 		by_deadline_.emplace(timer.deadline(), it->first);
-		return true;
+		return ExpiryResult::Set;
 	}
 
 	/**
@@ -383,6 +404,21 @@ private:
 
 	[[nodiscard]] Key make_key(std::string_view key) const {
 		return Key(key, rebound<char>(alloc_));
+	}
+
+	/// Whether \p options let a key, whose deadline is at \p it (end() if it
+	/// has none), get the deadline \p timer.
+	bool allows(ExpireOptions options, KeyMap<time_point>::const_iterator it,
+				DeadlineTimer timer) const {
+		if (!(options.nx || options.xx || options.gt || options.lt))
+			return true;
+		const bool has     = it != expires_.end();
+		const auto current = has ? it->second : time_point{};
+		if (options.nx && has) return false;
+		if (options.xx && !has) return false;
+		if (options.gt && (!has || timer.deadline() <= current)) return false;
+		if (options.lt && has && timer.deadline() >= current) return false;
+		return true;
 	}
 
 	/// Remove \p key if its deadline has passed. \return true if removed.

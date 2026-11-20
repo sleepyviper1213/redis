@@ -644,6 +644,56 @@ SCENARIO("A deadline already past is logged",
 	}
 }
 
+SCENARIO("Only an EXPIRE that was applied is logged",
+		 "[aof][expiry]") {
+	GIVEN("a server with an append-only file and a key with a deadline") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		AofServer server(dir.path(), snapshot.path());
+		REQUIRE(server.start().has_value());
+		server.run({"SET", "k", "v"});
+		server.run({"PEXPIREAT", "k", "4102444800000"});
+
+		WHEN("TC-270: GT refuses one deadline and accepts another (#41)") {
+			CHECK(server.run({"EXPIRE", "k", "50", "GT"}) == ":0\r\n");
+			CHECK(server.run({"PEXPIREAT", "k", "4102444801000", "GT"}) ==
+				  ":1\r\n");
+			CHECK(server.run({"EXPIRE", "nokey", "10", "NX"}) == ":0\r\n");
+
+			THEN("the log holds the SET and the two that were applied, "
+				 "nothing for the refused ones") {
+				CHECK(server.log() ==
+					  logged({"SET", "k", "v"}) +
+						  logged({"PEXPIREAT", "k", "4102444800000"}) +
+						  logged({"PEXPIREAT", "k", "4102444801000"}));
+			}
+		}
+	}
+}
+
+SCENARIO("A discard does not outlive its command",
+		 "[aof][expiry]") {
+	GIVEN("a server with an append-only file") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		AofServer server(dir.path(), snapshot.path());
+		REQUIRE(server.start().has_value());
+
+		WHEN("a command called discard() but never reached command_ran()") {
+			server.aof.command_starting();
+			server.aof.discard();
+
+			AND_WHEN("the next command starts and a write runs") {
+				server.run({"SET", "a", "b"});
+
+				THEN("the write is logged") {
+					CHECK(server.log() == logged({"SET", "a", "b"}));
+				}
+			}
+		}
+	}
+}
+
 SCENARIO("A key that expires is logged as DEL, once",
 		 "[aof][expiry]") {
 	GIVEN("two keys that expire and one that does not") {

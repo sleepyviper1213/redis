@@ -75,11 +75,11 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 
 	GIVEN("a key whose TTL passes after the snapshot is written") {
 		test::Server server;
-		REQUIRE(server.run({"SET", "short", "v", "PX", "30"}) == "+OK\r\n");
+		REQUIRE(server.run({"SET", "short", "v", "PX", "200"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
 		REQUIRE(
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
-		std::this_thread::sleep_for(50ms);
+		std::this_thread::sleep_for(300ms);
 
 		WHEN("TC-118: the snapshot is loaded") {
 			test::Server restored;
@@ -276,11 +276,11 @@ SCENARIO("A snapshot keeps absolute deadlines",
 
 	GIVEN("a snapshot whose short deadline has passed since it was written") {
 		test::Server server;
-		REQUIRE(server.run({"SET", "short", "v", "PX", "30"}) == "+OK\r\n");
+		REQUIRE(server.run({"SET", "short", "v", "PX", "200"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
 		REQUIRE(
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
-		std::this_thread::sleep_for(60ms);
+		std::this_thread::sleep_for(300ms);
 
 		WHEN("TC-119: it is loaded as the base of an append-only file") {
 			test::Server restored;

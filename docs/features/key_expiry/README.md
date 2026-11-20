@@ -4,7 +4,7 @@
 |--------------|-------|
 | Feature ID   | FEAT-EXP |
 | Status       | Implemented; documented retroactively (17 Nov 2026) |
-| Requirements | FR-006.1 to FR-006.11, NFR-010 (defined in the [SRS](../../analysis/software_requirement_specification.md#33-functional-requirements); not repeated here) |
+| Requirements | FR-006.1 to FR-006.12, NFR-010 (defined in the [SRS](../../analysis/software_requirement_specification.md#33-functional-requirements); not repeated here) |
 | Issue / epic | [#30](https://github.com/sleepyviper1213/redis/issues/30); all issues: [issues.md](issues.md) |
 
 A key can be given a lifetime. Once its deadline passes it is gone for every command, and a periodic sweep removes
@@ -30,7 +30,7 @@ cases) are only referenced.
 
 | Use case | Actor | Acceptance criteria | What it specifies |
 |----------|-------|---------------------|-------------------|
-| [UC-011 Expire keys](use_cases/uc_011_expire_keys.md) | Client | AC-01, 02, 04, 05, 06 | Set a deadline, read the time left, cancel it, which writes keep it |
+| [UC-011 Expire keys](use_cases/uc_011_expire_keys.md) | Client | AC-01, 02, 04, 05, 06, 11 | Set a deadline, read the time left, cancel it, which writes keep it |
 | [UC-002 Set key-value pair](../data_types/use_cases/uc_002_set_key_value.md) (in [data_types](../data_types/README.md)) | Client | AC-03 | `SET` with `EX`, `PX`, `EXAT`, `PXAT`, `KEEPTTL` |
 | [UC-020 Remove expired keys](use_cases/uc_020_remove_expired_keys.md) | Server | AC-07, 08 | A due key is gone at once; removal on access and by the sweep |
 | [UC-021 Keep deadlines across restarts](use_cases/uc_021_keep_deadlines_across_restarts.md) | Operator | AC-09 | Snapshot and append-only file keep absolute deadlines |
@@ -53,7 +53,6 @@ options (AC-03) belong to this feature.
 
 **Not implemented** (tracked):
 
-* #41: the `EXPIRE` family takes no `NX`, `XX`, `GT` or `LT` option.
 * #42: there are no `EXPIRETIME` or `PEXPIRETIME` commands.
 
 **By design** (changing one is a change to this feature):

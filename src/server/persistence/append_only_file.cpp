@@ -398,8 +398,9 @@ void AppendOnlyFile::log_expired(Database &db) {
 
 void AppendOnlyFile::command_ran(Database &db, bool logged, Args args) {
 	log_expired(db);
-	if (!logged) {
+	if (!logged || discarded_) {
 		replaced_.clear();
+		discarded_ = false;
 		return;
 	}
 	if (replaced_.empty()) {
