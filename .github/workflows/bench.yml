@@ -48,6 +48,7 @@ jobs:
         include:
           - { compiler: gcc,   image: "gcc:16.2",         preset: x86_64-linux-gnu-gcc,   cc: gcc,   cxx: g++ }
           - { compiler: clang, image: "silkeh/clang:22",  preset: x86_64-linux-gnu-clang, cc: clang, cxx: clang++ }
+          - { compiler: gcc-jemalloc, image: "gcc:16.2", preset: x86_64-linux-gnu-gcc-jemalloc, cc: gcc, cxx: g++ }
     env:
       # vcpkg builds the dependencies with the same compiler as the project.
       CC: ${{ matrix.cc }}
@@ -62,6 +63,9 @@ jobs:
             ca-certificates zip unzip tar pkg-config ccache redis-server redis-tools
           ${CXX} --version | head -n 1
           redis-server --version
+      - name: Install the autotools the jemalloc port builds with
+        if: contains(matrix.preset, 'jemalloc')
+        run: apt-get install -y --no-install-recommends autoconf autoconf-archive automake libtool
       - name: Install the latest CMake
         # Debian's is too old for vcpkg's scripts (they use string(JSON
         # STRING_ENCODE)), and VCPKG_FORCE_SYSTEM_BINARIES makes vcpkg use
@@ -126,6 +130,8 @@ jobs:
           report="bench/${{ matrix.compiler }}.txt"
           echo "${{ matrix.compiler }}, runner: $(nproc) CPUs" | tee "$report"
           bash scripts/bench_server.sh ${{ matrix.preset }} Release | tee -a "$report"
+          echo | tee -a "$report"
+          bash scripts/bench_memory.sh ${{ matrix.preset }} Release | tee -a "$report"
           { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the results
         # Even when a later step fails. One artifact per job here (jobs cannot
