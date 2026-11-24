@@ -293,7 +293,7 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 					   DateTime::from_msecs_since_epoch(*record->deadline_ms);
 				   keep_expired || deadline > now) {
 			loaded.set(key, std::move(value));
-			loaded.set_expiry(key, DeadlineTimer::at(deadline));
+			(void)loaded.set_expiry(key, DeadlineTimer::at(deadline));
 		}
 	}
 	loaded.set_expiry_enabled(true);

@@ -295,14 +295,12 @@ public:
 	struct ExpireOptions {
 		bool nx = false; ///< only a key without a deadline
 		bool xx = false; ///< only a key with a deadline
-		bool gt =
-			false; ///< only a later deadline (never for a key without one)
-		bool lt =
-			false; ///< only an earlier deadline (always for a key without one)
+		bool gt = false; ///< only a later deadline; never without one
+		bool lt = false; ///< only an earlier deadline; always without one
 	};
 
 	/// What set_expiry() did.
-	enum class ExpiryResult : uint8_t {
+	enum class [[nodiscard]] ExpiryResult : uint8_t {
 		Refused, ///< no such key, or the options said no: nothing changed
 		Deleted, ///< the deadline was already past: the key is gone
 		Set,     ///< the key has the deadline

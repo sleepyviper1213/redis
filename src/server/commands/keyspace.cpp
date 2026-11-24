@@ -1,14 +1,14 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
 #include "command.hpp"
-#include "core/error/failed.hpp"
-#include "core/error/failure_format.hpp"
-#include "core/utils/ascii.hpp"
-#include "core/utils/parse_number.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
 #include "common/store/object.hpp"
 #include "core/chrono/deadline_timer.hpp"
+#include "core/error/failed.hpp"
+#include "core/error/failure_format.hpp"
+#include "core/utils/ascii.hpp"
 #include "core/utils/glob.hpp"
+#include "core/utils/parse_number.hpp"
 #include "detail/expire_time.hpp"
 #include "server/persistence/append_only_file.hpp"
 
@@ -20,12 +20,13 @@
 #include <expected>
 #include <span>
 #include <string>
-#include <utility>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace redis {
 using resp::Value;
+
 namespace {
 Value del(CommandContext &ctx, Args args) {
 	int64_t removed = 0;
@@ -51,7 +52,8 @@ Value keys(CommandContext &ctx, Args args) {
 	});
 	Value::Array found;
 	found.reserve(matches.size());
-	for (const std::string_view key : matches) found.push_back(reply::bulk(key));
+	for (const std::string_view key : matches)
+		found.push_back(reply::bulk(key));
 	return reply::array(std::move(found));
 }
 
@@ -95,21 +97,21 @@ std::string display(const ExpireOptionError &error) {
 	std::unreachable();
 }
 
-// Parses what follows the amount: NX, XX, GT and LT, in any case and any number.
-// As in Redis, an unsupported argument is reported before a conflict among the
-// others, and both before the amount is looked at.
+// Parses what follows the amount: NX, XX, GT and LT, in any case and any
+// number. As in Redis, an unsupported argument is reported before a conflict
+// among the others, and both before the amount is looked at.
 std::expected<Database::ExpireOptions, ExpireOptionError>
 parse_expire_options(Args args) {
 	Database::ExpireOptions options;
-	for (const std::string_view arg : args.subspan(3)) {
+	for (const std::string_view arg : args.subspan(3))
 		if (iequals(arg, "NX")) options.nx = true;
 		else if (iequals(arg, "XX")) options.xx = true;
 		else if (iequals(arg, "GT")) options.gt = true;
 		else if (iequals(arg, "LT")) options.lt = true;
 		else
-			REDIS_FAILED(ExpireOptionError{.kind   = ExpireOptionKind::Unsupported,
-										   .quoted = std::string(arg)});
-	}
+			REDIS_FAILED(
+				ExpireOptionError{.kind   = ExpireOptionKind::Unsupported,
+								  .quoted = std::string(arg)});
 	if (options.nx && (options.xx || options.gt || options.lt))
 		REDIS_FAILED(ExpireOptionError{.kind = ExpireOptionKind::NxConflict});
 	if (options.gt && options.lt)
@@ -122,19 +124,19 @@ parse_expire_options(Args args) {
 template <detail::ExpireUnit Unit, detail::ExpireBase Base>
 Value expire_generic(CommandContext &ctx, Args args) {
 	const auto options = parse_expire_options(args);
-	if (!options) return reply::error("ERR {}", display(options.error()));
+	if (!options) return reply::error("ERR {}", options.error());
 	const auto amount = parse_integer(args[2]);
-	if (!amount) {
-		return reply::not_integer();
-	}
+	if (!amount) return reply::not_integer();
 	const auto deadline = detail::expire_time(*amount, Unit, Base);
 	if (!deadline) {
 		return reply::error("ERR invalid expire time in '{}' command",
 							expire_name(Unit, Base));
 	}
 	const DeadlineTimer timer = *deadline;
-	const auto result = ctx.db.set_expiry(
-		args[1], timer, Database::PastDeadline::Delete, *options);
+	const auto result = ctx.db.set_expiry(args[1],
+										  timer,
+										  Database::PastDeadline::Delete,
+										  *options);
 
 	// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay
 	// does not share: log the absolute deadline. One already past deleted the
@@ -170,13 +172,9 @@ Value persist(CommandContext &ctx, Args args) {
 template <bool InMillis>
 Value ttl_generic(CommandContext &ctx, Args args) {
 	const std::string_view key = args[1];
-	if (!ctx.db.contains(key)) {
-		return reply::integer(-2);
-	}
+	if (!ctx.db.contains(key)) return reply::integer(-2);
 	const auto deadline = ctx.db.expiry(key);
-	if (!deadline) {
-		return reply::integer(-1);
-	}
+	if (!deadline) return reply::integer(-1);
 
 	const auto left = DeadlineTimer::at(*deadline).remaining_time_ms().count();
 	// Round to the nearest second like Redis; truncating would report 99

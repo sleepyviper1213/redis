@@ -160,8 +160,8 @@ Value set(CommandContext &ctx, Args args) {
 	if (opts->deadline) {
 		// A past EXAT or PXAT keeps the key, as Redis does: it goes when it is
 		// read or swept (#48). Only the EXPIRE family deletes at once.
-		ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline),
-						  Database::PastDeadline::Keep);
+		(void)ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline),
+								Database::PastDeadline::Keep);
 	} else if (!opts->keep_ttl) ctx.db.persist(key);
 
 	// EX and PX are relative to now, which a replay does not share: log the
