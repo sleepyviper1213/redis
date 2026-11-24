@@ -2,6 +2,7 @@
 #include "common/resp/value.hpp"
 #include "common/store/database.hpp"
 #include "core/chrono/deadline_timer.hpp"
+#include "core/chrono/elapsed_timer.hpp"
 #include "server/commands/command.hpp"
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
@@ -745,6 +746,58 @@ SCENARIO("A replay does not extend a lifetime",
 				const auto left = std::stoll(reply.substr(1));
 				CHECK(left > 0);
 				CHECK(left <= 1500);
+			}
+		}
+	}
+}
+
+SCENARIO("The once-a-second sync thread stops with the log",
+		 "[aof][fsync]") {
+	// The thread waits one second between syncs. A close that waited the period
+	// out would not fit in this; a close that wakes it does, with room for a
+	// slow disk.
+	constexpr auto CLOSE_LIMIT = 700ms;
+
+	GIVEN("a log with appendfsync everysec") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+
+		WHEN("TC-297: it is closed after some writes") {
+			std::chrono::milliseconds took{};
+			{
+				AofServer server(dir.path(),
+								 snapshot.path(),
+								 FsyncPolicy::everysec);
+				REQUIRE(server.start().has_value());
+				server.run({"SET", "a", "1"});
+				server.run({"INCR", "a"});
+				const ElapsedTimer timer;
+				server.aof.close();
+				took = timer.elapsed();
+			}
+
+			THEN("close() returns inside the sync period") {
+				CHECK(took < CLOSE_LIMIT);
+			}
+
+			AND_THEN("every write is replayed") {
+				Restarted again(dir.path(), snapshot.path());
+				CHECK(again.run({"GET", "a"}) == "$1\r\n2\r\n");
+			}
+		}
+
+		WHEN("TC-297: it is destroyed without close()") {
+			{
+				AofServer server(dir.path(),
+								 snapshot.path(),
+								 FsyncPolicy::everysec);
+				REQUIRE(server.start().has_value());
+				server.run({"SET", "a", "1"});
+			}
+
+			THEN("the thread has ended and every write is replayed") {
+				Restarted again(dir.path(), snapshot.path());
+				CHECK(again.run({"GET", "a"}) == "$1\r\n1\r\n");
 			}
 		}
 	}
