@@ -16,6 +16,8 @@ add_library(
     diagnostics/command_watchdog.cpp
     net/detail/accept_loop.cpp
     net/detail/admission.cpp
+    net/detail/close_socket_on_stop.cpp
+    net/detail/conversation.cpp
     net/executor.cpp
     net/guard.cpp
     net/net_error.cpp

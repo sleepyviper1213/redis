@@ -47,6 +47,7 @@ add_executable(redis_unit_test
     unit/server/commands/set.test.cpp
     unit/server/commands/set_ttl.test.cpp
     unit/server/commands/string.test.cpp
+    unit/server/net/conversation.test.cpp
     unit/server/net/executor.test.cpp
     unit/server/net/guard.test.cpp
     unit/server/net/net_error.test.cpp
