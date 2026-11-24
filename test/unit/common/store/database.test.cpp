@@ -60,7 +60,7 @@ SCENARIO("Creating collections on first write", "[storage]") {
 SCENARIO("Removing empty collections", "[storage]") {
 	GIVEN("an empty set and an empty string") {
 		Database db;
-		(void)db.find_or_create<Set>("s");
+		REQUIRE(db.find_or_create<Set>("s"));
 		db.set("str", String(""));
 
 		WHEN("both are checked for emptiness") {
@@ -122,10 +122,11 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		// being added deletes them at once and the test miscounts (seen under
 		// a sanitizer with the whole suite running in parallel).
 		const DeadlineTimer deadline = DeadlineTimer::after(200ms);
-		for (int i = 0; i < 10; ++i) {
+		constexpr int KEYS_WITH_DEADLINE = 10;
+		for (int i = 0; i < KEYS_WITH_DEADLINE; ++i) {
 			const auto key = fmt::format("k{}", i);
 			db.set(key, String("v"));
-			db.set_expiry(key, deadline);
+			(void)db.set_expiry(key, deadline);
 		}
 		std::this_thread::sleep_for(250ms);
 
@@ -167,11 +168,11 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 	GIVEN("a key whose deadline is replaced, persisted, then erased") {
 		Database db;
 		db.set("k", String("v"));
-		db.set_expiry("k", DeadlineTimer::after(10ms));
-		db.set_expiry("k", DeadlineTimer::after(1h));
+		(void)db.set_expiry("k", DeadlineTimer::after(10ms));
+		(void)db.set_expiry("k", DeadlineTimer::after(1h));
 		REQUIRE(db.persist("k"));
 		REQUIRE_FALSE(db.persist("k"));
-		db.set_expiry("k", DeadlineTimer::after(10ms));
+		(void)db.set_expiry("k", DeadlineTimer::after(10ms));
 		REQUIRE(db.erase("k"));
 
 		WHEN("the key is recreated without a deadline and old ones pass") {
@@ -195,10 +196,11 @@ SCENARIO("The active expiry cycle is bounded and takes the oldest first",
 	GIVEN("2500 keys whose deadlines have passed") {
 		Database db;
 		db.set_expiry_enabled(false);
-		for (int i = 0; i < 2500; ++i) {
+		constexpr int EXPIRED_KEYS = 2500;
+		for (int i = 0; i < EXPIRED_KEYS; ++i) {
 			const auto key = fmt::format("k{}", i);
 			db.set(key, String("v"));
-			db.set_expiry(key, DeadlineTimer::after(-1s));
+			(void)db.set_expiry(key, DeadlineTimer::after(-1s));
 		}
 		db.set_expiry_enabled(true);
 
@@ -209,7 +211,7 @@ SCENARIO("The active expiry cycle is bounded and takes the oldest first",
 				CHECK(db.active_expire_cycle(1000) == 500);
 				CHECK(db.active_expire_cycle(1000) == 0);
 				CHECK(db.size() == 0);
-				CHECK(db.expired_keys() == 2500);
+				CHECK(db.expired_keys() == EXPIRED_KEYS);
 			}
 		}
 	}
@@ -221,7 +223,7 @@ SCENARIO("The active expiry cycle is bounded and takes the oldest first",
 									   std::pair{"oldest", 3s},
 									   std::pair{"middle", 2s}}) {
 			db.set(key, String("v"));
-			db.set_expiry(key, DeadlineTimer::after(-age));
+			(void)db.set_expiry(key, DeadlineTimer::after(-age));
 		}
 		db.set_expiry_enabled(true);
 
@@ -241,10 +243,10 @@ SCENARIO("The active expiry cycle is bounded and takes the oldest first",
 		Database db;
 		db.set_expiry_enabled(false);
 		db.set("due", String("v"));
-		db.set_expiry("due", DeadlineTimer::after(-1s));
+		(void)db.set_expiry("due", DeadlineTimer::after(-1s));
 		db.set_expiry_enabled(true);
 		db.set("later", String("v"));
-		db.set_expiry("later", DeadlineTimer::after(1h));
+		(void)db.set_expiry("later", DeadlineTimer::after(1h));
 		db.set("forever", String("v"));
 
 		WHEN("TC-110: a cycle runs") {

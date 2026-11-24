@@ -18,4 +18,5 @@ target_include_directories(
 target_link_libraries(redis_common PUBLIC redis::core FastFloat::fast_float)
 
 set_warnings(redis_common)
+enable_hardening(redis_common)
 enable_coverage(redis_common)

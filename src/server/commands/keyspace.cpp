@@ -1,11 +1,14 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
+#include "args.hpp"
 #include "command.hpp"
+#include "common/resp/value.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
 #include "common/store/object.hpp"
 #include "core/chrono/deadline_timer.hpp"
 #include "core/error/failed.hpp"
-#include "core/error/failure_format.hpp"
+#include "core/error/failure.hpp"
+#include "core/error/failure_format.hpp" // IWYU pragma: keep (the formatter of ExpireOptionError)
 #include "core/utils/ascii.hpp"
 #include "core/utils/glob.hpp"
 #include "core/utils/parse_number.hpp"
@@ -28,6 +31,8 @@ namespace redis {
 using resp::Value;
 
 namespace {
+constexpr int64_t MILLIS_PER_SECOND = 1000;
+
 Value del(CommandContext &ctx, Args args) {
 	int64_t removed = 0;
 	for (const std::string_view key : args.subspan(1))
@@ -83,8 +88,9 @@ enum class ExpireOptionKind : std::uint8_t {
 using ExpireOptionError = Failure<ExpireOptionKind>;
 
 /// The sentence for \p error, worded as Redis words it; the reply puts "ERR "
-/// in front.
-std::string display(const ExpireOptionError &error) {
+/// in front. Called by the formatter of Failure, by argument-dependent lookup,
+/// which some analysers do not see.
+[[maybe_unused]] std::string display(const ExpireOptionError &error) {
 	switch (error.kind) {
 	case ExpireOptionKind::Unsupported:
 		return fmt::format("Unsupported option {}", error.quoted);
@@ -119,6 +125,28 @@ parse_expire_options(Args args) {
 	return options;
 }
 
+// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay does not
+// share: log the absolute deadline. One already past deleted the key. What was
+// done comes from set_expiry, not from the clock again.
+void log_expiry(CommandContext &ctx, std::string_view key, DeadlineTimer timer,
+				Database::ExpiryResult result) {
+	if (ctx.aof == nullptr) return;
+	switch (result) {
+	case Database::ExpiryResult::Refused:
+		// An option said no, or there is no key: nothing changed, and the
+		// command as received could change something on a replay.
+		ctx.aof->discard();
+		break;
+	case Database::ExpiryResult::Deleted:
+		ctx.aof->replace({"DEL", key});
+		break;
+	case Database::ExpiryResult::Set:
+		ctx.aof->replace(
+			{"PEXPIREAT", key, fmt::to_string(timer.millis_since_epoch())});
+		break;
+	}
+}
+
 // EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT differ only in how the argument
 // becomes a deadline.
 template <detail::ExpireUnit Unit, detail::ExpireBase Base>
@@ -138,26 +166,7 @@ Value expire_generic(CommandContext &ctx, Args args) {
 										  Database::PastDeadline::Delete,
 										  *options);
 
-	// The relative forms (EXPIRE, PEXPIRE) mean "from now", which a replay
-	// does not share: log the absolute deadline. One already past deleted the
-	// key. What was done comes from set_expiry, not from the clock again.
-	if (ctx.aof != nullptr) {
-		switch (result) {
-		case Database::ExpiryResult::Refused:
-			// An option said no, or there is no key: nothing changed, and the
-			// command as received could change something on a replay.
-			ctx.aof->discard();
-			break;
-		case Database::ExpiryResult::Deleted:
-			ctx.aof->replace({"DEL", args[1]});
-			break;
-		case Database::ExpiryResult::Set:
-			ctx.aof->replace({"PEXPIREAT",
-							  args[1],
-							  fmt::to_string(timer.millis_since_epoch())});
-			break;
-		}
-	}
+	log_expiry(ctx, args[1], timer, result);
 	const bool applied = result != Database::ExpiryResult::Refused;
 	return reply::integer(applied ? 1 : 0);
 }
@@ -179,7 +188,9 @@ Value ttl_generic(CommandContext &ctx, Args args) {
 	const auto left = DeadlineTimer::at(*deadline).remaining_time_ms().count();
 	// Round to the nearest second like Redis; truncating would report 99
 	// immediately after SET ... EX 100.
-	return reply::integer(InMillis ? left : (left + 500) / 1000);
+	return reply::integer(InMillis ? left
+								   : (left + MILLIS_PER_SECOND / 2) /
+										 MILLIS_PER_SECOND);
 }
 
 Value flushdb(CommandContext &ctx, Args /*unused*/) {

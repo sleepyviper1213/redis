@@ -40,8 +40,8 @@ public:
 	}
 
 	/// Cancels every session, each of which also closes its socket, so that
-	/// no pending operation can keep drained() waiting (see CloseOnStop). May
-	/// be called from any thread, more than once.
+	/// no pending operation can keep drained() waiting (see CloseSocketOnStop).
+	/// May be called from any thread, more than once.
 	void stop() noexcept { scope_.request_stop(); }
 
 	/// Completes once every session has finished. Only meaningful after

@@ -1,5 +1,5 @@
 #pragma once
-#include "core/error/failure_format.hpp"
+#include "core/error/failure_format.hpp" // IWYU pragma: keep (formats every Failure)
 
 #include <cstdint>
 #include <string>

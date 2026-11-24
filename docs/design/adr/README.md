@@ -24,4 +24,4 @@ and the git history; dates are those of the commit that first implemented the de
 | [0009](0009-errors-as-values.md) | Errors as values, not exceptions | Accepted |
 | [0010](0010-pinned-vcpkg-and-layered-presets.md) | Pinned vcpkg baseline and layered CMake presets | Accepted |
 | [0011](../../features/observability/adr/0011-jemalloc-keyspace-allocator.md) | jemalloc as the keyspace allocator | Proposed |
-| [0012](../../features/connection/adr/0012-session-decisions-apart-from-io.md) | A session's decisions live apart from its I/O | Proposed |
+| [0012](../../features/connection/adr/0012-session-decisions-apart-from-io.md) | A session's decisions live apart from its I/O | Accepted |

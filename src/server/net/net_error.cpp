@@ -3,10 +3,13 @@
 #include "common/resp/parser.hpp"
 #include "server/log_channels.hpp"
 
+#include <boost/asio/error.hpp>
 #include <boost/system/system_error.hpp>
 #include <fmt/format.h>
 #include <spdlog/logger.h>
 
+#include <exception>
+#include <string>
 #include <system_error>
 
 namespace redis {
@@ -69,6 +72,14 @@ ConnectionError connection_error(ConnectionKind kind,
 	} catch (const std::exception &e) {
 		return {.kind = kind, .quoted = e.what()};
 	} catch (...) { return {.kind = kind}; }
+}
+
+IoFailureReport report_for(const ConnectionError &failure,
+						   bool socket_open) noexcept {
+	if (failure.cause == boost::system::error_code(boost::asio::error::eof))
+		return IoFailureReport::ClientLeft;
+	return socket_open ? IoFailureReport::Failure
+					   : IoFailureReport::AfterServerClose;
 }
 
 void log_error(const ConnectionError &error) {

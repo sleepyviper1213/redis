@@ -20,6 +20,23 @@ option(REDIS_USE_JEMALLOC
 option(REDIS_WARN_UNSAFE_BUFFERS
        "Enable Clang -Wunsafe-buffer-usage (noisy; never promoted to error)" OFF)
 
+# ON / fast    → enable with libc++ fast mode (recommended default)
+#
+# Every level leaves the Release configuration unhardened (it is the one that
+# is benchmarked); all other configurations are hardened.
+#
+# Hardening does NOT undefine NDEBUG: a raw assert() stays compiled out of a
+# configuration that defines it. The checks that remain come from the standard
+# library (_GLIBCXX_ASSERTIONS, _LIBCPP_HARDENING_MODE), _FORTIFY_SOURCE and the
+# compiler and linker flags. See Hardening.cmake.
+set(REDIS_HARDENING
+    "ON"
+    CACHE STRING "Hardening level: OFF | ON | none | fast | extensive | debug")
+set_property(CACHE REDIS_HARDENING PROPERTY STRINGS OFF ON none fast extensive debug)
+
+option(REDIS_HARDENING_UBSAN_TRAP
+       "Trap on undefined behaviour instead of continuing (Clang/GCC)" OFF)
+
 set(REDIS_SANITIZER
     "OFF"
     CACHE STRING
@@ -69,6 +86,15 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/CCache.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/InterProceduralOptimisation.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/Sanitizers.cmake)
+
+if(REDIS_HARDENING_UBSAN_TRAP AND REDIS_SANITIZER)
+    message(
+        WARNING
+            "REDIS_HARDENING_UBSAN_TRAP plus sanitizer configs both enable UBSan. "
+            "Trap flags are suppressed under sanitizer configs.")
+endif()
+
 include(${CMAKE_CURRENT_LIST_DIR}/StaticAnalyzers.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/Warnings.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/Hardening.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/Coverage.cmake)

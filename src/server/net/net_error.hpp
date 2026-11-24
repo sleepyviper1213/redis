@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/error/failure_format.hpp"
+#include "core/error/failure_format.hpp" // IWYU pragma: keep (formats every Failure)
 
 #include <cstdint>
 #include <exception>
@@ -50,6 +50,19 @@ using ConnectionError = Failure<ConnectionKind>;
  */
 [[nodiscard]] ConnectionError connection_error(ConnectionKind kind,
 											   const std::exception_ptr &error);
+
+/// How a failed read or write is told about.
+enum class IoFailureReport : std::uint8_t {
+	ClientLeft,       ///< the client hung up (end of file): not a failure
+	AfterServerClose, ///< the server closed the socket itself, and what was
+					  ///< pending on it failed with it: already accounted for
+	Failure,          ///< anything else: an error to log
+};
+
+/// How \p failure is reported, given whether the socket is still open. A
+/// client leaving wins over a socket the server closed.
+[[nodiscard]] IoFailureReport report_for(const ConnectionError &failure,
+										 bool socket_open) noexcept;
 
 /// Log \p error on the network channel: critical for a dead accept loop, error
 /// for anything else.
