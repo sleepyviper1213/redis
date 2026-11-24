@@ -17,11 +17,13 @@ Choices specific to this feature. System-wide design stays in the
 | DX-42 | A client over `--maxclients` is told `ERR max number of clients reached`, best effort and without blocking, then dropped | Redis behaviour; a full server must not block on a rejected client | UC-006 A2, `src/server/net/detail/admission.hpp` |
 | DX-43 | `--request-timeout` races "execute and write" against a timer, as the idle limit races the read | Frees the server from a client that stops reading its replies; not a Redis setting | `src/server/net/net_limits.hpp`, [TODO.md](../../../TODO.md) (per-request timeouts), SDD §12 |
 | DX-44 | A session failure is `Isolate` (ends that client only); a failed accept loop is `FailFast`; connection errors are `Failure<ConnectionKind>` with one `display` | A bad client cannot end the server; a log line and an `ERR` reply share wording | SDD §14.3, §14.5, [ADR-0009](../../design/adr/0009-errors-as-values.md) |
+| DX-81 | A session's decisions (what a read means, the buffer limits, how a timeout or failure ends it) are a socket-free `Conversation`; the session only moves bytes and hops schedulers | Decisions testable from strings in both modes, without a socket or a clock; no virtual calls or templates added to the hot path | [ADR-0012](adr/0012-session-decisions-apart-from-io.md) (Proposed), TC-278 to TC-294 |
 
 ## Code map
 
 * `src/server/net/listener.hpp`, `src/server/net/detail/accept_loop.cpp`, `src/server/net/detail/admission.cpp`: accept loop and admission.
 * `src/server/net/detail/session.cpp`, `src/server/net/detail/pipeline.cpp`: the session and its request pipeline.
+* `src/server/net/detail/conversation.hpp` (proposed, ADR-0012): the session's decisions, apart from its I/O.
 * `src/server/net/executor.cpp`: the keyspace thread (inline when not threaded).
 * `src/server/net/guard.hpp`, `src/server/net/net_limits.hpp`: `NetGuard`, `Violation`, `NetLimits`.
 * `src/server/net/net_error.hpp`: `ConnectionKind`, `ListenKind`.

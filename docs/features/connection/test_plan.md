@@ -102,6 +102,53 @@ were given before the TC scheme: they keep their numbers, which the project does
 | TC-2001 | Encode RESP values into wire format | A value of each RESP type (simple string, error, integer, bulk, null, array) is encoded | The exact bytes of RESP2, with CRLF terminators | FR-008, NFR-004 | Unit | `parser`: "Encode RESP values into wire format" | Unit | Covered |
 | TC-2002 | Decode RESP wire format into values | The wire bytes of each RESP type are decoded | A value of the same type and contents; malformed bytes are errors (TC-179, TC-184) | FR-008 | Unit | `parser`: "Decode RESP wire format into values" | Unit | Covered |
 
+## 6. The conversation and the stop-time close ([ADR-0012](adr/0012-session-decisions-apart-from-io.md), DX-81)
+
+What a session decides, tested without a socket, a scheduler or a clock; and the one class of the session that
+takes a mutex, tested on its own. Proposed with the ADR: every row is a `Gap` until the split exists, and then moves
+to Covered as its test lands. They sit beside the loopback scenarios of sections 1 to 4, which keep what only a
+socket shows (cancellation, partial writes, shutdown); where a row below also closes a Partial there, it says so.
+
+A conversation test builds a real `NetGuard`, `CommandHandler` and `Database` (all cheap, no thread) and feeds it
+strings through `read_buffer()` and `ingest()`. Each behaviour is asserted in both modes, **inline** and
+**threaded** (`Parts::threaded`), unless the row says otherwise: in the threaded mode the test calls `run_batch()`
+itself, on its own thread, as the keyspace thread would.
+
+### 6.1 Conversation (`Conversation`, `src/server/net/detail/conversation.hpp`)
+
+| ID | Behaviour | Given / When | Expected | Req | Level | Existing test | Tested at | Status |
+|----|-----------|--------------|----------|-----|-------|---------------|-----------|--------|
+| TC-278 | A read of nothing changes nothing | `ingest(0)` after a half-sent request is pending | Returns false; the pending bytes are kept; no violation counted | FR-008 | Unit | None | none | Gap |
+| TC-279 | A complete request is answered | `PING\r\n`, then `run_batch()` | `ingest` returns true; `replies()` is `+PONG\r\n`; `over()` is false; `replies_sent()` empties it | FR-008 | Unit | None | none | Gap |
+| TC-280 | A partial request gets no reply and is kept | `*1\r\n$4\r\nPI`, run, then `NG\r\n`, run | First round: no replies, nothing consumed (threaded: `ingest` is false); second round: `+PONG` | FR-008 | Unit | None (TC-177 is at the pipeline level) | none | Gap |
+| TC-281 | Pipelined requests run in order in one batch | `PING a`, `PING b`, `PING c` in one read, then one more read | Replies `a`, `b`, `c` in order in one `replies()`; the bytes of the first batch are gone from the pending buffer when the second read is ingested (ADR-0004) | FR-008 | Unit | None (TC-178 is at the pipeline level) | none | Gap |
+| TC-282 | Inline and threaded modes answer alike | The same byte stream (valid requests, a partial one, a protocol error), cut at every byte, once per mode | Identical reply bytes and the same `over()` in both modes, whatever the cut | FR-008, FR-009 | Unit | None | none | Gap |
+| TC-283 | The query buffer limit ends the conversation (A5) | Limit 64 bytes; a pending 64-byte partial request, then one more byte | At 64 bytes `ingest` accepts; at 65 it returns false, `over()` is true and the guard counted one `QueryBufferFull` with the peer and the size. Closes the session-level gap of TC-187 | FR-014 | Unit | `guard`: "The guard bounds the buffers" (arithmetic only) | Unit (guard only) | Gap |
+| TC-284 | The output buffer limit drops the replies and ends the conversation | Limit 200 bytes; `GET x` x 10 of a 100-byte value | Execution stops after the reply that crossed the limit; `replies()` is empty, `over()` is true, one `OutputBufferFull` counted. With room, all 10 run and the conversation stays open. Closes the "drop not asserted" gap of TC-188 | FR-014 | Unit | `guard`: "A batch stops once its replies pass the output limit" (the drop is not asserted) | Unit (guard only) | Gap |
+| TC-285 | A protocol error ends the conversation after the replies before it | `PING ok` then `*1\r\n$3\r\nabcXY` | `replies()` holds the first request's reply, then `-ERR Protocol error: ...`; `over()` is true once they are sent; nothing counted on the guard | FR-008 | Unit | None (TC-179 is at the pipeline level) | none | Gap |
+| TC-286 | A value that is not a command is answered and the conversation stays open | `*0\r\n`, then `PING` | An error reply, then `+PONG`; `over()` is false | FR-008 | Unit | None | none | Gap |
+| TC-287 | An idle timeout ends the conversation | `idle_timeout(30s)` | `over()` is true; one `IdleTimeout` counted with the peer and `30` | FR-014 | Unit | `session`: "A session closes idle clients" (through a socket, 1 s) | Unit | Gap |
+| TC-288 | A request timeout drops what was not sent | Replies pending; `request_timeout(1s)` | `replies()` is empty, `over()` is true, one `RequestTimeout` counted | FR-014 | Unit | `session`: "...not answered in time" (through a socket, 1 s) | Unit | Gap |
+| TC-289 | A failed batch sends nothing | Replies half built; `execute_failed()` | `replies()` is empty, `over()` is true; no violation counted (the failure is logged by the session) | FR-014 | Unit | None | none | Gap |
+| TC-290 | Which I/O failures are news | `report_for` with end of file; with another error and the socket closed; with another error and the socket open | `ClientLeft`; `AfterServerClose`; `Failure`. End of file wins over a closed socket | FR-014 | Unit | None (today inside `Session::fail_io`) | none | Gap |
+
+### 6.2 CloseOnStop (`src/server/net/detail/session.hpp`)
+
+The mutex, the stop callback that can fire on any thread, and the posted close that may run after the session is
+gone. A test uses a socket on a single-threaded `io_context` the test runs by hand, and a stop source it controls.
+Rows marked TSan are meant to run under the `tsan` preset, the others under every preset.
+
+| ID | Behaviour | Given / When | Expected | Req | Level | Existing test | Tested at | Status |
+|----|-----------|--------------|----------|-----|-------|---------------|-----------|--------|
+| TC-291 | A stop before `arm()` closes at once | The stop is requested, then `arm()` | After the context runs, the socket is closed | FR-014 | Unit | None | none | Gap |
+| TC-292 | A stop after `arm()` closes on the socket's executor, not the caller's thread | Armed; another thread requests the stop | The close runs inside the test's `io_context::run()`, never on the stopping thread; the socket is closed afterwards | FR-014 | Unit, TSan | None | none | Gap |
+| TC-293 | A close still queued when the session ends finds nothing | Stop requested; the `CloseOnStop` destroyed before the context runs | Running the context afterwards is harmless: no use of the destroyed object (ASan, TSan) | FR-014 | Unit, TSan | None | none | Gap |
+| TC-294 | A stop racing the destructor is safe | Many rounds: one thread requests the stop while the test destroys the object | No data race, no crash; the socket is either closed or untouched | FR-014 | Unit, TSan | None | none | Gap |
+
+Open for review: `Target` holds a `tcp::socket*`. TC-291 to TC-294 work with a real socket. Making `Target` generic
+over "anything with `close(error_code&)`" would let them run without one, at the cost of a template on a class that is
+not templated today. The plan assumes the real socket until that is decided.
+
 ## Entry and exit criteria
 
 * **Entry**: the server builds; the unit and integration suites run in the chosen preset; the stress binary is built.
