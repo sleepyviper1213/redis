@@ -84,6 +84,7 @@ A checksum of the snapshot is deferred (risk R-001 in the SRS); add a scenario f
 | TC-148 | Turning the log on keeps the snapshot | A snapshot from a server without the log; start with `--appendonly` | The snapshot's keys are present and survive a restart without the snapshot | Unit | `aof`: "Turning the append-only file on keeps the snapshot" | Unit | Covered |
 | TC-149 | `--appendfsync` policies | `always`, `everysec`, `no`; write, then inspect when the data is on disk | `always`: on disk before the reply; the others: within their bounds | Unit | None found (the test server takes a policy, no scenario targets one) | none | Gap |
 | TC-150 | Restart of a running server with the log on | Start `--appendonly`; write; stop; start again over the same directory | The writes are there | Integration | None found (A-7) | none | Gap |
+| TC-297 | The `everysec` sync thread starts, and `close()` and the destructor stop it | `AppendOnlyFile` with `everysec`, loaded; several writes; then `close()`, and separately destruction with no `close()` | The sync thread is running after `load()` (a failed `load()` starts none); `close()` returns at once, without waiting out the one-second period; every write is replayed after a restart; destruction without `close()` ends the thread, with no hang and no sanitizer report | Unit | None found (every `aof` test runs with `FsyncPolicy::no`, so the thread is never started; TC-149, TC-261) | none | Gap |
 
 ## 5. Rewriting the log (UC-013)
 

@@ -9,7 +9,7 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 |----------|----|-----|-----------|------|-------------|---------------------|
 | UC-001 Save snapshot (`SAVE`, `LASTSAVE`, load) | FR-011, FR-010, FR-018 | NFR-003, NFR-001 | TC-124 to 134, 140, 141 | Mostly (arity and outcome logging missing) | Hidden, never run by default (A-5) | None |
 | UC-001 A2, A3 (`BGSAVE`) | FR-011 | NFR-005, NFR-003 | TC-135 to 139 | Partial (`[fork]`, skipped on Windows) | Hidden `TC-006` only | None; TC-139 is a gap |
-| UC-013 Rewrite the append-only file | FR-012, FR-010 | NFR-003, NFR-005, NFR-007 | TC-142 to 156 | Partial (success path only; failure and shutdown paths missing) | None (A-7) | None |
+| UC-013 Rewrite the append-only file | FR-012, FR-010 | NFR-003, NFR-005, NFR-007 | TC-142 to 156, 297 | Partial (success path only; failure and shutdown paths missing) | None (A-7) | None |
 | Both (files that cannot be trusted) | FR-011, FR-012, FR-018 | NFR-003 | TC-157 to 159 | Yes | None | None |
 
 Differential testing does not apply: the snapshot and log formats are this project's own.
