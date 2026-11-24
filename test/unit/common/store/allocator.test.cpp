@@ -219,7 +219,7 @@ SCENARIO("A database allocates keys, values and tables from one allocator",
 			// allocator does not reach the strings inside the node.
 			(*hash)->emplace(String("field", Alloc{7, &ledger}),
 							 String("value", Alloc{7, &ledger}));
-			db.set_expiry("key:1:long enough to allocate",
+			(void)db.set_expiry("key:1:long enough to allocate",
 						  DeadlineTimer::after(std::chrono::hours(1)));
 
 			THEN("they all went through it") {

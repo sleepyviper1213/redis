@@ -408,7 +408,7 @@ SCENARIO("A keyspace that tracks its expiry", "[aof][database]") {
 		db.set("k", String("v"));
 		db.set_expiry_enabled(false);
 		db.track_expired(true);
-		db.set_expiry("k", DeadlineTimer::after(-1s));
+		(void)db.set_expiry("k", DeadlineTimer::after(-1s));
 
 		THEN("the key is kept") {
 			CHECK(db.contains("k"));

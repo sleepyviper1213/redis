@@ -109,7 +109,7 @@ public:
 	/// Call \p fn(key) for each key remembered by track_expired(), then forget
 	/// them.
 	template <typename Fn>
-	void drain_expired(Fn &&fn) {
+	void drain_expired(Fn fn) {
 		for (const Key &key : expired_) fn(std::string_view(key));
 		expired_.clear();
 	}
@@ -384,7 +384,7 @@ public:
 	 * so this works on a const Database (snapshots iterate a forked copy).
 	 */
 	template <typename Fn>
-	void for_each(Fn &&fn) const {
+	void for_each(Fn fn) const {
 		const auto now = DateTime::current();
 		for (const auto &[key, value] : dict_) {
 			std::optional<time_point> deadline;
@@ -406,8 +406,9 @@ private:
 
 	/// Whether \p options let a key, whose deadline is at \p it (end() if it
 	/// has none), get the deadline \p timer.
-	bool allows(ExpireOptions options, KeyMap<time_point>::const_iterator it,
-				DeadlineTimer timer) const {
+	[[nodiscard]] bool allows(ExpireOptions options,
+							  KeyMap<time_point>::const_iterator it,
+							  DeadlineTimer timer) const {
 		if (!(options.nx || options.xx || options.gt || options.lt))
 			return true;
 		const bool has     = it != expires_.end();
