@@ -37,8 +37,8 @@ struct WrongType {};
  * Deadlines use the wall clock because EXPIREAT, PXAT and snapshot files
  * exchange absolute Unix times.
  *
- * \tparam A A standard Allocator. Keys, values, the tables and the deadline
- *         index all allocate from the one the database is constructed with.
+ * \tparam Allocator A standard allocator. Keys, values, the tables and the
+ * deadline index all allocate from the one the database is constructed with.
  */
 template <typename Allocator>
 class BasicDatabase {
