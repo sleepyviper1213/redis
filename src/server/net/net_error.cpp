@@ -8,6 +8,8 @@
 #include <fmt/format.h>
 #include <spdlog/logger.h>
 
+#include <exception>
+#include <string>
 #include <system_error>
 
 namespace redis {

@@ -42,7 +42,7 @@ public:
 	bool feed(std::string_view bytes) {
 		const auto room = conversation.read_buffer();
 		REQUIRE(bytes.size() <= room.size());
-		std::copy(bytes.begin(), bytes.end(), room.begin());
+		std::ranges::copy(bytes, room.begin());
 		return conversation.ingest_read_bytes(bytes.size());
 	}
 
@@ -62,7 +62,11 @@ public:
 };
 
 /// The reply to GET of a 100-byte value: "$100", CRLF, the value, CRLF.
-constexpr size_t REPLY_SIZE = 6 + 100 + 2;
+constexpr size_t VALUE_SIZE     = 100;
+constexpr size_t REPLY_SIZE     = 6 + VALUE_SIZE + 2;
+constexpr size_t QUERY_LIMIT    = 64;
+constexpr size_t OUTPUT_LIMIT   = 200;
+constexpr size_t PIPELINED_GETS = 10;
 
 constexpr std::string_view PING_RESP = "*1\r\n$4\r\nPING\r\n";
 
@@ -127,7 +131,7 @@ SCENARIO("A conversation answers pipelined requests in order",
 	CAPTURE(threaded);
 
 	GIVEN("a query buffer limit of 64 bytes (TC-281)") {
-		Rig rig(threaded, NetLimits{.max_query_buffer = 64});
+		Rig rig(threaded, NetLimits{.max_query_buffer = QUERY_LIMIT});
 
 		WHEN("three requests arrive in one read") {
 			const std::string replies =
@@ -188,10 +192,10 @@ SCENARIO("A conversation ends when a client breaks a limit",
 	CAPTURE(threaded);
 
 	GIVEN("a query buffer limit of 64 bytes (TC-283)") {
-		Rig rig(threaded, NetLimits{.max_query_buffer = 64});
+		Rig rig(threaded, NetLimits{.max_query_buffer = QUERY_LIMIT});
 		// A bulk string of 100 bytes, begun: it stays incomplete.
 		std::string partial = "*1\r\n$100\r\n";
-		partial.resize(64, 'x');
+		partial.resize(QUERY_LIMIT, 'x');
 
 		WHEN("64 bytes are pending") {
 			(void)rig.feed(partial);
@@ -214,10 +218,10 @@ SCENARIO("A conversation ends when a client breaks a limit",
 	}
 
 	GIVEN("an output limit of 200 bytes and a value of 100 bytes (TC-284)") {
-		Rig rig(threaded, NetLimits{.max_output_buffer = 200});
-		rig.server.run({"SET", "x", std::string(100, 'v')});
+		Rig rig(threaded, NetLimits{.max_output_buffer = OUTPUT_LIMIT});
+		rig.server.run({"SET", "x", std::string(VALUE_SIZE, 'v')});
 		std::string requests;
-		for (int i = 0; i < 10; ++i) requests += "GET x\r\n";
+		for (size_t i = 0; i < PIPELINED_GETS; ++i) requests += "GET x\r\n";
 
 		WHEN("ten requests are pipelined") {
 			const std::string replies = rig.answer(requests);
@@ -243,12 +247,12 @@ SCENARIO("A conversation ends when a client breaks a limit",
 
 	GIVEN("room for every reply") {
 		Rig rig(threaded);
-		rig.server.run({"SET", "x", std::string(100, 'v')});
+		rig.server.run({"SET", "x", std::string(VALUE_SIZE, 'v')});
 		std::string requests;
-		for (int i = 0; i < 10; ++i) requests += "GET x\r\n";
+		for (size_t i = 0; i < PIPELINED_GETS; ++i) requests += "GET x\r\n";
 
 		THEN("all ten run and the client stays (TC-284)") {
-			CHECK(rig.answer(requests).size() == 10 * REPLY_SIZE);
+			CHECK(rig.answer(requests).size() == PIPELINED_GETS * REPLY_SIZE);
 			CHECK_FALSE(rig.conversation.is_over());
 		}
 	}

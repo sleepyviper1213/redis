@@ -1,6 +1,14 @@
 #include "conversation.hpp"
 
+#include "pipeline.hpp"
+#include "server/net/guard.hpp"
+
 #include <cassert>
+#include <chrono>
+#include <cstddef>
+#include <span>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace redis::detail {
@@ -27,8 +35,8 @@ bool Conversation::ingest_read_bytes(size_t bytes) {
 	// thread).
 	drop_consumed(pending_, batch_);
 	pending_.append(chunk_.data(), bytes);
-	if (!parts_.guard.get().check_input(pending_.size())) {
-		parts_.guard.get().record(Violation::QueryBufferFull,
+	if (!parts_.guard.check_input(pending_.size())) {
+		parts_.guard.record(Violation::QueryBufferFull,
 								  peer_,
 								  pending_.size());
 		done_ = true;
@@ -49,7 +57,7 @@ void Conversation::execute_ingested_requests() {
 	assert((!parts_.is_threaded || batch_.size() != 0 ||
 			!batch_.protocol_error.empty()) &&
 		   "no parsed requests to execute");
-	const size_t max_output = parts_.guard.get().limits().max_output_buffer;
+	const size_t max_output = parts_.guard.limits().max_output_buffer;
 	after_ = parts_.is_threaded ? execute_batch(batch_,
 												replies_,
 												parts_.handler,
@@ -64,9 +72,9 @@ void Conversation::execute_ingested_requests() {
 	assert((parts_.is_threaded || batch_.size() == 0) &&
 		   "execute_pending leaves its batch empty");
 	if (after_ == AfterReplies::Close) done_ = true;
-	if (!parts_.guard.get().check_output(replies_.size())) {
+	if (!parts_.guard.check_output(replies_.size())) {
 		// Nobody is going to read this much: drop it with the client.
-		parts_.guard.get().record(Violation::OutputBufferFull,
+		parts_.guard.record(Violation::OutputBufferFull,
 								  peer_,
 								  replies_.size());
 		replies_.clear();
@@ -80,7 +88,7 @@ void Conversation::execute_ingested_requests() {
 
 void Conversation::count_idle_timeout_and_end(std::chrono::seconds limit) {
 	assert(limit > std::chrono::seconds::zero() && "zero means no limit");
-	parts_.guard.get().record(Violation::IdleTimeout,
+	parts_.guard.record(Violation::IdleTimeout,
 							  peer_,
 							  static_cast<size_t>(limit.count()));
 	done_ = true;
@@ -88,7 +96,7 @@ void Conversation::count_idle_timeout_and_end(std::chrono::seconds limit) {
 
 void Conversation::count_request_timeout(std::chrono::seconds limit) {
 	assert(limit > std::chrono::seconds::zero() && "zero means no limit");
-	parts_.guard.get().record(Violation::RequestTimeout,
+	parts_.guard.record(Violation::RequestTimeout,
 							  peer_,
 							  static_cast<size_t>(limit.count()));
 }

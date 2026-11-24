@@ -174,7 +174,7 @@ SCENARIO("Commands that cannot be replayed as received",
 
 		WHEN("SPOP removes random members") {
 			server.run({"SADD", "s", "a", "b", "c"});
-			const auto popped = server.run({"SPOP", "s", "2"});
+			server.run({"SPOP", "s", "2"});
 
 			THEN("a replay leaves the same member behind") {
 				const auto remaining = server.run({"SMEMBERS", "s"});
@@ -364,20 +364,22 @@ SCENARIO("Rewriting the log", "[aof][rewrite][fork]") {
 #ifdef _WIN32
 	SKIP("BGREWRITEAOF forks, and Windows cannot");
 #else
+	constexpr int INCREMENTS = 100;
+	constexpr int MAX_POLLS  = 500; // of 10 ms each
 	GIVEN("a server with a long log") {
-		TempDir dir;
-		test::TempFile snapshot;
+		const TempDir dir;
+		const test::TempFile snapshot;
 		WHEN("it is rewritten while commands keep coming") {
 			{
 				AofServer server(dir.path(), snapshot.path());
 				REQUIRE(server.start().has_value());
-				for (int i = 0; i < 100; ++i) server.run({"INCR", "counter"});
+				for (int i = 0; i < INCREMENTS; ++i) server.run({"INCR", "counter"});
 				server.run({"SET", "keep", "me"});
 
 				REQUIRE(server.aof.start_rewrite(server.db).has_value());
 				server.run(
 					{"INCR", "counter"}); // after the fork: not in the base
-				for (int i = 0; i < 500 && server.aof.rewrite_in_progress();
+				for (int i = 0; i < MAX_POLLS && server.aof.rewrite_in_progress();
 					 ++i) {
 					std::this_thread::sleep_for(10ms);
 					server.aof.poll();
@@ -544,9 +546,9 @@ SCENARIO("The server's files are private, and links are not followed",
 	SKIP("file modes and symbolic links are not what they are on POSIX");
 #else
 	GIVEN("a file elsewhere that must survive") {
-		TempDir dir;
-		test::TempFile snapshot;
-		test::TempFile precious;
+		const TempDir dir;
+		const test::TempFile snapshot;
+		const test::TempFile precious;
 		std::ofstream(precious.path()) << "keep me";
 
 		WHEN("a link is planted where the manifest is written first") {

@@ -1,24 +1,36 @@
 #include "session.hpp"
 
 #include "admission.hpp"
+#include "asio_context.hpp"
 #include "core/stdexec_ext/supervise.hpp"
+#include "core/stdexec_ext/task.hpp"
 #include "core/stdexec_ext/watchdog/time_limited.hpp"
 #include "server/log_channels.hpp"
 #include "server/net/net_error.hpp"
 #include "server/services.hpp"
 #include "timer_scheduler.hpp"
 
-#include <boost/asio/post.hpp>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/socket_base.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/system/error_code.hpp>
+#include <boost/system/system_error.hpp>
 #include <exec/asio/use_sender.hpp>
 #include <exec/variant_sender.hpp>
 #include <spdlog/logger.h>
+#include <stdexec/execution.hpp>
 
 #include <cassert>
 #include <chrono>
+#include <concepts>
+#include <cstddef>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
 
 using boost::asio::ip::tcp;
@@ -127,9 +139,8 @@ boost::asio::const_buffer Session::replies_buffer() const noexcept {
 Session::Outcome Session::read_available() {
 	boost::system::error_code ec;
 	const std::span<char> room = conversation_.read_buffer();
-	const size_t n = socket_.read_some(
-		boost::asio::buffer(room.data(), room.size()),
-		ec);
+	const size_t n =
+		socket_.read_some(boost::asio::buffer(room.data(), room.size()), ec);
 	if (ec == boost::asio::error::would_block ||
 		ec == boost::asio::error::try_again)
 		return Outcome{.bytes = 0, .idle = false};
@@ -233,7 +244,7 @@ stdexec::sender auto Session::respond() {
 		}) |
 		stdexec::then([] { return false; }); // the limit did not run out
 
-	const auto limit = services_->guard.limits().request_timeout;
+	const auto limit   = services_->guard.limits().request_timeout;
 	const auto give_up = [this, limit] {
 		give_up_waiting_for_response(limit);
 		return true;
@@ -275,6 +286,7 @@ stdexec_ext::InlineTask<void> Session::run() {
 	close_on_stop_.arm(socket_, stop);
 	while (!co_await round_chain()) {}
 }
+
 // NOLINTEND(readability-static-accessed-through-instance)
 
 SessionSender Session::serve(tcp::socket socket,

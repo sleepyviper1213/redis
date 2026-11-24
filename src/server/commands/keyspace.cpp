@@ -1,10 +1,13 @@
 // Commands that act on keys regardless of their type: DEL, EXISTS, KEYS,
 // TYPE, expiry (EXPIRE family, PERSIST, TTL, PTTL), FLUSHDB, DBSIZE.
+#include "args.hpp"
 #include "command.hpp"
+#include "common/resp/value.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.set_expiry, db.expiry, db.size, db.clear)
 #include "common/store/object.hpp"
 #include "core/chrono/deadline_timer.hpp"
 #include "core/error/failed.hpp"
+#include "core/error/failure.hpp"
 #include "core/error/failure_format.hpp" // IWYU pragma: keep (the formatter of ExpireOptionError)
 #include "core/utils/ascii.hpp"
 #include "core/utils/glob.hpp"

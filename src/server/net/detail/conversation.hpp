@@ -12,7 +12,6 @@
 
 #include <chrono>
 #include <cstddef>
-#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -40,15 +39,16 @@ namespace detail {
  */
 class Conversation {
 public:
-	/// What a conversation decides with. Everything referred to outlives it:
-	/// the session holds the Services that own them. Built from plain
-	/// references.
+	/// What a conversation decides with. Every reference outlives it: the
+	/// session holds the Services that own them.
 	struct Parts {
-		std::reference_wrapper<NetGuard> guard;
-		std::reference_wrapper<const CommandHandler> handler;
-		std::reference_wrapper<CommandContext> ctx;
+		// NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
+		NetGuard &guard;
+		const CommandHandler &handler;
+		CommandContext &ctx;
 		/// As Executor::is_threaded(): parse here, execute on its thread.
 		bool is_threaded;
+		// NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 	};
 
 	/// \param peer "address:port", for the violations recorded about it.

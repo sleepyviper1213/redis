@@ -129,7 +129,8 @@ SCENARIO("An object takes its storage from its allocator", "[allocator]") {
 }
 
 SCENARIO("Short strings are embedded in the object", "[allocator]") {
-	static_assert(sizeof(redis::Object) == 16);
+	constexpr std::size_t OBJECT_SIZE = 16;
+	static_assert(sizeof(redis::Object) == OBJECT_SIZE);
 
 	Ledger ledger;
 	const Alloc alloc{1, &ledger};
@@ -201,31 +202,33 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 
 SCENARIO("A database allocates keys, values and tables from one allocator",
 		 "[allocator]") {
+	constexpr int TAG  = 7;
+	constexpr int KEYS = 100;
 	Ledger ledger;
 
 	GIVEN("a database with a stateful allocator") {
 		{
-			Database db(Alloc{7, &ledger});
-			REQUIRE(db.get_allocator().tag == 7);
+			Database db(Alloc{TAG, &ledger});
+			REQUIRE(db.get_allocator().tag == TAG);
 
-			for (int i = 0; i < 100; ++i) {
+			for (int i = 0; i < KEYS; ++i) {
 				const String key(fmt::format("key:{}:long enough to allocate", i),
-								 Alloc{7, &ledger});
+								 Alloc{TAG, &ledger});
 				db.set(key, key);
 			}
 			auto hash = db.find_or_create<Hash>("hash");
 			REQUIRE(hash.has_value());
 			// Elements take the allocator they are given: the map's node
 			// allocator does not reach the strings inside the node.
-			(*hash)->emplace(String("field", Alloc{7, &ledger}),
-							 String("value", Alloc{7, &ledger}));
+			(*hash)->emplace(String("field", Alloc{TAG, &ledger}),
+							 String("value", Alloc{TAG, &ledger}));
 			(void)db.set_expiry("key:1:long enough to allocate",
 						  DeadlineTimer::after(std::chrono::hours(1)));
 
 			THEN("they all went through it") {
 				CHECK(ledger.allocations > 200);
-				CHECK(db.size() == 101);
-				CHECK((*hash)->get_allocator().tag == 7);
+				CHECK(db.size() == KEYS + 1);
+				CHECK((*hash)->get_allocator().tag == TAG);
 			}
 
 			WHEN("keys are erased") {
@@ -233,7 +236,7 @@ SCENARIO("A database allocates keys, values and tables from one allocator",
 				db.erase("hash");
 
 				THEN("the rest stay reachable") {
-					CHECK(db.size() == 99);
+					CHECK(db.size() == KEYS - 1);
 					CHECK(db.find("key:2:long enough to allocate") != nullptr);
 				}
 			}

@@ -1,5 +1,11 @@
 #include "close_socket_on_stop.hpp"
 
+#include <boost/asio/post.hpp>
+#include <boost/system/error_code.hpp>
+#include <stdexec/stop_token.hpp>
+
+#include <memory>
+
 namespace redis::detail {
 CloseSocketOnStop::~CloseSocketOnStop() {
 	// No new close is queued after this, and one already queued finds no
