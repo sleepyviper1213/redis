@@ -45,4 +45,5 @@ if(REDIS_USE_JEMALLOC)
 endif()
 
 set_warnings(redis_core)
+enable_hardening(redis_core)
 enable_coverage(redis_core)

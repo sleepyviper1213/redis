@@ -69,4 +69,5 @@ elseif(NOT REDIS_KEYSPACE_MAP STREQUAL "boost")
 endif()
 
 set_warnings(redis_server_lib)
+enable_hardening(redis_server_lib)
 enable_coverage(redis_server_lib)
