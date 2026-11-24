@@ -24,6 +24,15 @@ size (`nallocx`) rather than the requested size, so `used_memory` is what the al
 
 The option is off until the benchmark (TC-276) shows a gain.
 
+## Measurement
+
+First run (Benchmark workflow #27, 2026-11-20; details in [jemalloc_benchmark.md](../jemalloc_benchmark.md)): after
+filling, deleting most keys and refilling with a different value size, RSS is 432 MiB with jemalloc against 451 MiB
+without (4 % lower). The reference Redis varied by 6 % between its two jobs for identical work, and throughput shows
+no gain within a job. **The option stays off.** Neither build gives memory back after the delete (RSS stays at about
+451 MiB; the reference releases 40 to 50 MiB), so the cause is not the allocator. Revisit after repeated runs and a
+look at that retention.
+
 ## Alternatives considered
 
 - **Replace the global allocator (link jemalloc, change no code):** simplest, and covers connection buffers too. Not

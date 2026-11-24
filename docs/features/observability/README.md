@@ -28,5 +28,6 @@ Inspecting the server and its logs at run time.
 | [test_plan.md](test_plan.md) | Test scenarios `TC-nn` |
 | [traceability.md](traceability.md) | Use cases to requirements, scenarios and tests |
 | [design.md](design.md) | Design choices `DX-n`, code map, open questions |
+| [jemalloc_benchmark.md](jemalloc_benchmark.md) | Measured memory and throughput with and without jemalloc (TC-276) |
 | [adr/](adr/) | [ADR-0011](adr/0011-jemalloc-keyspace-allocator.md) |
 | [diagrams/](diagrams/) | PlantUML |

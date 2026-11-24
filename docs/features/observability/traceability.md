@@ -23,5 +23,5 @@ verification is recorded here.
 | NFR-002 | Security (`CONFIG SET` off by default) | Unit test of the refusal (TC-213); integration test of the start-up default (TC-214, Gap) |
 | NFR-003 | Reliability (crash report, flushed warnings) | Integration tests that crash a child on purpose (TC-219, 224; Gap) |
 | NFR-004 | Compatibility (`INFO` field names as in Redis) | Unit tests of field names; no differential test of `INFO` yet |
-| NFR-001 | Performance (keyspace allocator) | Benchmark with and without jemalloc (TC-276, Gap) |
+| NFR-001 | Performance (keyspace allocator) | Benchmark with and without jemalloc (TC-276, ran once: [results](jemalloc_benchmark.md); repeat runs wanted) |
 | NFR-006 | Maintainability (observability) | The scenarios of this feature |
