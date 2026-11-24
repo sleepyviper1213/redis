@@ -2,23 +2,23 @@
 #include "core/error/failed.hpp"
 #include "durable_file.hpp"
 
-#include <dirent.h>
-#include <fcntl.h>
+#include <fmt/format.h>
+
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
-
-#include <fmt/format.h>
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
+#include <dirent.h>
+#include <fcntl.h>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unistd.h>
 #include <vector>
 
 namespace redis::os {
@@ -54,12 +54,13 @@ bool kept_open(int fd) {
 }
 
 // Close every descriptor but stdio, \p keep and the kept ones. The child needs
-// none of the rest of what it inherited, and holding the server's sockets is harmful: the listening socket
-// would keep the port bound if the parent died, and a client socket the parent
-// closed would not really close until the save ended. A plain close(): these
-// are the child's copies, so the parent's descriptors, and what is registered
-// with an epoll set the two share, stay as they are (asio's own close() would
-// deregister the socket from that set, for the parent too).
+// none of the rest of what it inherited, and holding the server's sockets is
+// harmful: the listening socket would keep the port bound if the parent died,
+// and a client socket the parent closed would not really close until the save
+// ended. A plain close(): these are the child's copies, so the parent's
+// descriptors, and what is registered with an epoll set the two share, stay as
+// they are (asio's own close() would deregister the socket from that set, for
+// the parent too).
 void close_inherited_descriptors(int keep) {
 	constexpr int FIRST_NON_STDIO_FD = 3;
 	constexpr long MAX_FALLBACK_FDS  = 65536;
@@ -81,8 +82,8 @@ void close_inherited_descriptors(int keep) {
 	} else {
 		// No /dev/fd to list: try everything that could be open.
 		const long open_max = ::sysconf(_SC_OPEN_MAX);
-		const long limit =
-			open_max > 0 ? std::min(open_max, MAX_FALLBACK_FDS) : MAX_FALLBACK_FDS;
+		const long limit = open_max > 0 ? std::min(open_max, MAX_FALLBACK_FDS)
+										: MAX_FALLBACK_FDS;
 		for (int fd = FIRST_NON_STDIO_FD; fd < limit; ++fd)
 			if (fd != keep && !kept_open(fd)) fds.push_back(fd);
 	}
@@ -143,8 +144,10 @@ std::expected<Child, std::error_code> fork_process() {
 void exit_child(int report_fd, bool success, std::string_view error) noexcept {
 	if (!success && !error.empty()) {
 		// Best effort: if this fails there is nobody left to tell.
-		[[maybe_unused]] const ssize_t written = ::write(
-			report_fd, error.data(), std::min(error.size(), MAX_REPORT_SIZE));
+		[[maybe_unused]] const ssize_t written =
+			::write(report_fd,
+					error.data(),
+					std::min(error.size(), MAX_REPORT_SIZE));
 	}
 	// _exit, not exit: the child shares the parent's stdio buffers and
 	// static objects (loggers, sockets), which must not be flushed or
@@ -180,7 +183,8 @@ std::optional<ChildResult> reap(const Child &child, bool wait) {
 
 	// The child's own explanation if it wrote one; otherwise just how it ended
 	// (killed by a signal never gets to write).
-	ChildResult failed{.success = false, .error = read_report(child.report_fd())};
+	ChildResult failed{.success = false,
+					   .error   = read_report(child.report_fd())};
 	if (failed.error.empty())
 		failed.error =
 			WIFEXITED(status)
@@ -202,7 +206,8 @@ std::error_code sync_directory(const std::filesystem::path &dir) {
 	return fsync_path(dir.empty() ? "." : dir, O_RDONLY | O_DIRECTORY);
 }
 
-// ---- DurableFile -------------------------------------------------------------------
+// ---- DurableFile
+// -------------------------------------------------------------------
 
 namespace {
 // What the server creates is the owner's: readable by nobody else.
