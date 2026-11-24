@@ -1,7 +1,7 @@
 #include "save_file.hpp"
-#include "core/error/failed.hpp"
 
 #include "child_process.hpp"
+#include "core/error/failed.hpp"
 
 #include <fmt/format.h>
 #include <fmt/std.h> // IWYU pragma: keep (std::filesystem::path)
@@ -84,7 +84,8 @@ struct SaveFile::Impl {
 };
 
 SaveFile::SaveFile(DurableFile file, fs::path target, fs::path temp)
-	: impl_(std::in_place, std::move(file), std::move(target), std::move(temp)) {}
+	: impl_(std::in_place, std::move(file), std::move(target),
+			std::move(temp)) {}
 
 SaveFile::SaveFile(SaveFile &&) noexcept = default;
 
@@ -97,7 +98,7 @@ SaveFile::~SaveFile() {
 }
 
 std::expected<SaveFile, SaveError> SaveFile::open(const fs::path &target,
-													 const fs::path &temp) {
+												  const fs::path &temp) {
 	// The temporary's name is predictable, so whatever is there (a leftover of
 	// a crash, or a link someone put in its place) goes, and the file is
 	// created anew: that fails rather than open anything that exists, and never
@@ -107,8 +108,8 @@ std::expected<SaveFile, SaveError> SaveFile::open(const fs::path &target,
 	auto created = DurableFile::create_new(temp);
 	if (!created)
 		REDIS_FAILED(SaveError{.kind  = SaveKind::Create,
-											.cause = created.error(),
-											.path  = target});
+							   .cause = created.error(),
+							   .path  = target});
 	return SaveFile(std::move(*created), target, temp);
 }
 
@@ -118,8 +119,8 @@ std::expected<void, SaveError> SaveFile::write(std::string_view data) {
 	impl_->stream.write(data.data(), static_cast<std::streamsize>(data.size()));
 	if (!impl_->stream)
 		REDIS_FAILED(SaveError{.kind  = SaveKind::Write,
-											.cause = impl_->buf.error(),
-											.path  = impl_->target});
+							   .cause = impl_->buf.error(),
+							   .path  = impl_->target});
 	return {};
 }
 
@@ -133,8 +134,7 @@ std::expected<void, SaveError> SaveFile::commit() {
 
 	self.stream.flush();
 	if (!self.stream) return failed(SaveKind::Write, self.buf.error());
-	if (const auto err = self.file.sync())
-		return failed(SaveKind::Sync, err);
+	if (const auto err = self.file.sync()) return failed(SaveKind::Sync, err);
 	self.file.close(); // a file that is open cannot be renamed everywhere
 
 	std::error_code why;

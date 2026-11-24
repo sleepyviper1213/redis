@@ -44,16 +44,14 @@ public:
 		const std::size_t asked = size == 0 ? 1 : size;
 		void *block             = ::mallocx(asked, flags());
 		if (block == nullptr) throw std::bad_alloc();
-		in_use_.fetch_add(::nallocx(asked, flags()),
-						  std::memory_order_relaxed);
+		in_use_.fetch_add(::nallocx(asked, flags()), std::memory_order_relaxed);
 		return static_cast<T *>(block);
 	}
 
 	void deallocate(T *block, std::size_t count) noexcept {
 		const std::size_t size  = count * sizeof(T);
 		const std::size_t asked = size == 0 ? 1 : size;
-		in_use_.fetch_sub(::nallocx(asked, flags()),
-						  std::memory_order_relaxed);
+		in_use_.fetch_sub(::nallocx(asked, flags()), std::memory_order_relaxed);
 		::sdallocx(block, asked, flags());
 	}
 
