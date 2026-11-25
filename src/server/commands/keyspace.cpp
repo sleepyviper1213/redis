@@ -53,7 +53,7 @@ Value keys(CommandContext &ctx, Args args) {
 	// The keys live in the table, which nothing changes meanwhile.
 	std::vector<std::string_view> matches;
 	ctx.db.for_each([&](std::string_view key, auto &&...) {
-		if (glob_match(pattern, key)) matches.push_back(key);
+		if (is_glob_match(pattern, key)) matches.push_back(key);
 	});
 	Value::Array found;
 	found.reserve(matches.size());
@@ -72,10 +72,10 @@ Value type(CommandContext &ctx, Args args) {
 // The command's name as Redis words it in an error: lower case.
 constexpr std::string_view expire_name(detail::ExpireUnit unit,
 									   detail::ExpireBase base) {
-	const bool seconds = unit == detail::ExpireUnit::Seconds;
+	const bool is_seconds = unit == detail::ExpireUnit::Seconds;
 	if (base == detail::ExpireBase::Relative)
-		return seconds ? "expire" : "pexpire";
-	return seconds ? "expireat" : "pexpireat";
+		return is_seconds ? "expire" : "pexpire";
+	return is_seconds ? "expireat" : "pexpireat";
 }
 
 /// Why the options of the EXPIRE family were refused.
@@ -110,17 +110,17 @@ std::expected<Database::ExpireOptions, ExpireOptionError>
 parse_expire_options(Args args) {
 	Database::ExpireOptions options;
 	for (const std::string_view arg : args.subspan(3))
-		if (iequals(arg, "NX")) options.nx = true;
-		else if (iequals(arg, "XX")) options.xx = true;
-		else if (iequals(arg, "GT")) options.gt = true;
-		else if (iequals(arg, "LT")) options.lt = true;
+		if (iequals(arg, "NX")) options.is_nx = true;
+		else if (iequals(arg, "XX")) options.is_xx = true;
+		else if (iequals(arg, "GT")) options.is_gt = true;
+		else if (iequals(arg, "LT")) options.is_lt = true;
 		else
 			REDIS_FAILED(
 				ExpireOptionError{.kind   = ExpireOptionKind::Unsupported,
 								  .quoted = std::string(arg)});
-	if (options.nx && (options.xx || options.gt || options.lt))
+	if (options.is_nx && (options.is_xx || options.is_gt || options.is_lt))
 		REDIS_FAILED(ExpireOptionError{.kind = ExpireOptionKind::NxConflict});
-	if (options.gt && options.lt)
+	if (options.is_gt && options.is_lt)
 		REDIS_FAILED(ExpireOptionError{.kind = ExpireOptionKind::GtLtConflict});
 	return options;
 }
@@ -167,8 +167,8 @@ Value expire_generic(CommandContext &ctx, Args args) {
 										  *options);
 
 	log_expiry(ctx, args[1], timer, result);
-	const bool applied = result != Database::ExpiryResult::Refused;
-	return reply::integer(applied ? 1 : 0);
+	const bool is_applied = result != Database::ExpiryResult::Refused;
+	return reply::integer(is_applied ? 1 : 0);
 }
 
 Value persist(CommandContext &ctx, Args args) {
@@ -203,7 +203,7 @@ Value dbsize(CommandContext &ctx, Args /*unused*/) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "DEL", .fn = del, .arity = -2, .write = true},
+	CommandInfo{.name = "DEL", .fn = del, .arity = -2, .is_write = true},
 	CommandInfo{.name = "EXISTS", .fn = exists, .arity = -2},
 	CommandInfo{.name = "KEYS", .fn = keys, .arity = 2},
 	CommandInfo{.name = "TYPE", .fn = type, .arity = 2},
@@ -211,26 +211,26 @@ constexpr std::array COMMANDS{
 				.fn    = expire_generic<detail::ExpireUnit::Seconds,
 										detail::ExpireBase::Relative>,
 				.arity = -3,
-				.write = true},
+				.is_write = true},
 	CommandInfo{.name  = "PEXPIRE",
 				.fn    = expire_generic<detail::ExpireUnit::Milliseconds,
 										detail::ExpireBase::Relative>,
 				.arity = -3,
-				.write = true},
+				.is_write = true},
 	CommandInfo{.name  = "EXPIREAT",
 				.fn    = expire_generic<detail::ExpireUnit::Seconds,
 										detail::ExpireBase::Absolute>,
 				.arity = -3,
-				.write = true},
+				.is_write = true},
 	CommandInfo{.name  = "PEXPIREAT",
 				.fn    = expire_generic<detail::ExpireUnit::Milliseconds,
 										detail::ExpireBase::Absolute>,
 				.arity = -3,
-				.write = true},
-	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .write = true},
+				.is_write = true},
+	CommandInfo{.name = "PERSIST", .fn = persist, .arity = 2, .is_write = true},
 	CommandInfo{.name = "TTL", .fn = ttl_generic<false>, .arity = 2},
 	CommandInfo{.name = "PTTL", .fn = ttl_generic<true>, .arity = 2},
-	CommandInfo{.name = "FLUSHDB", .fn = flushdb, .arity = -1, .write = true},
+	CommandInfo{.name = "FLUSHDB", .fn = flushdb, .arity = -1, .is_write = true},
 	CommandInfo{.name = "DBSIZE", .fn = dbsize, .arity = 1},
 };
 } // namespace

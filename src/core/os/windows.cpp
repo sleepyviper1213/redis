@@ -25,17 +25,17 @@ std::expected<Child, std::error_code> fork_process() {
 		std::make_error_code(std::errc::function_not_supported));
 }
 
-void exit_child(int /*report_fd*/, bool success,
+void exit_child(int /*report_fd*/, bool is_successful,
 				std::string_view /*error*/) noexcept {
-	std::_Exit(success ? 0 : 1);
+	std::_Exit(is_successful ? 0 : 1);
 }
 } // namespace detail
 
 pid_type current_pid() noexcept { return ::_getpid(); }
 
 // fork_process() never succeeds, so there is never a child to reap.
-std::optional<ChildResult> reap(const Child & /*child*/, bool /*wait*/) {
-	return ChildResult{.success = false,
+std::optional<ChildResult> reap(const Child & /*child*/, bool /*is_waiting*/) {
+	return ChildResult{.is_successful = false,
 					   .error   = "background saving is not supported here"};
 }
 

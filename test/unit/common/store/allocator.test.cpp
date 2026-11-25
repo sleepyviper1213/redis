@@ -141,7 +141,7 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 			Object object = Object::make_string(alloc, "value:12345");
 
 			THEN("it is stored inline, with no allocation") {
-				CHECK(object.embedded());
+				CHECK(object.is_embedded());
 				CHECK(object.string() == "value:12345");
 				CHECK(ledger.allocations == 0);
 			}
@@ -160,7 +160,7 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 				object.mutable_string().append(" and a whole lot more");
 
 				THEN("it moves to the heap first") {
-					CHECK_FALSE(object.embedded());
+					CHECK_FALSE(object.is_embedded());
 					CHECK(object.string() == "value:12345 and a whole lot more");
 					// The String's block, then its buffer once the append
 					// outgrows the small-string capacity (exceeds libc++'s 22-char SSO).
@@ -170,12 +170,12 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 
 			WHEN("a longer string is assigned, then a short one again") {
 				object.assign_string(longer);
-				REQUIRE_FALSE(object.embedded());
+				REQUIRE_FALSE(object.is_embedded());
 				CHECK(object.string() == longer);
 				object.assign_string("short");
 
 				THEN("the heap string is freed and the short one embedded") {
-					CHECK(object.embedded());
+					CHECK(object.is_embedded());
 					CHECK(object.string() == "short");
 					CHECK(ledger.balanced());
 				}
@@ -190,7 +190,7 @@ SCENARIO("Short strings are embedded in the object", "[allocator]") {
 			const Object object = Object::make_string(alloc, longer);
 
 			THEN("it lives on the heap") {
-				CHECK_FALSE(object.embedded());
+				CHECK_FALSE(object.is_embedded());
 				CHECK(object.string() == longer);
 				CHECK(ledger.allocations >= 1);
 			}

@@ -78,12 +78,12 @@ void CommandHandler::execute(CommandContext &ctx, const Value &request,
 							 std::string &out) const {
 	std::vector<std::string_view> args;
 	// Not Value::is_string(): a null Value holds an empty string too.
-	const bool well_formed =
+	const bool is_well_formed =
 		request.is_array() &&
 		std::ranges::all_of(request.as_array(), [](const Value &arg) {
 			return arg.is_bulk_string() || arg.is_simple_string();
 		});
-	if (well_formed)
+	if (is_well_formed)
 		for (const Value &arg : request.as_array())
 			args.push_back(arg.as_string());
 	execute(ctx, args, out);
@@ -121,9 +121,9 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 
 	const CommandInfo &info = it->second;
 	const auto argc         = static_cast<int>(args.size());
-	const bool arity_ok =
+	const bool is_arity_ok =
 		info.arity >= 0 ? argc == info.arity : argc >= -info.arity;
-	if (!arity_ok) {
+	if (!is_arity_ok) {
 		return {.reply = reply::error(
 					"ERR wrong number of arguments for '{}' command",
 					ascii_lowered(info.name)),
@@ -157,12 +157,12 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 	if (ctx.aof != nullptr) ctx.aof->command_starting();
 	const size_t reply_start = out.size();
 	const CommandInfo *ran   = nullptr;
-	bool failed              = false;
+	bool has_failed              = false;
 	try {
 		const auto [response, command] = dispatch(ctx, args);
 		fmt::format_to(std::back_inserter(out), "{:e}", response);
 		ran    = command;
-		failed = response.is_error();
+		has_failed = response.is_error();
 	} catch (const std::bad_alloc &) {
 		// The command may have changed part of what it was asked to (an MSET,
 		// say), and formatting its reply may have added part of it to `out`.
@@ -182,7 +182,7 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 	// would need every command to report it.
 	if (ctx.aof != nullptr) {
 		ctx.aof->command_ran(ctx.db,
-							 ran != nullptr && ran->write && !failed,
+							 ran != nullptr && ran->is_write && !has_failed,
 							 args);
 	}
 

@@ -98,7 +98,7 @@ int run(int argc, char **argv) {
 			.io_threads = app->get_option("--io-threads")->as<unsigned>(),
 			.aof        = aof_config(*app),
 			.limits     = net_limits(*app),
-			.config_set_enabled =
+			.is_config_set_enabled =
 				app->get_option("--enable-config-set")->as<bool>(),
 			.watchdog = {.threshold = std::chrono::milliseconds(
 							 app->get_option("--watchdog-ms")->as<int64_t>())},

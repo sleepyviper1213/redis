@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <filesystem>
 
 // The crash report: what an operator reads after the server died.
 //
@@ -25,9 +25,9 @@ namespace redis::diagnostics {
  * inherits the handlers, which is fine: its crash gets a report too.
  */
 #ifdef _WIN32
-inline void install_crash_handler(const std::string & /*log_file*/) {}
+inline void install_crash_handler(const std::filesystem::path & /*log_file*/) {}
 #else
-void install_crash_handler(const std::string &log_file);
+void install_crash_handler(const std::filesystem::path &log_file);
 #endif
 
 } // namespace redis::diagnostics

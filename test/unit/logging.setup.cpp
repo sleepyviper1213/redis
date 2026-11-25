@@ -30,7 +30,7 @@ public:
 			{.level    = test_log_level(),
 			 .log_file = "",
 			 .channels = redis::logging::channel_names(),
-			 .async    = false});
+			 .is_async    = false});
 	}
 
 	void testRunEnded(const Catch::TestRunStats & /*testRunStats*/) override {

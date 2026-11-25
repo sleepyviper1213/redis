@@ -144,9 +144,9 @@ Session::Outcome Session::read_available() {
 		socket_.read_some(boost::asio::buffer(room.data(), room.size()), ec);
 	if (ec == boost::asio::error::would_block ||
 		ec == boost::asio::error::try_again)
-		return Outcome{.bytes = 0, .idle = false};
+		return Outcome{.bytes = 0, .is_idle = false};
 	if (ec) throw boost::system::system_error(ec);
-	return Outcome{.bytes = n, .idle = false};
+	return Outcome{.bytes = n, .is_idle = false};
 }
 #endif
 
@@ -176,7 +176,7 @@ stdexec::sender auto Session::receive() {
 			   boost::asio::buffer(room.data(), room.size()),
 			   exec::asio::use_sender) |
 		   stdexec::then(
-			   [](size_t n) { return Outcome{.bytes = n, .idle = false}; });
+			   [](size_t n) { return Outcome{.bytes = n, .is_idle = false}; });
 #else
 	// Wait for readability, then read in place. async_read_some would first
 	// try a speculative recv that, on a request/response connection, almost
@@ -192,7 +192,7 @@ stdexec::sender auto Session::read() {
 	stdexec::sender auto bytes =
 		receive() | stdexec::let_error([this](const std::exception_ptr &error) {
 			fail_io(ConnectionKind::ReadFailed, error);
-			return stdexec::just(Outcome{.bytes = std::nullopt, .idle = false});
+			return stdexec::just(Outcome{.bytes = std::nullopt, .is_idle = false});
 		});
 
 	const auto idle = services_->guard.limits().idle_timeout;
@@ -202,9 +202,9 @@ stdexec::sender auto Session::read() {
 			   std::move(bytes),
 			   TimerScheduler(*strand_, idle_timer_),
 			   idle,
-			   [] { return Outcome{.bytes = std::nullopt, .idle = true}; }) |
+			   [] { return Outcome{.bytes = std::nullopt, .is_idle = true}; }) |
 		   stdexec::then([this, idle](Outcome result) {
-			   if (result.idle) conversation_.count_idle_timeout_and_end(idle);
+			   if (result.is_idle) conversation_.count_idle_timeout_and_end(idle);
 			   return result.bytes;
 		   });
 }
@@ -277,8 +277,8 @@ stdexec::sender auto Session::respond() {
 						   TimerScheduler(*strand_, request_timer_),
 						   limit,
 						   give_up) |
-		   stdexec::then([this](bool timed_out) {
-			   if (!timed_out) return;
+		   stdexec::then([this](bool is_timed_out) {
+			   if (!is_timed_out) return;
 			   conversation_.drop_replies_and_end();
 		   });
 }

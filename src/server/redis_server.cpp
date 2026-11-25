@@ -177,7 +177,7 @@ RedisServer::RedisServer(ServerConfig config)
 	  command_watchdog_(diagnostics::ReportPolicy::Once, config_.watchdog),
 	  services_(std::make_shared<Services>(
 		  config_.dump_file, config_.io_threads > 1, config_.aof,
-		  config_.limits, config_.config_set_enabled)) {}
+		  config_.limits, config_.is_config_set_enabled)) {}
 
 std::expected<void, ServerError> RedisServer::run() {
 	// With an append-only file it is the source of truth: it holds everything

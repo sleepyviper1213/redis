@@ -94,7 +94,7 @@ public:
 	[[nodiscard]] std::optional<Beat<T, Clock>> read() const noexcept {
 		const auto sequence = sequence_.load(std::memory_order_acquire);
 		if (sequence % 2 != 0) return std::nullopt; // being written
-		const bool busy    = busy_.load(std::memory_order_relaxed);
+		const bool is_busy    = is_busy_.load(std::memory_order_relaxed);
 		const auto started = started_.load(std::memory_order_relaxed);
 		Words words{};
 		for (std::size_t i = 0; i < WORDS; ++i)
@@ -103,7 +103,7 @@ public:
 		std::atomic_thread_fence(std::memory_order_acquire);
 		if (sequence_.load(std::memory_order_relaxed) != sequence)
 			return std::nullopt; // a beat overlapped: the fields may mix
-		if (!busy) return std::nullopt;
+		if (!is_busy) return std::nullopt;
 
 		// The bytes of a T, made into one: bit_cast, not a memcpy into a T
 		// that may have default member initializers (-Wclass-memaccess).
@@ -121,7 +121,7 @@ private:
 		(sizeof(T) + sizeof(Word) - 1) / sizeof(Word);
 	using Words = std::array<Word, WORDS>;
 
-	void write(bool busy, const T &subject,
+	void write(bool is_busy, const T &subject,
 			   typename Clock::rep started) noexcept {
 		Words words{};
 		std::memcpy(words.data(), &subject, sizeof(T));
@@ -130,7 +130,7 @@ private:
 		sequence_.store(sequence + 1, std::memory_order_relaxed); // odd
 		// The stores below must not be seen before the one above.
 		std::atomic_thread_fence(std::memory_order_release);
-		busy_.store(busy, std::memory_order_relaxed);
+		is_busy_.store(is_busy, std::memory_order_relaxed);
 		started_.store(started, std::memory_order_relaxed);
 		for (std::size_t i = 0; i < WORDS; ++i)
 			subject_[i].store(words[i], std::memory_order_relaxed);
@@ -139,7 +139,7 @@ private:
 
 	/// Odd while a beat is being written; two more for every one.
 	std::atomic<std::uint64_t> sequence_{0};
-	std::atomic<bool> busy_{false};
+	std::atomic<bool> is_busy_{false};
 	std::atomic<typename Clock::rep> started_{0};
 	std::array<std::atomic<Word>, WORDS> subject_{};
 };

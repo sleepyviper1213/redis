@@ -18,7 +18,7 @@ std::string_view SimpleMessage::contextMessage() const {
 	return context_message_;
 }
 
-bool SimpleMessage::containsErrorMessage(std::string_view msg) const {
+bool SimpleMessage::has_error_message(std::string_view msg) const {
 	return context_message_.contains(msg);
 }
 

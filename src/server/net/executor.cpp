@@ -10,8 +10,8 @@
 
 namespace redis {
 
-Executor::Executor(bool threaded) {
-	if (!threaded) return;
+Executor::Executor(bool is_threaded) {
+	if (!is_threaded) return;
 	pool_.emplace(1);
 #ifndef NDEBUG
 	// Learn the worker's id by asking it, so stop() can tell its own thread.

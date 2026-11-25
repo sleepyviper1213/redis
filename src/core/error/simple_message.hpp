@@ -63,7 +63,7 @@ public:
 	 * @param msg The substring to check for.
 	 * @return True if `msg` is a substring of the error message.
 	 */
-	[[nodiscard]] bool containsErrorMessage(std::string_view msg) const;
+	[[nodiscard]] bool has_error_message(std::string_view msg) const;
 
 private:
 	std::string_view

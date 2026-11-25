@@ -97,7 +97,7 @@ public:
 	void drop_replies_and_end() noexcept;
 
 	/// End, keeping the replies: an I/O failure the session has logged.
-	void end_keeping_replies() noexcept { done_ = true; }
+	void end_keeping_replies() noexcept { is_done_ = true; }
 
 	[[nodiscard]] bool is_over() const noexcept;
 
@@ -116,7 +116,7 @@ private:
 	std::string replies_;
 	ParsedBatch batch_;
 	AfterReplies after_ = AfterReplies::KeepOpen;
-	bool done_          = false;
+	bool is_done_          = false;
 };
 
 // A Session, and so its Conversation, is moved into its sender before it

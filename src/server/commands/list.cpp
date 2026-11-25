@@ -157,13 +157,13 @@ Value lindex(CommandContext &ctx, Args args) {
 
 constexpr std::array COMMANDS{
 	CommandInfo{
-		.name = "LPUSH", .fn = push<End::Head>, .arity = -3, .write = true},
+		.name = "LPUSH", .fn = push<End::Head>, .arity = -3, .is_write = true},
 	CommandInfo{
-		.name = "RPUSH", .fn = push<End::Tail>, .arity = -3, .write = true},
+		.name = "RPUSH", .fn = push<End::Tail>, .arity = -3, .is_write = true},
 	CommandInfo{
-		.name = "LPOP", .fn = pop<End::Head>, .arity = -2, .write = true},
+		.name = "LPOP", .fn = pop<End::Head>, .arity = -2, .is_write = true},
 	CommandInfo{
-		.name = "RPOP", .fn = pop<End::Tail>, .arity = -2, .write = true},
+		.name = "RPOP", .fn = pop<End::Tail>, .arity = -2, .is_write = true},
 	CommandInfo{.name = "LLEN", .fn = llen, .arity = 2},
 	CommandInfo{.name = "LRANGE", .fn = lrange, .arity = 4},
 	CommandInfo{.name = "LINDEX", .fn = lindex, .arity = 3},

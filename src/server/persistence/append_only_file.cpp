@@ -4,6 +4,7 @@
 #include "common/resp/request.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.drain_expired())
 #include "core/error/failed.hpp"
+#include "core/error/verify.hpp"
 #include "core/os/save_file.hpp"
 #include "detail/snapshot.hpp"
 #include "server/commands/handler.hpp"
@@ -15,7 +16,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
@@ -194,7 +194,7 @@ std::vector<fs::path> AppendOnlyFile::files() const {
 // ---- loading --------------------------------------------------------------
 
 std::expected<void, PersistError>
-AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
+AppendOnlyFile::replay(const fs::path &file, bool is_last, CommandContext &ctx,
 					   const CommandHandler &handler, size_t &commands) {
 	// What is wrong with this file.
 	const auto bad = [&file](PersistKind kind,
@@ -212,7 +212,7 @@ AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 	// however the name changes meanwhile. Only the last file can have a torn
 	// end, so only it is opened for cutting.
 	auto opened = os::DurableFile::open_existing(file,
-												 last ? os::Access::read_write
+												 is_last ? os::Access::read_write
 													  : os::Access::read);
 	if (!opened) return bad(PersistKind::CannotOpen, opened.error());
 	auto content = opened->read_all();
@@ -238,7 +238,7 @@ AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 			// The server died while writing the last command. Redis' default
 			// too: drop the torn command and carry on, rather than refuse to
 			// start over a few bytes. Anywhere but the end it is corruption.
-			if (!last) return bad(PersistKind::LogTornInside);
+			if (!is_last) return bad(PersistKind::LogTornInside);
 			log().warn("{} ends in the middle of a command: cutting {} bytes",
 					   file,
 					   data.size() - whole);
@@ -258,14 +258,14 @@ AppendOnlyFile::replay(const fs::path &file, bool last, CommandContext &ctx,
 std::expected<void, PersistError>
 AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 	std::error_code ec;
-	const bool created = fs::create_directories(config_.dir, ec);
+	const bool is_created = fs::create_directories(config_.dir, ec);
 	if (ec)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotCreate,
 								  .cause = ec,
 								  .path  = config_.dir});
 	// A directory the server makes is the server's alone. One it was pointed at
 	// keeps the permissions its owner gave it.
-	if (created) {
+	if (is_created) {
 		fs::permissions(config_.dir,
 						fs::perms::owner_all,
 						fs::perm_options::replace,
@@ -321,7 +321,7 @@ AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
 			if (auto loaded =
 					persistence::detail::load_snapshot(db,
 													   path_of(*manifest_.base),
-													   /*keep_expired=*/true);
+													   /*is_keeping_expired=*/true);
 				!loaded)
 				return loaded;
 		}
@@ -385,7 +385,7 @@ std::expected<void, PersistError> AppendOnlyFile::open_for_append() {
 // ---- logging --------------------------------------------------------------
 
 void AppendOnlyFile::replace(std::span<const std::string_view> args) {
-	assert(replaced_.empty() && "replace() called twice for one command");
+	REDIS_VERIFY(replaced_.empty(), "replace() called twice for one command");
 	encode_command(replaced_, args);
 }
 
@@ -396,11 +396,11 @@ void AppendOnlyFile::log_expired(Database &db) {
 	});
 }
 
-void AppendOnlyFile::command_ran(Database &db, bool logged, Args args) {
+void AppendOnlyFile::command_ran(Database &db, bool is_logged, Args args) {
 	log_expired(db);
-	if (!logged || discarded_) {
+	if (!is_logged || is_discarded_) {
 		replaced_.clear();
-		discarded_ = false;
+		is_discarded_ = false;
 		return;
 	}
 	if (replaced_.empty()) {
@@ -437,14 +437,14 @@ void AppendOnlyFile::write_out() {
 	}
 	good_size_ += buf_.size();
 	buf_.clear();
-	dirty_.store(true, std::memory_order_release);
+	is_dirty_.store(true, std::memory_order_release);
 }
 
 void AppendOnlyFile::sync_now() {
-	if (!out_ || !dirty_.exchange(false, std::memory_order_acq_rel)) return;
+	if (!out_ || !is_dirty_.exchange(false, std::memory_order_acq_rel)) return;
 	if (const auto err = out_->sync()) {
 		log().error("AOF fsync of {} failed: {}", incr_path_, err.message());
-		dirty_.store(true, std::memory_order_release);
+		is_dirty_.store(true, std::memory_order_release);
 	}
 }
 
@@ -452,7 +452,7 @@ void AppendOnlyFile::after_batch() {
 	write_out();
 	if (config_.fsync != FsyncPolicy::always) return;
 	sync_now();
-	if (dirty_.load(std::memory_order_acquire) || !buf_.empty()) {
+	if (is_dirty_.load(std::memory_order_acquire) || !buf_.empty()) {
 		// Replies are about to be sent for commands that are not on disk. With
 		// "always" that is the promise being broken: stop, like Redis.
 		log().critical(
@@ -467,7 +467,7 @@ void AppendOnlyFile::sync_loop(const std::stop_token &stop) {
 	while (!stop.stop_requested()) {
 		wake_.wait_for(lock, stop, 1s, [] { return false; });
 		if (stop.stop_requested()) break;
-		if (!dirty_.exchange(false, std::memory_order_acq_rel)) continue;
+		if (!is_dirty_.exchange(false, std::memory_order_acq_rel)) continue;
 		// A reference of its own to the file, so a rewrite that moves on to the
 		// next one cannot close it under the fsync. Syncing the descriptor also
 		// syncs the file that was written, not whatever its name is by now.
@@ -476,7 +476,7 @@ void AppendOnlyFile::sync_loop(const std::stop_token &stop) {
 		if (file) {
 			if (const auto err = file->sync()) {
 				log().error("AOF fsync failed: {}", err.message());
-				dirty_.store(true, std::memory_order_release);
+				is_dirty_.store(true, std::memory_order_release);
 			}
 		}
 		lock.lock();
@@ -486,7 +486,7 @@ void AppendOnlyFile::sync_loop(const std::stop_token &stop) {
 void AppendOnlyFile::close() {
 	if (out_) {
 		write_out();
-		dirty_.store(true, std::memory_order_release);
+		is_dirty_.store(true, std::memory_order_release);
 		if (syncer_.joinable()) {
 			syncer_.request_stop();
 			syncer_.join();
@@ -511,7 +511,7 @@ AppendOnlyFile::start_rewrite(const Database &db) {
 	write_out();
 	if (!buf_.empty())
 		REDIS_FAILED(PersistError{.kind = PersistKind::CannotWriteLog});
-	dirty_.store(true, std::memory_order_release);
+	is_dirty_.store(true, std::memory_order_release);
 	sync_now();
 
 	Manifest next = manifest_;
@@ -550,7 +550,7 @@ void AppendOnlyFile::finish_rewrite(const os::ChildResult &result) {
 	// child runs
 	const os::pid_type pid = child_->pid();
 	child_.reset();
-	if (!result.success) {
+	if (!result.is_successful) {
 		log().error("Background AOF rewrite failed: {}", result.error);
 		std::error_code ignored;
 		fs::remove(
@@ -591,7 +591,7 @@ void AppendOnlyFile::cancel_rewrite() {
 			   ignored);
 }
 
-[[nodiscard]] bool AppendOnlyFile::rewrite_in_progress() const noexcept {
+[[nodiscard]] bool AppendOnlyFile::is_rewrite_in_progress() const noexcept {
 	return child_.has_value();
 }
 

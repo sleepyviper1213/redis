@@ -80,7 +80,7 @@ struct SaveFile::Impl {
 	std::ostream stream;
 	fs::path target;
 	fs::path temp;
-	bool committed = false;
+	bool is_committed = false;
 };
 
 SaveFile::SaveFile(DurableFile file, fs::path target, fs::path temp)
@@ -91,7 +91,7 @@ SaveFile::SaveFile(SaveFile &&) noexcept = default;
 
 SaveFile::~SaveFile() {
 	// Moved from, or committed: nothing to clean up.
-	if (impl_.valueless_after_move() || impl_->committed) return;
+	if (impl_.valueless_after_move() || impl_->is_committed) return;
 	impl_->file.close(); // a file that is open cannot be removed everywhere
 	std::error_code ignored;
 	fs::remove(impl_->temp, ignored);
@@ -141,7 +141,7 @@ std::expected<void, SaveError> SaveFile::commit() {
 	fs::rename(self.temp, self.target, why);
 	if (why) return failed(SaveKind::Rename, why);
 	// In place from here: the temporary no longer exists to be cleaned up.
-	self.committed = true;
+	self.is_committed = true;
 
 	if (why = sync_directory(self.target.parent_path()); why)
 		return failed(SaveKind::SyncDirectory, why);

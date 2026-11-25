@@ -34,12 +34,12 @@ namespace {
 /// A conversation over a real guard, handler and keyspace, driven by strings.
 class Rig {
 public:
-	Rig(bool threaded, NetLimits limits = {})
+	Rig(bool is_threaded, NetLimits limits = {})
 		: guard(limits),
 		  conversation(Conversation::Parts{.guard    = guard,
 										   .handler  = handler,
 										   .ctx      = server.ctx,
-										   .is_threaded = threaded},
+										   .is_threaded = is_threaded},
 					   "peer:1") {}
 
 	/// Bytes arrive: whether there is a batch to run.
@@ -77,9 +77,9 @@ constexpr std::string_view PING_RESP = "*1\r\n$4\r\nPING\r\n";
 } // namespace
 
 SCENARIO("A conversation takes in what a client sends", "[net][conversation]") {
-	const bool threaded = GENERATE(false, true);
-	CAPTURE(threaded);
-	Rig rig(threaded);
+	const bool is_threaded = GENERATE(false, true);
+	CAPTURE(is_threaded);
+	Rig rig(is_threaded);
 
 	GIVEN("a request cut in two reads") {
 		const std::string_view first  = "*1\r\n$4\r\nPI";
@@ -131,11 +131,11 @@ SCENARIO("A conversation takes in what a client sends", "[net][conversation]") {
 
 SCENARIO("A conversation answers pipelined requests in order",
 		 "[net][conversation]") {
-	const bool threaded = GENERATE(false, true);
-	CAPTURE(threaded);
+	const bool is_threaded = GENERATE(false, true);
+	CAPTURE(is_threaded);
 
 	GIVEN("a query buffer limit of 64 bytes (TC-281)") {
-		Rig rig(threaded, NetLimits{.max_query_buffer = QUERY_LIMIT});
+		Rig rig(is_threaded, NetLimits{.max_query_buffer = QUERY_LIMIT});
 
 		WHEN("three requests arrive in one read") {
 			const std::string replies =
@@ -170,8 +170,8 @@ SCENARIO("Inline and threaded conversations answer alike",
 
 		// What a conversation says of the whole stream when it arrives cut at
 		// \p cut: the replies, and whether it ended.
-		const auto run = [&](bool threaded, size_t cut) {
-			Rig rig(threaded);
+		const auto run = [&](bool is_threaded, size_t cut) {
+			Rig rig(is_threaded);
 			std::string replies = rig.answer(stream.substr(0, cut));
 			if (!rig.conversation.is_over())
 				replies += rig.answer(stream.substr(cut));
@@ -192,11 +192,11 @@ SCENARIO("Inline and threaded conversations answer alike",
 
 SCENARIO("A conversation ends when a client breaks a limit",
 		 "[net][conversation]") {
-	const bool threaded = GENERATE(false, true);
-	CAPTURE(threaded);
+	const bool is_threaded = GENERATE(false, true);
+	CAPTURE(is_threaded);
 
 	GIVEN("a query buffer limit of 64 bytes (TC-283)") {
-		Rig rig(threaded, NetLimits{.max_query_buffer = QUERY_LIMIT});
+		Rig rig(is_threaded, NetLimits{.max_query_buffer = QUERY_LIMIT});
 		// A bulk string of 100 bytes, begun: it stays incomplete.
 		std::string partial = "*1\r\n$100\r\n";
 		partial.resize(QUERY_LIMIT, 'x');
@@ -222,7 +222,7 @@ SCENARIO("A conversation ends when a client breaks a limit",
 	}
 
 	GIVEN("an output limit of 200 bytes and a value of 100 bytes (TC-284)") {
-		Rig rig(threaded, NetLimits{.max_output_buffer = OUTPUT_LIMIT});
+		Rig rig(is_threaded, NetLimits{.max_output_buffer = OUTPUT_LIMIT});
 		rig.server.run({"SET", "x", std::string(VALUE_SIZE, 'v')});
 		std::string requests;
 		for (size_t i = 0; i < PIPELINED_GETS; ++i) requests += "GET x\r\n";
@@ -250,7 +250,7 @@ SCENARIO("A conversation ends when a client breaks a limit",
 	}
 
 	GIVEN("room for every reply") {
-		Rig rig(threaded);
+		Rig rig(is_threaded);
 		rig.server.run({"SET", "x", std::string(VALUE_SIZE, 'v')});
 		std::string requests;
 		for (size_t i = 0; i < PIPELINED_GETS; ++i) requests += "GET x\r\n";
@@ -264,9 +264,9 @@ SCENARIO("A conversation ends when a client breaks a limit",
 
 SCENARIO("A protocol error ends a conversation after the replies before it",
 		 "[net][conversation]") {
-	const bool threaded = GENERATE(false, true);
-	CAPTURE(threaded);
-	Rig rig(threaded);
+	const bool is_threaded = GENERATE(false, true);
+	CAPTURE(is_threaded);
+	Rig rig(is_threaded);
 
 	GIVEN("a valid request, then a malformed one (TC-285)") {
 		const std::string replies = rig.answer("PING ok\r\n*1\r\n$3\r\nabcXY");
@@ -281,9 +281,9 @@ SCENARIO("A protocol error ends a conversation after the replies before it",
 }
 
 SCENARIO("Timeouts and failures end a conversation", "[net][conversation]") {
-	const bool threaded = GENERATE(false, true);
-	CAPTURE(threaded);
-	Rig rig(threaded);
+	const bool is_threaded = GENERATE(false, true);
+	CAPTURE(is_threaded);
+	Rig rig(is_threaded);
 
 	GIVEN("a client that has said nothing for 30 seconds (TC-287)") {
 		rig.conversation.count_idle_timeout_and_end(30s);

@@ -82,11 +82,11 @@ public:
 
 	BasicSimpleDynamicString &operator=(const BasicSimpleDynamicString &other) {
 		if (this == &other) return *this;
-		constexpr bool propagate =
+		constexpr bool is_propagating =
 			allocator_traits::propagate_on_container_copy_assignment::value;
-		BasicSimpleDynamicString copy(other, propagate ? other.alloc_ : alloc_);
+		BasicSimpleDynamicString copy(other, is_propagating ? other.alloc_ : alloc_);
 		release();
-		if constexpr (propagate) alloc_ = copy.alloc_;
+		if constexpr (is_propagating) alloc_ = copy.alloc_;
 		buf_ = std::exchange(copy.buf_, nullptr);
 		return *this;
 	}

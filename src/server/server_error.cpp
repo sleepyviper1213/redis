@@ -33,13 +33,13 @@ std::string display(const ServerError &error) {
 	return "server error";
 }
 
-std::string debug_repr(const ServerError &error, bool pretty) {
+std::string debug_repr(const ServerError &error, bool is_pretty) {
 	std::vector<DebugField> fields;
 	std::visit(
 		[&]<typename T>(const T &source) {
 			if constexpr (!std::is_same_v<std::decay_t<T>, std::monostate>)
 				fields.emplace_back("source",
-									pretty ? fmt::format("{:#?}", source)
+									is_pretty ? fmt::format("{:#?}", source)
 										   : fmt::format("{:?}", source));
 		},
 		error.source);
@@ -47,7 +47,7 @@ std::string debug_repr(const ServerError &error, bool pretty) {
 		fields.emplace_back("detail", fmt::format("{:?}", error.detail));
 
 	const auto kind = enum_name(error.kind);
-	return debug_struct(fmt::format("ServerKind::{}", kind), fields, pretty);
+	return debug_struct(fmt::format("ServerKind::{}", kind), fields, is_pretty);
 }
 
 } // namespace redis

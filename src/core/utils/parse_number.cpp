@@ -26,9 +26,9 @@ std::expected<T, std::errc> parse_whole(std::string_view s) {
 /// Whether \p s spells its number with a leading zero ("007", "-0"), which
 /// Redis' string2ll rejects: "0" alone is the only number starting with one.
 bool has_leading_zero(std::string_view s) {
-	const bool negative           = s.starts_with('-');
-	const std::string_view digits = negative ? s.substr(1) : s;
-	return digits.starts_with('0') && (digits.size() > 1 || negative);
+	const bool is_negative           = s.starts_with('-');
+	const std::string_view digits = is_negative ? s.substr(1) : s;
+	return digits.starts_with('0') && (digits.size() > 1 || is_negative);
 }
 } // namespace
 

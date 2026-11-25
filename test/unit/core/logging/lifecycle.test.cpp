@@ -19,7 +19,7 @@ void restore_test_logging() {
 	redis::logging::init({.level    = "off",
 						  .log_file = "",
 						  .channels = redis::logging::channel_names(),
-						  .async    = false});
+						  .is_async    = false});
 }
 } // namespace
 
@@ -28,9 +28,9 @@ TEST_CASE("shutting down the async logger writes out everything queued",
 	redis::logging::shutdown(); // the suite's logger
 	const redis::test::TempFile file;
 	redis::logging::init({.level    = "warn",
-						  .log_file = file.path().string(),
+						  .log_file = file.path(),
 						  .channels = redis::logging::channel_names(),
-						  .async    = true});
+						  .is_async    = true});
 
 	constexpr int LINES = 200;
 	for (int i = 0; i < LINES; ++i) spdlog::warn("line {} of {}", i, LINES);

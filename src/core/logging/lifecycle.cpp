@@ -88,7 +88,7 @@ private:
 ///        from "was it what you asked for".
 struct level_choice {
 	spdlog::level::level_enum level = spdlog::level::info;
-	bool recognised                 = true;
+	bool is_recognised                 = true;
 };
 
 /**
@@ -102,8 +102,8 @@ struct level_choice {
 [[nodiscard]] level_choice read_level(const std::string &name) {
 	const auto parsed = spdlog::level::from_str(name);
 	if (parsed != spdlog::level::off || name == "off")
-		return {.level = parsed, .recognised = true};
-	return {.level = spdlog::level::info, .recognised = false};
+		return {.level = parsed, .is_recognised = true};
+	return {.level = spdlog::level::info, .is_recognised = false};
 }
 
 /**
@@ -128,10 +128,10 @@ struct level_choice {
 	// losing the file sink costs a log, failing to start costs the service.
 	try {
 		sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(
-			config.log_file));
+			config.log_file.string()));
 	} catch (const std::exception &error) {
 		degraded = fmt::format("log file '{}' unavailable ({}); stderr only",
-							   config.log_file,
+							   config.log_file.string(),
 							   error.what());
 	}
 	return sinks;
@@ -150,7 +150,7 @@ struct level_choice {
 [[nodiscard]] std::shared_ptr<spdlog::logger>
 make_logger_object(const settings &config,
 				   std::vector<spdlog::sink_ptr> sinks) {
-	if (!config.async)
+	if (!config.is_async)
 		return std::make_shared<spdlog::logger>(config.logger_name,
 												sinks.begin(),
 												sinks.end());
@@ -173,7 +173,7 @@ make_logger_object(const settings &config,
 make_logger(const settings &config, std::vector<spdlog::sink_ptr> sinks,
 			spdlog::level::level_enum level) {
 	auto logger = make_logger_object(config, std::move(sinks));
-	if (config.structured) {
+	if (config.is_structured) {
 		logger->set_formatter(std::make_unique<json_line_formatter>());
 	} else {
 		// %^…%$ colours the console sink; the file sink ignores the markers.
@@ -204,7 +204,7 @@ void init(const settings &config) {
 		spdlog::warn("unknown log level '{}'; falling back to info",
 					 config.level);
 
-	const char *const delivery = config.async ? "async" : "sync";
+	const char *const delivery = config.is_async ? "async" : "sync";
 	if (config.log_file.empty())
 		spdlog::debug("logging initialised at level '{}' ({}, stderr)",
 					  config.level,
@@ -213,7 +213,7 @@ void init(const settings &config) {
 		spdlog::debug("logging initialised at level '{}' ({}, stderr + {})",
 					  config.level,
 					  delivery,
-					  config.log_file);
+					  config.log_file.string());
 }
 
 bool set_level(std::string_view name) {

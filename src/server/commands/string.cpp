@@ -34,7 +34,7 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 
 struct SetOptions {
-	bool nx = false, xx = false, get = false, keep_ttl = false;
+	bool is_nx = false, is_xx = false, is_get = false, is_keep_ttl = false;
 	std::optional<DateTime> deadline;
 };
 
@@ -91,15 +91,15 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 								 [arg](const ExpiryOption &option) {
 									 return iequals(arg, option.name);
 								 });
-		if (iequals(arg, "NX") && !opts.xx) {
-			opts.nx = true;
-		} else if (iequals(arg, "XX") && !opts.nx) {
-			opts.xx = true;
+		if (iequals(arg, "NX") && !opts.is_xx) {
+			opts.is_nx = true;
+		} else if (iequals(arg, "XX") && !opts.is_nx) {
+			opts.is_xx = true;
 		} else if (iequals(arg, "GET")) {
-			opts.get = true;
+			opts.is_get = true;
 		} else if (iequals(arg, "KEEPTTL") && chosen == nullptr) {
-			opts.keep_ttl = true;
-		} else if (expiry != EXPIRY_OPTIONS.end() && !opts.keep_ttl &&
+			opts.is_keep_ttl = true;
+		} else if (expiry != EXPIRY_OPTIONS.end() && !opts.is_keep_ttl &&
 				   (chosen == nullptr || chosen == &*expiry) &&
 				   i + 1 < args.size()) {
 			chosen      = &*expiry;
@@ -138,21 +138,21 @@ Value set(CommandContext &ctx, Args args) {
 	// A plain SET (no NX, XX or GET) overwrites whatever is there, so it does
 	// not need to look the key up first; the set() below does the one lookup.
 	Value previous = reply::nil(); // the reply of SET ... GET
-	if (opts->nx || opts->xx || opts->get) {
+	if (opts->is_nx || opts->is_xx || opts->is_get) {
 		const auto current = ctx.db.find_string(key);
 		// SET ... GET must read a string first.
-		if (!current && opts->get) {
+		if (!current && opts->is_get) {
 			return reply::wrong_type();
 		}
-		const bool exists = !current || *current != nullptr;
+		const bool is_existing = !current || *current != nullptr;
 
 		// With GET, the reply is the previous value (or nil) instead of OK. It
 		// is copied now, before the write below replaces what it views.
-		if (opts->get)
-			previous = exists ? reply::bulk((*current)->string()) : reply::nil();
+		if (opts->is_get)
+			previous = is_existing ? reply::bulk((*current)->string()) : reply::nil();
 
-		if ((opts->nx && exists) || (opts->xx && !exists))
-			return opts->get ? std::move(previous) : reply::nil();
+		if ((opts->is_nx && is_existing) || (opts->is_xx && !is_existing))
+			return opts->is_get ? std::move(previous) : reply::nil();
 	}
 
 	ctx.db.set(key, String(args[2]));
@@ -162,7 +162,7 @@ Value set(CommandContext &ctx, Args args) {
 		// read or swept (#48). Only the EXPIRE family deletes at once.
 		(void)ctx.db.set_expiry(key, DeadlineTimer::at(*opts->deadline),
 								Database::PastDeadline::Keep);
-	} else if (!opts->keep_ttl) ctx.db.persist(key);
+	} else if (!opts->is_keep_ttl) ctx.db.persist(key);
 
 	// EX and PX are relative to now, which a replay does not share: log the
 	// deadline itself. NX, XX and GET are dropped; they only decided to get
@@ -173,7 +173,7 @@ Value set(CommandContext &ctx, Args args) {
 		ctx.aof->replace({"SET", key, args[2], "PXAT", fmt::to_string(at)});
 	}
 
-	return opts->get ? std::move(previous) : reply::ok();
+	return opts->is_get ? std::move(previous) : reply::ok();
 }
 
 Value get(CommandContext &ctx, Args args) {
@@ -287,15 +287,15 @@ Value strlen(CommandContext &ctx, Args args) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "SET", .fn = set, .arity = -3, .write = true},
+	CommandInfo{.name = "SET", .fn = set, .arity = -3, .is_write = true},
 	CommandInfo{.name = "GET", .fn = get, .arity = 2},
-	CommandInfo{.name = "INCR", .fn = incr, .arity = 2, .write = true},
-	CommandInfo{.name = "DECR", .fn = decr, .arity = 2, .write = true},
-	CommandInfo{.name = "INCRBY", .fn = incrby, .arity = 3, .write = true},
-	CommandInfo{.name = "DECRBY", .fn = decrby, .arity = 3, .write = true},
-	CommandInfo{.name = "MSET", .fn = mset, .arity = -3, .write = true},
+	CommandInfo{.name = "INCR", .fn = incr, .arity = 2, .is_write = true},
+	CommandInfo{.name = "DECR", .fn = decr, .arity = 2, .is_write = true},
+	CommandInfo{.name = "INCRBY", .fn = incrby, .arity = 3, .is_write = true},
+	CommandInfo{.name = "DECRBY", .fn = decrby, .arity = 3, .is_write = true},
+	CommandInfo{.name = "MSET", .fn = mset, .arity = -3, .is_write = true},
 	CommandInfo{.name = "MGET", .fn = mget, .arity = -2},
-	CommandInfo{.name = "APPEND", .fn = append, .arity = 3, .write = true},
+	CommandInfo{.name = "APPEND", .fn = append, .arity = 3, .is_write = true},
 	CommandInfo{.name = "STRLEN", .fn = strlen, .arity = 2},
 };
 } // namespace

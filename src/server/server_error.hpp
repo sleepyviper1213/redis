@@ -34,7 +34,7 @@ struct ServerError {
 /// `{}`: the sentence. `{:?}` / `{:#?}`: the kind, the source error in its own
 /// Debug form, and the detail. @see DisplayDebugFormatter
 [[nodiscard]] std::string display(const ServerError &error);
-[[nodiscard]] std::string debug_repr(const ServerError &error, bool pretty);
+[[nodiscard]] std::string debug_repr(const ServerError &error, bool is_pretty);
 
 } // namespace redis
 

@@ -29,7 +29,7 @@ struct CommandContext {
 	AppendOnlyFile *aof = nullptr;
 	/// Whether CONFIG SET may change settings. Off unless the operator asks
 	/// (--enable-config-set): any client could otherwise change them.
-	bool config_set_enabled = false;
+	bool is_config_set_enabled = false;
 	/// Counted by the dispatcher and reported by INFO; null in a bare context.
 	ServerStats *stats = nullptr;
 	/// Connection counts and limits for INFO; null when there is no network.
@@ -93,7 +93,7 @@ struct CommandInfo {
 	/// Changes the keyspace: logged to the append-only file when it succeeds.
 	/// A command that is not deterministic (it reads the clock, picks at
 	/// random) must say what to log instead, with AppendOnlyFile::replace().
-	bool write = false;
+	bool is_write = false;
 };
 
 /// Command tables, one per family. Each lives with its implementations.

@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -33,7 +34,7 @@ int log_fd = -1;
 
 /// Set by the first fatal signal; a second one (a fault inside the report)
 /// skips straight to the default action instead of recursing.
-std::atomic<bool> reporting{false};
+std::atomic<bool> is_reporting{false};
 
 constexpr std::array FATAL_SIGNALS{SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
 
@@ -43,7 +44,7 @@ constexpr unsigned REPORT_TIMEOUT_SECONDS = 3;
 /// Test seam for TC-301: set at install time from REDIS_TEST_CRASH_REPORT_HANG,
 /// it makes the report stop after its first line, as if a lock were held.
 /// Not a documented option.
-bool stall_report = false;
+bool is_stalling_report = false;
 
 /// A crash on a thread that has run out of stack needs another stack to
 /// report from. Covers the thread that installed the handler (main).
@@ -120,11 +121,11 @@ void on_report_timeout(int /*sig*/) {
 }
 
 void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
-	if (!reporting.exchange(true)) {
+	if (!is_reporting.exchange(true)) {
 		::alarm(REPORT_TIMEOUT_SECONDS);
 		out("\n\n=== REDIS BUG REPORT START: Cut & paste starting from "
 			"here ===\n");
-		if (stall_report) {
+		if (is_stalling_report) {
 			for (;;) ::pause(); // only SIGALRM gets us out
 		}
 		out("Crashed by signal: ");
@@ -169,8 +170,8 @@ void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 
 } // namespace
 
-void install_crash_handler(const std::string &log_file) {
-	stall_report = std::getenv("REDIS_TEST_CRASH_REPORT_HANG") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
+void install_crash_handler(const std::filesystem::path &log_file) {
+	is_stalling_report = std::getenv("REDIS_TEST_CRASH_REPORT_HANG") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
 
 	if (!log_file.empty())
 		log_fd = ::open(log_file.c_str(),

@@ -72,17 +72,17 @@ template <Acceptor A>
 class [[nodiscard]] BasicListener {
 public:
 	/**
-	 * \p services is shared with every session. With \p concurrent false only
+	 * \p services is shared with every session. With \p is_concurrent false only
 	 * one thread runs \p ex, so the per-client strands that serialize
 	 * handlers are left out: a strand costs a lock and a queue hop on every
 	 * completion. Call listen() before run().
 	 */
 	BasicListener(const boost::asio::any_io_executor &ex,
-				  std::shared_ptr<Services> services, bool concurrent = true)
+				  std::shared_ptr<Services> services, bool is_concurrent = true)
 		requires std::constructible_from<
 			A, boost::asio::strand<boost::asio::any_io_executor>>
 		: BasicListener(A(boost::asio::make_strand(ex)), ex,
-						std::move(services), concurrent) {}
+						std::move(services), is_concurrent) {}
 
 	/**
 	 * \brief As above, accepting on \p acceptor: the injection point for a
@@ -90,7 +90,7 @@ public:
 	 * run on a strand of \p ex, where the accept loop runs.
 	 */
 	BasicListener(A acceptor, boost::asio::any_io_executor ex,
-				  std::shared_ptr<Services> services, bool concurrent = true);
+				  std::shared_ptr<Services> services, bool is_concurrent = true);
 
 	/// Bind and listen on \p host:\p port (IPv4). Fails when the port is in use
 	/// or \p host is not an address.
@@ -131,7 +131,7 @@ private:
 	A acceptor_;
 	std::shared_ptr<Services> services_;
 	/// Whether several threads run ex_, and so each client needs a strand.
-	bool concurrent_;
+	bool is_concurrent_;
 	/// Paces the accept loop after a failed accept, so it cannot spin. On the
 	/// acceptor's strand, like the rest of the loop.
 	boost::asio::steady_timer retry_timer_;

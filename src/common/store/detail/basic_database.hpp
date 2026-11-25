@@ -91,8 +91,8 @@ public:
 	 * past is stored rather than deleting its key, so the replay sees the
 	 * keyspace as it was. On again, due keys go the usual ways.
 	 */
-	void set_expiry_enabled(bool enabled) noexcept {
-		expiry_enabled_ = enabled;
+	void set_expiry_enabled(bool is_enabled) noexcept {
+		is_expiry_enabled_ = is_enabled;
 	}
 
 	/**
@@ -100,7 +100,7 @@ public:
 	 * AOF to log a DEL for each: a replay must not depend on when it runs.
 	 * Whoever turns this on must drain_expired() regularly.
 	 */
-	void track_expired(bool on) noexcept { track_expired_ = on; }
+	void track_expired(bool is_on) noexcept { is_tracking_expired_ = is_on; }
 
 	[[nodiscard]] bool has_expired() const noexcept {
 		return !expired_.empty();
@@ -293,10 +293,10 @@ public:
 	/// The conditions of EXPIRE's NX, XX, GT and LT options; none set means
 	/// always. A key without a deadline counts as infinite for GT and LT.
 	struct ExpireOptions {
-		bool nx = false; ///< only a key without a deadline
-		bool xx = false; ///< only a key with a deadline
-		bool gt = false; ///< only a later deadline; never without one
-		bool lt = false; ///< only an earlier deadline; always without one
+		bool is_nx = false; ///< only a key without a deadline
+		bool is_xx = false; ///< only a key with a deadline
+		bool is_gt = false; ///< only a later deadline; never without one
+		bool is_lt = false; ///< only an earlier deadline; always without one
 	};
 
 	/// What set_expiry() did.
@@ -320,8 +320,8 @@ public:
 		owner_.check();
 		if (!contains(key)) return ExpiryResult::Refused;
 		const auto old = expires_.find(key);
-		if (!allows(options, old, timer)) return ExpiryResult::Refused;
-		if (expiry_enabled_ && past == PastDeadline::Delete &&
+		if (!is_allowed(options, old, timer)) return ExpiryResult::Refused;
+		if (is_expiry_enabled_ && past == PastDeadline::Delete &&
 			timer.has_expired()) {
 			erase(key);
 			return ExpiryResult::Deleted;
@@ -364,7 +364,7 @@ public:
 	 */
 	size_t active_expire_cycle(size_t max_keys) {
 		owner_.check();
-		if (!expiry_enabled_) return 0;
+		if (!is_expiry_enabled_) return 0;
 		const auto now = DateTime::current();
 		size_t removed = 0;
 		while (removed < max_keys && !by_deadline_.empty() &&
@@ -406,23 +406,23 @@ private:
 
 	/// Whether \p options let a key, whose deadline is at \p it (end() if it
 	/// has none), get the deadline \p timer.
-	[[nodiscard]] bool allows(ExpireOptions options,
+	[[nodiscard]] bool is_allowed(ExpireOptions options,
 							  KeyMap<time_point>::const_iterator it,
 							  DeadlineTimer timer) const {
-		if (!(options.nx || options.xx || options.gt || options.lt))
+		if (!(options.is_nx || options.is_xx || options.is_gt || options.is_lt))
 			return true;
-		const bool has     = it != expires_.end();
-		const auto current = has ? it->second : time_point{};
-		if (options.nx && has) return false;
-		if (options.xx && !has) return false;
-		if (options.gt && (!has || timer.deadline() <= current)) return false;
-		if (options.lt && has && timer.deadline() >= current) return false;
+		const bool has_deadline     = it != expires_.end();
+		const auto current = has_deadline ? it->second : time_point{};
+		if (options.is_nx && has_deadline) return false;
+		if (options.is_xx && !has_deadline) return false;
+		if (options.is_gt && (!has_deadline || timer.deadline() <= current)) return false;
+		if (options.is_lt && has_deadline && timer.deadline() >= current) return false;
 		return true;
 	}
 
 	/// Remove \p key if its deadline has passed. \return true if removed.
 	bool expire_if_due(std::string_view key) {
-		if (!expiry_enabled_ || expires_.empty()) return false;
+		if (!is_expiry_enabled_ || expires_.empty()) return false;
 		const auto it = expires_.find(key);
 		if (it == expires_.end() ||
 			!DeadlineTimer::at(it->second).has_expired())
@@ -434,7 +434,7 @@ private:
 
 	void note_expired(std::string_view key) {
 		++expired_count_;
-		if (track_expired_) expired_.push_back(make_key(key));
+		if (is_tracking_expired_) expired_.push_back(make_key(key));
 	}
 
 	void erase_deadline(KeyMap<time_point>::iterator it) {
@@ -450,8 +450,8 @@ private:
 	uint64_t hits_          = 0;
 	uint64_t misses_        = 0;
 	uint64_t expired_count_ = 0;
-	bool expiry_enabled_    = true;
-	bool track_expired_     = false;
+	bool is_expiry_enabled_    = true;
+	bool is_tracking_expired_     = false;
 	REDIS_NO_UNIQUE_ADDRESS ThreadOwner owner_;
 };
 

@@ -39,10 +39,10 @@ namespace {
  */
 class SessionFixture {
 public:
-	/// With \p threaded, commands run on a keyspace thread of their own (as
+	/// With \p is_threaded, commands run on a keyspace thread of their own (as
 	/// with --io-threads above 1); otherwise inline on the session's thread.
-	explicit SessionFixture(NetLimits limits = {}, bool threaded = false)
-		: services_(std::make_shared<Services>(file_.path(), threaded,
+	explicit SessionFixture(NetLimits limits = {}, bool is_threaded = false)
+		: services_(std::make_shared<Services>(file_.path(), is_threaded,
 											   std::nullopt, limits)),
 		  sessions_(context_.executor()),
 		  client(connect_and_serve()) {}

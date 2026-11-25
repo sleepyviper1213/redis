@@ -232,7 +232,7 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 			// shadow memory is copy-on-write) and the suite runs in parallel.
 			// A passing run leaves the loop as soon as the child is reaped.
 			for (int i = 0;
-				 i < 1000 && server.persistence.background_save_in_progress();
+				 i < 1000 && server.persistence.is_background_save_in_progress();
 				 ++i) {
 				std::this_thread::sleep_for(10ms);
 				server.persistence.poll();
@@ -242,7 +242,7 @@ SCENARIO("Saving in the background", "[persistence][commands][fork]") {
 				CHECK(reply == "+Background saving started\r\n");
 				CHECK(overlap ==
 					  "-ERR Background save already in progress\r\n");
-				CHECK_FALSE(server.persistence.background_save_in_progress());
+				CHECK_FALSE(server.persistence.is_background_save_in_progress());
 
 				test::Server restored;
 				REQUIRE(persistence::detail::load_snapshot(restored.db,
@@ -292,7 +292,7 @@ SCENARIO("A snapshot keeps absolute deadlines",
 			test::Server restored;
 			REQUIRE(persistence::detail::load_snapshot(restored.db,
 													   server.dump.path(),
-													   /*keep_expired=*/true));
+													   /*is_keeping_expired=*/true));
 
 			THEN("the key is still there, with its deadline") {
 				CHECK(restored.db.size() == 2);

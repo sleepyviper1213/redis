@@ -62,7 +62,7 @@ SCENARIO("CONFIG SET is off unless the operator enables it",
 		 "[commands][config][security]") {
 	GIVEN("a server started without --enable-config-set") {
 		test::Server server;
-		server.ctx.config_set_enabled = false;
+		server.ctx.is_config_set_enabled = false;
 		REQUIRE(logging::set_level("info"));
 
 		WHEN("a client tries to change the log level") {

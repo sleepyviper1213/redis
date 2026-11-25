@@ -25,7 +25,7 @@ bool Conversation::ingest_read_bytes(size_t bytes) {
 	// far as it goes, so there is nothing to run and no timer to arm.
 	if (bytes == 0) return false;
 	assert(bytes <= chunk_.size() && "more bytes than read_buffer() holds");
-	assert(!done_ && "a finished conversation is not fed");
+	assert(!is_done_ && "a finished conversation is not fed");
 	// Only a threaded conversation keeps its batch between reads: an inline
 	// one parses, executes and drops it in execute_ingested_requests().
 	assert((parts_.is_threaded || batch_.size() == 0) &&
@@ -39,7 +39,7 @@ bool Conversation::ingest_read_bytes(size_t bytes) {
 		parts_.guard.record(Violation::QueryBufferFull,
 								  peer_,
 								  pending_.size());
-		done_ = true;
+		is_done_ = true;
 		return false;
 	}
 	// Without an executor thread, execute_pending parses and executes in one.
@@ -71,14 +71,14 @@ void Conversation::execute_ingested_requests() {
 												  max_output);
 	assert((parts_.is_threaded || batch_.size() == 0) &&
 		   "execute_pending leaves its batch empty");
-	if (after_ == AfterReplies::Close) done_ = true;
+	if (after_ == AfterReplies::Close) is_done_ = true;
 	if (!parts_.guard.check_output(replies_.size())) {
 		// Nobody is going to read this much: drop it with the client.
 		parts_.guard.record(Violation::OutputBufferFull,
 								  peer_,
 								  replies_.size());
 		replies_.clear();
-		done_ = true;
+		is_done_ = true;
 	}
 }
 
@@ -91,7 +91,7 @@ void Conversation::count_idle_timeout_and_end(std::chrono::seconds limit) {
 	parts_.guard.record(Violation::IdleTimeout,
 							  peer_,
 							  static_cast<size_t>(limit.count()));
-	done_ = true;
+	is_done_ = true;
 }
 
 void Conversation::count_request_timeout(std::chrono::seconds limit) {
@@ -103,10 +103,10 @@ void Conversation::count_request_timeout(std::chrono::seconds limit) {
 
 void Conversation::drop_replies_and_end() noexcept {
 	replies_.clear();
-	done_ = true;
+	is_done_ = true;
 }
 
-[[nodiscard]] bool Conversation::is_over() const noexcept { return done_; }
+[[nodiscard]] bool Conversation::is_over() const noexcept { return is_done_; }
 
 [[nodiscard]] std::string_view Conversation::peer() const noexcept {
 	return peer_;

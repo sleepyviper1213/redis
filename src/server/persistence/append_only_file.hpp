@@ -96,7 +96,7 @@ public:
 	 * (as DEL, before the command, which may have found them gone), then, if
 	 * \p logged, the command itself - or what replace() set in its place.
 	 */
-	void command_ran(Database &db, bool logged, Args args);
+	void command_ran(Database &db, bool is_logged, Args args);
 
 	/// Log \p args instead of the command's own arguments. Call from a command
 	/// while it runs, and only when `ctx.aof` is set.
@@ -112,14 +112,14 @@ public:
 	/// discard()), whether or not it reached command_ran().
 	void command_starting() noexcept {
 		replaced_.clear();
-		discarded_ = false;
+		is_discarded_ = false;
 	}
 
 	/// Log nothing for the command that is running: it did not change the
 	/// keyspace, and what it was told (EXPIRE ... GT, say) could change it on a
 	/// replay. Call from a command while it runs, and only when `ctx.aof` is
 	/// set.
-	void discard() noexcept { discarded_ = true; }
+	void discard() noexcept { is_discarded_ = true; }
 
 	/// Log the keys that expired since the last call (the periodic tick).
 	void log_expired(Database &db);
@@ -144,7 +144,7 @@ public:
 	/// Kill a running rewrite and clean up after it.
 	void cancel_rewrite();
 
-	[[nodiscard]] bool rewrite_in_progress() const noexcept;
+	[[nodiscard]] bool is_rewrite_in_progress() const noexcept;
 
 	[[nodiscard]] FsyncPolicy fsync_policy() const noexcept;
 
@@ -159,7 +159,7 @@ private:
 	};
 
 	[[nodiscard]] static std::expected<void, persistence::PersistError>
-	replay(const std::filesystem::path &file, bool last, CommandContext &ctx,
+	replay(const std::filesystem::path &file, bool is_last, CommandContext &ctx,
 		   const CommandHandler &handler, size_t &commands);
 
 	[[nodiscard]] std::expected<void, persistence::PersistError>
@@ -189,7 +189,7 @@ private:
 
 	std::string buf_;      ///< logged but not yet written
 	std::string replaced_; ///< what replace() set, until command_ran() takes it
-	bool discarded_ = false; ///< discard() was called, until command_ran()
+	bool is_discarded_ = false; ///< discard() was called, until command_ran()
 	/// The incremental file being appended to. Shared with the sync thread,
 	/// which keeps it open while it syncs even if a rewrite has moved on to the
 	/// next one. Replaced only under mutex_, and only by the keyspace thread.
@@ -197,9 +197,9 @@ private:
 	std::filesystem::path incr_path_; ///< out_'s name, for messages
 	uintmax_t good_size_ = 0; ///< bytes of out_ known to be whole commands
 
-	// The once-a-second sync: dirty_ says there is something to sync; the file
+	// The once-a-second sync: is_dirty_ says there is something to sync; the file
 	// is out_, read under mutex_.
-	std::atomic<bool> dirty_{false};
+	std::atomic<bool> is_dirty_{false};
 	std::mutex mutex_;
 	std::condition_variable_any wake_;
 	std::jthread syncer_;

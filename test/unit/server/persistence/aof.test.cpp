@@ -385,12 +385,12 @@ SCENARIO("Rewriting the log", "[aof][rewrite][fork]") {
 				REQUIRE(server.aof.start_rewrite(server.db).has_value());
 				server.run(
 					{"INCR", "counter"}); // after the fork: not in the base
-				for (int i = 0; i < MAX_POLLS && server.aof.rewrite_in_progress();
+				for (int i = 0; i < MAX_POLLS && server.aof.is_rewrite_in_progress();
 					 ++i) {
 					std::this_thread::sleep_for(10ms);
 					server.aof.poll();
 				}
-				REQUIRE_FALSE(server.aof.rewrite_in_progress());
+				REQUIRE_FALSE(server.aof.is_rewrite_in_progress());
 
 				THEN("the files are one base and one short incremental log") {
 					const auto files = server.aof.files();

@@ -68,7 +68,7 @@ private:
 /// How a child ended.
 struct ChildResult {
 	/// It exited with status 0.
-	bool success = false;
+	bool is_successful = false;
 	/// Why it did not, when it did not: the child's own message if it got to
 	/// write one, otherwise how the process ended ("killed by signal 9").
 	std::string error;
@@ -97,7 +97,7 @@ std::expected<Child, std::error_code> fork_and_run(Task &&task);
  * \return std::nullopt while the child is still running; otherwise how it
  *         ended. Leaves \p child's pipe open; destroy the Child to close it.
  */
-[[nodiscard]] std::optional<ChildResult> reap(const Child &child, bool wait);
+[[nodiscard]] std::optional<ChildResult> reap(const Child &child, bool is_waiting);
 
 /**
  * \brief Kill \p child with SIGKILL. Not a catchable signal: the child is a
@@ -137,7 +137,7 @@ namespace detail {
 [[nodiscard]] std::expected<Child, std::error_code> fork_process();
 /// Send \p error (cut to fit the pipe) on \p report_fd, then end the process
 /// without running anything of the parent's.
-[[noreturn]] void exit_child(int report_fd, bool success,
+[[noreturn]] void exit_child(int report_fd, bool is_successful,
 							 std::string_view error) noexcept;
 } // namespace detail
 
@@ -145,11 +145,11 @@ template <typename Task>
 std::expected<Child, std::error_code> fork_and_run(Task &&task) {
 	auto child = detail::fork_process();
 	if (child && child->pid() == 0) {
-		bool success = false;
+		bool is_successful = false;
 		std::string error;
 		try {
 			const auto result = task();
-			success           = result.has_value();
+			is_successful           = result.has_value();
 			if (!result) error = fmt::format("{}", result.error());
 		} catch (const std::exception &e) {
 			// Not rethrown: unwinding would run the parent's destructors in
@@ -158,7 +158,7 @@ std::expected<Child, std::error_code> fork_and_run(Task &&task) {
 		} catch (...) {
 			error = "unknown exception";
 		}
-		detail::exit_child(child->report_fd(), success, error);
+		detail::exit_child(child->report_fd(), is_successful, error);
 	}
 	return child;
 }

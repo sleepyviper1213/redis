@@ -18,9 +18,9 @@ namespace redis {
 ///   PersistKind::CannotOpen { cause: generic:13 "Permission denied", path: "x"
 ///   }
 ///
-/// and with \p pretty one field to a line, indented.
+/// and with \p is_pretty one field to a line, indented.
 template <typename Kind>
-std::string debug_repr(const Failure<Kind> &error, bool pretty) {
+std::string debug_repr(const Failure<Kind> &error, bool is_pretty) {
 	std::string name = fmt::format("{}::", enum_type_name<Kind>());
 	if (const auto enumerator = enum_name(error.kind); !enumerator.empty())
 		name += enumerator;
@@ -41,7 +41,7 @@ std::string debug_repr(const Failure<Kind> &error, bool pretty) {
 	if (!error.quoted.empty())
 		fields.emplace_back("quoted", fmt::format("{:?}", error.quoted));
 
-	return debug_struct(name, fields, pretty);
+	return debug_struct(name, fields, is_pretty);
 }
 
 } // namespace redis

@@ -75,10 +75,10 @@ ConnectionError connection_error(ConnectionKind kind,
 }
 
 IoFailureReport report_for(const ConnectionError &failure,
-						   bool socket_open) noexcept {
+						   bool is_socket_open) noexcept {
 	if (failure.cause == boost::system::error_code(boost::asio::error::eof))
 		return IoFailureReport::ClientLeft;
-	return socket_open ? IoFailureReport::Failure
+	return is_socket_open ? IoFailureReport::Failure
 					   : IoFailureReport::AfterServerClose;
 }
 

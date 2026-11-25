@@ -24,11 +24,11 @@ namespace redis {
 template <Acceptor A>
 BasicListener<A>::BasicListener(A acceptor, boost::asio::any_io_executor ex,
 								std::shared_ptr<Services> services,
-								bool concurrent)
+								bool is_concurrent)
 	: ex_(std::move(ex)),
 	  acceptor_(std::move(acceptor)),
 	  services_(std::move(services)),
-	  concurrent_(concurrent),
+	  is_concurrent_(is_concurrent),
 	  // On the acceptor's strand: the loop resumes where the wait completes,
 	  // and must stay serialized with stop()'s close.
 	  retry_timer_(acceptor_.get_executor()),
@@ -74,7 +74,7 @@ stdexec_ext::InlineTask<void> BasicListener<A>::run() {
 			BasicListener &listener = listener_;
 			return just() | let_value([&listener] {
 					   return listener.acceptor_.async_accept(
-						   listener.concurrent_
+						   listener.is_concurrent_
 							   ? boost::asio::any_io_executor(
 									 boost::asio::make_strand(listener.ex_))
 							   : listener.ex_,

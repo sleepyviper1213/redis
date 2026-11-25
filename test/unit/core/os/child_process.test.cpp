@@ -30,7 +30,7 @@ os::ChildResult reap_within(const os::Child &child, std::chrono::seconds limit) 
 	}
 	os::kill_child(child.pid());
 	(void)os::reap(child, true);
-	return {.success = false, .error = "the child hung"};
+	return {.is_successful = false, .error = "the child hung"};
 }
 
 bool is_open(int fd) { return ::fcntl(fd, F_GETFD) != -1; }
@@ -53,7 +53,7 @@ TEST_CASE("a child keeps the descriptors it is told to, and no others",
 	REQUIRE(child);
 	const auto result = reap_within(*child, std::chrono::seconds(10));
 	CHECK(result.error == "");
-	CHECK(result.success);
+	CHECK(result.is_successful);
 	// The parent's copies are untouched.
 	CHECK(is_open(kept));
 	CHECK(is_open(dropped));
@@ -99,7 +99,7 @@ TEST_CASE("a child allocates freely though other threads were allocating at "
 		});
 		REQUIRE(child);
 		if (auto result = reap_within(*child, std::chrono::seconds(10));
-			!result.success)
+			!result.is_successful)
 			failure = std::move(result);
 	}
 	stop = true;

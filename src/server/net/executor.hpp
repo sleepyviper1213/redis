@@ -25,9 +25,9 @@ namespace redis {
  */
 class Executor {
 public:
-	/// \param threaded Start the dedicated thread; otherwise run_on() is
+	/// \param is_threaded Start the dedicated thread; otherwise run_on() is
 	/// inline.
-	explicit Executor(bool threaded);
+	explicit Executor(bool is_threaded);
 
 	Executor(const Executor &)            = delete;
 	Executor &operator=(const Executor &) = delete;

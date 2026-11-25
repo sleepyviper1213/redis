@@ -24,7 +24,7 @@ struct Server {
 	ServerStats stats;
 	CommandContext ctx{.db                 = db,
 					   .persistence        = persistence,
-					   .config_set_enabled = true,
+					   .is_config_set_enabled = true,
 					   .stats              = &stats};
 
 	/// Run one command and return the RESP-encoded reply, exactly the bytes

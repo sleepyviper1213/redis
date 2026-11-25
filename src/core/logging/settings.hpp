@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -21,7 +22,7 @@ struct settings {
 
 	/// Logs always go to stderr; when this is non-empty they also go here.
 	/// Empty disables the file sink.
-	std::string log_file = "redis_server.log";
+	std::filesystem::path log_file = "redis_server.log";
 
 	std::string logger_name = "redis";
 
@@ -40,7 +41,7 @@ struct settings {
 	 * is escaped, including the message, so a payload containing a quote or a
 	 * newline (a client's key, say) cannot break its line into two.
 	 */
-	bool structured = false;
+	bool is_structured = false;
 
 	/**
 	 * @brief Ring buffer of recent messages held back for @c dump_backtrace.
@@ -71,7 +72,7 @@ struct settings {
 	 * so an orderly exit loses nothing. Set this false to get synchronous
 	 * behaviour back while debugging something that kills the process.
 	 */
-	bool async = true;
+	bool is_async = true;
 
 	/**
 	 * @brief Lines the async queue holds before the overflow policy applies.

@@ -49,7 +49,7 @@ std::string read_report(int fd) {
 constexpr size_t MAX_KEPT_FDS = 4;
 std::array<int, MAX_KEPT_FDS> kept_fds{-1, -1, -1, -1};
 
-bool kept_open(int fd) {
+bool is_kept_open(int fd) {
 	return std::ranges::find(kept_fds, fd) != kept_fds.end();
 }
 
@@ -75,7 +75,7 @@ void close_inherited_descriptors(int keep) {
 			// in its own listing.
 			if (end != entry->d_name && *end == '\0' &&
 				fd >= FIRST_NON_STDIO_FD && fd != keep && fd != dir_fd &&
-				!kept_open(static_cast<int>(fd)))
+				!is_kept_open(static_cast<int>(fd)))
 				fds.push_back(static_cast<int>(fd));
 		}
 		::closedir(dir);
@@ -85,7 +85,7 @@ void close_inherited_descriptors(int keep) {
 		const long limit = open_max > 0 ? std::min(open_max, MAX_FALLBACK_FDS)
 										: MAX_FALLBACK_FDS;
 		for (int fd = FIRST_NON_STDIO_FD; fd < limit; ++fd)
-			if (fd != keep && !kept_open(fd)) fds.push_back(fd);
+			if (fd != keep && !is_kept_open(fd)) fds.push_back(fd);
 	}
 	for (const int fd : fds) ::close(fd);
 }
@@ -141,8 +141,8 @@ std::expected<Child, std::error_code> fork_process() {
 	return Child(pid, read_fd);
 }
 
-void exit_child(int report_fd, bool success, std::string_view error) noexcept {
-	if (!success && !error.empty()) {
+void exit_child(int report_fd, bool is_successful, std::string_view error) noexcept {
+	if (!is_successful && !error.empty()) {
 		// Best effort: if this fails there is nobody left to tell.
 		[[maybe_unused]] const ssize_t written =
 			::write(report_fd,
@@ -152,22 +152,22 @@ void exit_child(int report_fd, bool success, std::string_view error) noexcept {
 	// _exit, not exit: the child shares the parent's stdio buffers and
 	// static objects (loggers, sockets), which must not be flushed or
 	// destroyed twice.
-	::_exit(success ? 0 : 1);
+	::_exit(is_successful ? 0 : 1);
 }
 } // namespace detail
 
 pid_type current_pid() noexcept { return ::getpid(); }
 
 void keep_open_in_children(int fd) noexcept {
-	if (fd < 0 || kept_open(fd)) return;
+	if (fd < 0 || is_kept_open(fd)) return;
 	if (const auto free_slot = std::ranges::find(kept_fds, -1);
 		free_slot != kept_fds.end())
 		*free_slot = fd;
 }
 
-std::optional<ChildResult> reap(const Child &child, bool wait) {
+std::optional<ChildResult> reap(const Child &child, bool is_waiting) {
 	int status      = 0;
-	const int flags = wait ? 0 : WNOHANG;
+	const int flags = is_waiting ? 0 : WNOHANG;
 	pid_t result    = ::waitpid(child.pid(), &status, flags);
 	// A signal can interrupt the wait; just wait again.
 	while (result == -1 && errno == EINTR)
@@ -175,15 +175,15 @@ std::optional<ChildResult> reap(const Child &child, bool wait) {
 
 	if (result == 0) return std::nullopt; // still running
 	if (result == -1)
-		return ChildResult{.success = false,
+		return ChildResult{.is_successful = false,
 						   .error   = "the child is gone and its exit status "
 									  "was lost"};
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-		return ChildResult{.success = true, .error = {}};
+		return ChildResult{.is_successful = true, .error = {}};
 
 	// The child's own explanation if it wrote one; otherwise just how it ended
 	// (killed by a signal never gets to write).
-	ChildResult failed{.success = false,
+	ChildResult failed{.is_successful = false,
 					   .error   = read_report(child.report_fd())};
 	if (failed.error.empty())
 		failed.error =

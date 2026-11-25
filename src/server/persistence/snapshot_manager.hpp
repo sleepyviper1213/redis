@@ -52,7 +52,7 @@ public:
 	[[nodiscard]] std::expected<void, persistence::PersistError>
 	load(Database &db);
 
-	[[nodiscard]] bool background_save_in_progress() const noexcept;
+	[[nodiscard]] bool is_background_save_in_progress() const noexcept;
 
 	/// Time of the last successful snapshot; server start if there was none.
 	[[nodiscard]] DateTime last_snapshot() const noexcept;

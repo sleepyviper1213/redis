@@ -104,7 +104,7 @@ SnapshotManager::load(Database &db) {
 }
 
 [[nodiscard]] bool
-SnapshotManager::background_save_in_progress() const noexcept {
+SnapshotManager::is_background_save_in_progress() const noexcept {
 	return child_.has_value();
 }
 
@@ -120,7 +120,7 @@ SnapshotManager::file() const noexcept {
 void SnapshotManager::finish_background_save(
 	const os::ChildResult &result) {
 	const auto elapsed = child_timer_.elapsed();
-	if (result.success) {
+	if (result.is_successful) {
 		last_save_ = child_forked_at_; // the snapshot reflects fork time
 		log().info("Background saving terminated with success in {}", elapsed);
 	} else {

@@ -36,12 +36,12 @@ save_snapshot(const Database &db, const std::filesystem::path &file);
  *
  * A missing file is not an error: the server starts empty. Keys whose
  * deadline passed while the server was down are skipped - unless
- * \p keep_expired, for the base of an append-only file: the commands logged
+ * \p is_keeping_expired, for the base of an append-only file: the commands logged
  * after it may still refer to such keys, and are followed by the DEL that
  * removes them.
  */
 [[nodiscard]] std::expected<void, PersistError>
 load_snapshot(Database &db, const std::filesystem::path &file,
-			  bool keep_expired = false);
+			  bool is_keeping_expired = false);
 
 } // namespace redis::persistence::detail

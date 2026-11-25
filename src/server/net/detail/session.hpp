@@ -105,7 +105,7 @@ private:
 	/// of the race, which therefore do nothing but report.
 	struct Outcome {
 		std::optional<size_t> bytes; ///< Nothing once the session is over.
-		bool idle = false;           ///< The idle timer won.
+		bool is_idle = false;           ///< The idle timer won.
 	};
 #ifndef BOOST_ASIO_HAS_EPOLL
 	/// Reads what the socket has. Readiness can be spurious: that is a round

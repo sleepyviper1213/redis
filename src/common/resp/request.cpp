@@ -133,10 +133,10 @@ parse_request(std::string_view data, size_t &pos,
 	const auto is_argument = [](const Value &v) {
 		return v.is_bulk_string() || v.is_simple_string();
 	};
-	const bool well_formed =
+	const bool is_well_formed =
 		value->is_array() && !value->as_array().empty() &&
 		std::ranges::all_of(value->as_array(), is_argument);
-	if (!well_formed) return RequestKind::Malformed;
+	if (!is_well_formed) return RequestKind::Malformed;
 	for (const Value &arg : value->as_array())
 		args.push_back(owned.emplace_back(arg.as_string()));
 	return RequestKind::Command;

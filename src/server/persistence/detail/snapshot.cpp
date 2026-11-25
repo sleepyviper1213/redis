@@ -232,7 +232,7 @@ std::expected<void, PersistError> save_snapshot(const Database &db,
 }
 
 std::expected<void, PersistError>
-load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
+load_snapshot(Database &db, const fs::path &file, bool is_keeping_expired) {
 	// What is wrong with this file, for the places below that find something.
 	const auto bad = [&file](PersistKind kind,
 							 std::uint64_t at   = 0,
@@ -270,7 +270,7 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 	// Load into a scratch keyspace so a corrupt file leaves db untouched.
 	Database loaded;
 	// Stores a deadline in the past instead of deleting its key.
-	loaded.set_expiry_enabled(!keep_expired);
+	loaded.set_expiry_enabled(!is_keeping_expired);
 	const auto now = DateTime::current();
 	std::vector<char> buffer;
 	for (uint64_t n = *count; n > 0; --n) {
@@ -291,7 +291,7 @@ load_snapshot(Database &db, const fs::path &file, bool keep_expired) {
 			loaded.set(key, std::move(value));
 		} else if (const auto deadline =
 					   DateTime::from_msecs_since_epoch(*record->deadline_ms);
-				   keep_expired || deadline > now) {
+				   is_keeping_expired || deadline > now) {
 			loaded.set(key, std::move(value));
 			(void)loaded.set_expiry(key, DeadlineTimer::at(deadline));
 		}

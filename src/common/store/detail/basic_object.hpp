@@ -104,7 +104,7 @@ public:
 
 	BasicObject(const BasicObject &other, const Allocator &alloc)
 		: alloc_(alloc) {
-		if (!other.on_heap()) repr_ = other.repr_;
+		if (!other.is_on_heap()) repr_ = other.repr_;
 		else set_heap(other.type(), clone(other));
 	}
 
@@ -112,14 +112,14 @@ public:
 	/// it.
 	BasicObject(BasicObject &&other) noexcept
 		: alloc_(std::move(other.alloc_)), repr_(other.repr_) {
-		if (other.on_heap()) other.repr_.heap.ptr = nullptr;
+		if (other.is_on_heap()) other.repr_.heap.ptr = nullptr;
 	}
 
 	/// Takes the value over when \p alloc can free it; otherwise moves it into
 	/// storage from \p alloc.
 	BasicObject(BasicObject &&other, const Allocator &alloc)
 		: alloc_(alloc), repr_(other.repr_) {
-		if (!other.on_heap()) return;
+		if (!other.is_on_heap()) return;
 		if (traits::is_always_equal::value || alloc_ == other.alloc_) {
 			other.repr_.heap.ptr = nullptr;
 			return;
@@ -188,7 +188,7 @@ public:
 	[[nodiscard]] ObjectType type() const noexcept { return repr_.heap.type; }
 
 	/// Whether the value is a string stored inside the object.
-	[[nodiscard]] bool embedded() const noexcept { return !on_heap(); }
+	[[nodiscard]] bool is_embedded() const noexcept { return !is_on_heap(); }
 
 	/// \return The collection as a \p T, or nullptr if the object holds another
 	///         type or was moved from.
@@ -211,7 +211,7 @@ public:
 	/// The string. \pre type() is ObjectType::String.
 	[[nodiscard]] std::string_view string() const noexcept {
 		assert(type() == ObjectType::String);
-		if (!on_heap()) return {repr_.embedded.chars, repr_.embedded.size};
+		if (!is_on_heap()) return {repr_.embedded.chars, repr_.embedded.size};
 		const auto *heap = static_cast<const String *>(repr_.heap.ptr);
 		return heap ? std::string_view(*heap) : std::string_view{};
 	}
@@ -223,7 +223,7 @@ public:
 			set_embedded(text);
 			return;
 		}
-		if (type() == ObjectType::String && on_heap() &&
+		if (type() == ObjectType::String && is_on_heap() &&
 			repr_.heap.ptr != nullptr) {
 			// Reuse the heap string's buffer.
 			static_cast<String *>(repr_.heap.ptr)->assign(text);
@@ -238,7 +238,7 @@ public:
 	/// is moved to the heap first. \pre type() is ObjectType::String.
 	[[nodiscard]] String &mutable_string() {
 		assert(type() == ObjectType::String);
-		if (!on_heap() || repr_.heap.ptr == nullptr) {
+		if (!is_on_heap() || repr_.heap.ptr == nullptr) {
 			auto *heap = create<String>(string());
 			set_heap(ObjectType::String, heap);
 		}
@@ -299,7 +299,7 @@ private:
 		set_heap(ObjectType::String, nullptr);
 	}
 
-	[[nodiscard]] bool on_heap() const noexcept {
+	[[nodiscard]] bool is_on_heap() const noexcept {
 		return repr_.heap.size == HEAP;
 	}
 
@@ -377,7 +377,7 @@ private:
 	}
 
 	void destroy() noexcept {
-		if (!on_heap() || repr_.heap.ptr == nullptr) return;
+		if (!is_on_heap() || repr_.heap.ptr == nullptr) return;
 		void *ptr = repr_.heap.ptr;
 		switch (type()) {
 		case ObjectType::String: release(static_cast<String *>(ptr)); break;
@@ -392,7 +392,7 @@ private:
 	///      allocator can free \p other's.
 	void steal(BasicObject &other) noexcept {
 		repr_ = other.repr_;
-		if (other.on_heap()) other.repr_.heap.ptr = nullptr;
+		if (other.is_on_heap()) other.repr_.heap.ptr = nullptr;
 	}
 
 	REDIS_NO_UNIQUE_ADDRESS Allocator alloc_;

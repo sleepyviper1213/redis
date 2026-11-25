@@ -78,7 +78,7 @@ Value bgrewriteaof(CommandContext &ctx, Args /*unused*/) {
 // CONFIG SET loglevel <level>: the one setting worth changing without a
 // restart, to look closer at a running server without losing its state.
 Value config_set(const CommandContext &ctx, Args args) {
-	if (!ctx.config_set_enabled) {
+	if (!ctx.is_config_set_enabled) {
 		return reply::error("ERR CONFIG SET is disabled; start the server with "
 							"--enable-config-set to allow it");
 	}
@@ -124,12 +124,12 @@ Value config(CommandContext &ctx, Args args) {
 	const std::string_view pattern = args[2];
 	size_t matches                 = 0;
 	for (const auto &[name, value] : parameters)
-		matches += glob_match(pattern, name) ? 1 : 0;
+		matches += is_glob_match(pattern, name) ? 1 : 0;
 
 	Value::Array found;
 	found.reserve(matches * 2);
 	for (const auto &[name, value] : parameters) {
-		if (!glob_match(pattern, name)) continue;
+		if (!is_glob_match(pattern, name)) continue;
 		found.push_back(reply::bulk(name));
 		found.push_back(reply::bulk(value));
 	}
@@ -155,11 +155,11 @@ std::string human_bytes(size_t bytes) {
 Value info(CommandContext &ctx, Args args) {
 	// "default" (and no argument at all) leaves out the sections that are long
 	// or costly, as Redis does; "all" and "everything" include them.
-	const auto wants = [&](std::string_view section, bool in_default = true) {
-		if (args.size() == 1) return in_default;
+	const auto wants = [&](std::string_view section, bool is_in_default = true) {
+		if (args.size() == 1) return is_in_default;
 		return std::ranges::any_of(args.subspan(1), [&](std::string_view name) {
 			if (iequals(name, section)) return true;
-			if (iequals(name, "default")) return in_default;
+			if (iequals(name, "default")) return is_in_default;
 			return iequals(name, "all") || iequals(name, "everything");
 		});
 	};
@@ -239,14 +239,14 @@ Value info(CommandContext &ctx, Args args) {
 					   "rdb_bgsave_in_progress:{}\r\n"
 					   "rdb_last_save_time:{}\r\n"
 					   "aof_enabled:{}\r\n",
-					   ctx.persistence.background_save_in_progress() ? 1 : 0,
+					   ctx.persistence.is_background_save_in_progress() ? 1 : 0,
 					   ctx.persistence.last_snapshot().to_secs_since_epoch(),
 					   ctx.aof != nullptr ? 1 : 0);
 		if (ctx.aof != nullptr)
 			fmt::format_to(std::back_inserter(text),
 						   "aof_rewrite_in_progress:{}\r\n"
 						   "aof_fsync_policy:{}\r\n",
-						   ctx.aof->rewrite_in_progress() ? 1 : 0,
+						   ctx.aof->is_rewrite_in_progress() ? 1 : 0,
 						   enum_name(ctx.aof->fsync_policy()));
 	}
 	if (wants("keyspace")) {

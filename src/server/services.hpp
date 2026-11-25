@@ -24,14 +24,14 @@ namespace redis {
 struct Services {
 	/// \param aof_config Log write commands to an append-only file; if not
 	///        set, the server persists with snapshots alone.
-	Services(std::filesystem::path dump_file, bool threaded,
+	Services(std::filesystem::path dump_file, bool is_threaded,
 			 std::optional<AofConfig> aof_config = std::nullopt,
 			 NetLimits limits                    = {},
-			 bool config_set_enabled             = false)
+			 bool is_config_set_enabled             = false)
 		: persistence(dump_file), // copies dump_file; move is below
 		  guard(limits),
-		  keyspace(threaded) {
-		ctx.config_set_enabled = config_set_enabled;
+		  keyspace(is_threaded) {
+		ctx.is_config_set_enabled = is_config_set_enabled;
 		ctx.stats              = &stats;
 		ctx.guard              = &guard;
 		if (aof_config)

@@ -62,7 +62,7 @@ enum class IoFailureReport : std::uint8_t {
 /// How \p failure is reported, given whether the socket is still open. A
 /// client leaving wins over a socket the server closed.
 [[nodiscard]] IoFailureReport report_for(const ConnectionError &failure,
-										 bool socket_open) noexcept;
+										 bool is_socket_open) noexcept;
 
 /// Log \p error on the network channel: critical for a dead accept loop, error
 /// for anything else.

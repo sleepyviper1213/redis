@@ -81,17 +81,17 @@ Value sismember(CommandContext &ctx, Args args) {
 Value sinter(CommandContext &ctx, Args args) {
 	std::vector<const Set *> sets;
 	sets.reserve(args.size() - 1);
-	bool any_missing = false;
+	bool has_missing = false;
 	for (const std::string_view key : args.subspan(1)) {
 		const auto set = ctx.db.find_as<Set>(key);
 		// Every key is type-checked, as in Redis: a wrong type after a missing
 		// key is still an error.
 		if (!set) return reply::wrong_type();
-		if (*set == nullptr) any_missing = true;
+		if (*set == nullptr) has_missing = true;
 		else sets.push_back(*set);
 	}
 	// A missing key is an empty set, so the intersection is empty.
-	if (any_missing) return reply::array({});
+	if (has_missing) return reply::array({});
 
 	// Probe from the smallest set: O(min size * number of sets). The array
 	// header needs the count, so the members are collected before they are
@@ -99,11 +99,11 @@ Value sinter(CommandContext &ctx, Args args) {
 	std::ranges::sort(sets, {}, &Set::size);
 	std::vector<std::string_view> result;
 	for (const auto &member : *sets.front()) {
-		const bool in_all =
+		const bool is_in_all =
 			std::all_of(sets.begin() + 1, sets.end(), [&](const Set *s) {
 				return s->contains(member);
 			});
-		if (in_all) result.emplace_back(member);
+		if (is_in_all) result.emplace_back(member);
 	}
 	Value::Array members;
 	members.reserve(result.size());
@@ -179,13 +179,13 @@ Value spop(CommandContext &ctx, Args args) {
 }
 
 constexpr std::array COMMANDS{
-	CommandInfo{.name = "SADD", .fn = sadd, .arity = -3, .write = true},
-	CommandInfo{.name = "SREM", .fn = srem, .arity = -3, .write = true},
+	CommandInfo{.name = "SADD", .fn = sadd, .arity = -3, .is_write = true},
+	CommandInfo{.name = "SREM", .fn = srem, .arity = -3, .is_write = true},
 	CommandInfo{.name = "SCARD", .fn = scard, .arity = 2},
 	CommandInfo{.name = "SMEMBERS", .fn = smembers, .arity = 2},
 	CommandInfo{.name = "SISMEMBER", .fn = sismember, .arity = 3},
 	CommandInfo{.name = "SINTER", .fn = sinter, .arity = -2},
-	CommandInfo{.name = "SPOP", .fn = spop, .arity = -2, .write = true},
+	CommandInfo{.name = "SPOP", .fn = spop, .arity = -2, .is_write = true},
 };
 } // namespace
 

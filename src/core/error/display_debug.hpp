@@ -14,16 +14,16 @@ namespace redis {
 /// One field of a value's Debug form: its name and its already-formatted value.
 using DebugField = std::pair<std::string_view, std::string>;
 
-/// Lay out `Name { a: 1, b: 2 }`, or with \p pretty one field to a line. A field
+/// Lay out `Name { a: 1, b: 2 }`, or with \p is_pretty one field to a line. A field
 /// whose value spans several lines (a nested pretty value) is indented under
 /// its name. No fields: just the name, as Rust prints a unit variant.
 inline std::string debug_struct(std::string_view name,
 								const std::vector<DebugField> &fields,
-								bool pretty) {
+								bool is_pretty) {
 	if (fields.empty()) return std::string(name);
 
 	std::string out(name);
-	if (pretty) {
+	if (is_pretty) {
 		out += " {\n";
 		for (const auto &[field, value] : fields) {
 			out += "    ";
@@ -38,10 +38,10 @@ inline std::string debug_struct(std::string_view name,
 		out += '}';
 	} else {
 		out += " { ";
-		bool first = true;
+		bool is_first = true;
 		for (const auto &[field, value] : fields) {
-			if (!first) out += ", ";
-			first = false;
+			if (!is_first) out += ", ";
+			is_first = false;
 			out += field;
 			out += ": ";
 			out += value;
@@ -62,7 +62,7 @@ inline std::string debug_struct(std::string_view name,
  * The type supplies two functions, found by argument-dependent lookup:
  *
  *   std::string display(const T &);
- *   std::string debug_repr(const T &, bool pretty);
+ *   std::string debug_repr(const T &, bool is_pretty);
  *
  * and opts in by deriving its fmt::formatter from this:
  *
@@ -85,11 +85,11 @@ struct DisplayDebugFormatter : fmt::formatter<std::string_view> {
 
 		// Debug is `?`, or `#?` for the several-line form, and takes no width or
 		// precision: nothing may follow the `?`.
-		const bool alternate = *it == '#';
-		if (alternate) ctx.advance_to(it + 1);
+		const bool is_alternate = *it == '#';
+		if (is_alternate) ctx.advance_to(it + 1);
 		if (parse_presentation(ctx, "?") != '?')
 			fmt::report_error("invalid format specifier");
-		mode = alternate ? Mode::Pretty : Mode::Debug;
+		mode = is_alternate ? Mode::Pretty : Mode::Debug;
 		return ctx.begin();
 	}
 

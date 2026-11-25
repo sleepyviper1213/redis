@@ -33,7 +33,7 @@ struct ServerConfig {
 	/// Client count, buffer and idle limits.
 	NetLimits limits;
 	/// Let clients change settings with CONFIG SET.
-	bool config_set_enabled = false;
+	bool is_config_set_enabled = false;
 	/// Report a command that holds up the keyspace thread too long.
 	diagnostics::CommandWatchdogSettings watchdog;
 	/// Test seam, not a command line option: housekeeping fails after this many

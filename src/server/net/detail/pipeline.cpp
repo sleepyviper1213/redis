@@ -124,16 +124,16 @@ AfterReplies execute_batch(const ParsedBatch &batch, std::string &replies,
 						   const CommandHandler &handler, CommandContext &ctx,
 						   size_t max_output) {
 	prefetch_keys(batch, ctx.db);
-	bool over_limit = false;
-	for (size_t i = 0; i < batch.size() && !over_limit; ++i) {
+	bool is_over_limit = false;
+	for (size_t i = 0; i < batch.size() && !is_over_limit; ++i) {
 		handler.execute(ctx, batch.request(i), replies);
-		over_limit = replies.size() > max_output;
+		is_over_limit = replies.size() > max_output;
 	}
 	// The replies go out once this returns: what they acknowledge must be in
 	// the file by then (and on disk, with appendfsync always).
 	if (ctx.aof != nullptr) ctx.aof->after_batch();
 
-	if (over_limit) return AfterReplies::Close;
+	if (is_over_limit) return AfterReplies::Close;
 	if (batch.protocol_error.empty()) return AfterReplies::KeepOpen;
 	replies += batch.protocol_error;
 	return AfterReplies::Close;
