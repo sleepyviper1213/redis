@@ -11,6 +11,8 @@ name: Benchmark A/B
 # offers, so that a cheaper request shows as a higher rate (see
 # docs/features/connection/io_uring_experiment.md, stage 1c, TC-298).
 #
+# Two jobs, on separate runners: pinned (as bench.yml) and wide (more load).
+#
 # Push any commit to a bench-ab/ branch to compare it with BASE:
 #   git push origin HEAD:bench-ab/<name>
 
@@ -22,9 +24,6 @@ on:
       base:
         description: revision to compare against
         default: a9e892f
-      threads:
-        description: redis-benchmark threads (THREADS)
-        default: "2"
       requests:
         description: requests per scenario (REQUESTS)
         default: "200000"
@@ -50,8 +49,18 @@ env:
 
 jobs:
   ab:
-    name: bench A/B (gcc)
+    name: bench A/B (gcc, ${{ matrix.name }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # As bench.yml: the server on two CPUs, two client threads on two.
+          - { name: pinned, server_cpus: "0-1", client_cpus: "2-3", threads: "2" }
+          # More load than that can offer: the server on one CPU, three client
+          # threads on the other three. Each is an A/B of its own on its own
+          # runner; only the gap between base and new inside a job counts.
+          - { name: wide, server_cpus: "0", client_cpus: "1-3", threads: "3" }
     # Ubuntu 24.04's own GCC 14 crashes (ICE) on Abseil lts_20260107's
     # any_invocable.h, hence gcc:16.2 (as in bench.yml). Not privileged: the
     # benchmark needs no perf.
@@ -102,8 +111,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /root/.ccache
-          key: ccache-ab-${{ github.sha }}
-          restore-keys: ccache-ab-
+          key: ccache-ab-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-ab-${{ matrix.name }}-
       - name: Check out both revisions
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -140,16 +149,16 @@ jobs:
       - name: Benchmark, alternating
         env:
           REF_SERVER: redis-server
-          THREADS: ${{ inputs.threads || '2' }}
-          SERVER_CPUS: "0-1"
-          CLIENT_CPUS: "2-3"
+          THREADS: ${{ matrix.threads }}
+          SERVER_CPUS: ${{ matrix.server_cpus }}
+          CLIENT_CPUS: ${{ matrix.client_cpus }}
           REQUESTS: ${{ inputs.requests || '200000' }}
           RUNS: ${{ inputs.runs || '5' }}
           SATURATE_CLIENTS: ${{ inputs.clients || '500' }}
         run: |
           mkdir -p bench
-          report=bench/ab.txt
-          echo "base $BASE, new $GITHUB_SHA, runner: $(nproc) CPUs" | tee "$report"
+          report="bench/ab-${{ matrix.name }}.txt"
+          echo "base $BASE, new $GITHUB_SHA, runner: $(nproc) CPUs, ${{ matrix.name }}: server on CPUs $SERVER_CPUS, $THREADS client threads on $CLIENT_CPUS" | tee "$report"
           # The new revision's scripts run both sides, so both see the same
           # scenarios (the base predates the saturate scenario).
           cp ../redis-new/scripts/bench_server.sh ../redis-new/scripts/common.sh \
@@ -169,6 +178,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bench-ab
-          path: bench/ab.txt
+          name: bench-ab-${{ matrix.name }}
+          path: bench/ab-${{ matrix.name }}.txt
           if-no-files-found: warn

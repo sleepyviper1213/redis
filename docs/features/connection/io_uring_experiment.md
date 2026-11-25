@@ -274,8 +274,11 @@ figures count.
   runner. `bigget` rose in round 2 only, as did the reference.
 - **Tail latency does not move:** the `clients` p99 is 0.34 ms on both; the pipelined p99 is 0.62 against 0.65 ms.
 
-**Next:** a run with more load-generating capacity, to see whether the new revision's rate is the server's or the
-generator's: the server on one CPU, three client threads on the other three. The workflow has no inputs for the CPU
-lists yet.
+**Next (planned):** the workflow runs the A/B twice, as parallel jobs on separate runners, so that one push gives both
+views: `pinned` as in this run (the server on CPUs 0-1, two client threads on 2-3), and `wide` (the server on CPU 0,
+three client threads on 1-3), which can offer more load than `pinned` can. Each job is a same-runner A/B of its own;
+the two jobs are not compared with each other in absolute terms. If the new revision's `saturate` rate climbs in `wide`,
+`pinned` was limited by the generator and the gain is larger than 10 %; if it stays near the same figure, 10 % is the
+gain. The reference Redis in each run shows where each setup's ceiling is.
 
 Stage 2: not started.
