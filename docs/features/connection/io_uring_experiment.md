@@ -192,7 +192,32 @@ Linux, so the epoll branch compiles with gcc and clang.
   load, which would not show one client waiting for a reply. The stress test, which checks every reply, is the check,
   and it runs in the main CI workflow, not here.
 
-**Next:** the stress test and the unit and integration suites on Linux (`test/` branch); then the Benchmark workflow,
-where the reference Redis in the same job gives a yardstick that survives the change of runner.
+### Stage 1b: CI and benchmark (CI run #75, Benchmark run #29, commit `6f63349`, 2026-11-25)
+
+- **CI:** all 18 jobs passed: Linux gcc and clang in Debug and Release, the AddressSanitizer, UndefinedSanitizer,
+  ThreadSanitizer and RealtimeSanitizer builds, the jemalloc build, the macOS jobs, and the static analysis. No lost
+  wakeup showed up.
+- **Benchmark:** the server's median against the reference Redis in the same job (above 1 is faster than the
+  reference), against run #27 before the change:
+
+| Scenario | gcc, run #27 | gcc, run #29 | clang, run #29 |
+|---|---:|---:|---:|
+| `clients` | 1.00 | 1.00 (163,666 / 164,474) | 1.00 (163,265 / 163,132) |
+| `latency` | 1.03 | 0.99 (61,350 / 61,881) | 1.26 (79,302 / 62,972) |
+| `pipeline` | 1.09 | 1.06 | 1.12 |
+| `bigget` | 1.14 | 1.27 | 1.27 |
+
+**Reading it.** The benchmark does **not** show the doubling that the profile suggested. On `clients` the server and
+the reference sit at the same rate (about 164,000) in both jobs, before and after. Equal rates for two different
+servers point at a ceiling set by the load generator, not by either server: `redis-benchmark` runs on the same 4 CPUs.
+So this benchmark cannot see a drop in the server's CPU per command; the profile measures that, and the profile's
+rate under `perf` (187,000) is above the benchmark's, which fits a server that is no longer the limit. `latency` is
+one client, whose round trip is mostly the network: gcc shows nothing, clang shows 26 %, and the spread between runs
+of that scenario was 61,000 to 85,000 in an earlier run. `bigget` rose against the reference in both jobs, but it
+reads pipelined batches and its change is not explained by this one; one run is not enough to claim it.
+
+**What would show it.** A run where the server is the limit: the `SERVER_CPUS` and `CLIENT_CPUS` knobs of
+`bench_server.sh` pin the server to one CPU and the load generator to the other three. Then the same run on the
+commit before the change, for a same-conditions comparison. The workflow does not pass those knobs yet.
 
 Stage 2: not started.
