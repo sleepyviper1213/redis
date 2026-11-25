@@ -239,4 +239,43 @@ Planned. Two changes make the comparison fair and sensitive:
 reference, are the result; absolute rates are not. If the profile was right, `saturate` should be clearly higher on the
 new revision. If it is not, the profile's doubling was an artefact of sampling.
 
+### Stage 1c results (Benchmark A/B run #1, commit `0adb765`, 2026-11-25)
+
+Base `a9e892f` against the new revision on one runner (4 CPUs, server on 0-1, `redis-benchmark` on 2-3, 2 client
+threads), 2 rounds in alternating order of 5 runs each, with the reference Redis in every run. The runner was slower
+than in the earlier jobs (the reference's `clients` rate was about 100,000 against 164,000), which is why only same-job
+figures count.
+
+| Scenario | base (median of the two rounds) | new | new against base | server / reference: base, new |
+|---|---:|---:|---:|---|
+| `saturate` (500 connections) | 124,899 and 123,039 | 137,826 and 128,924 | +10 % and +5 % | 0.95 and 0.94; 1.07 and 1.02 |
+| `pipeline` | 1,454,546 and 1,454,281 | 1,599,680 and 1,599,680 | +10 % | 1.05; 1.15 |
+| `clients` | 100,654 and 98,377 | 97,229 and 93,809 | −3 % and −5 % | 0.98 and 1.00; 0.98 and 0.98 |
+| `latency` | 38,241 and 38,095 | 37,764 and 38,329 | 0 % | 1.05; 1.02 to 1.05 |
+| `bigget` | 1,102,840 and 1,102,688 | 1,103,296 and 1,185,010 | 0 % and +7 % | 1.24; 1.24 and 1.26 |
+
+**Reading it**
+
+- **At saturation the new revision is faster by about 9 to 11 %.** Over the 10 runs of each side, the new mean is
+  133.9k against 123.2k, and the ranges overlap little: every base run is at or below 127.0k, and the new median is
+  137.8k. Against the reference, which sat at 127,000 to 131,000 throughout, the base is 5 to 6 % below it and the new
+  revision level with it or up to 7 % above.
+- **That is a tenth of a doubling, not a doubling.** The profile put CPU per command down by 35 to 49 %. This benchmark
+  shows 9 to 11 % more requests per second. Two things could explain the gap, and the run cannot separate them: the
+  load generator may now be the limit (the reference tops out at the same rate, and the new revision's best runs
+  reach 140,000), in which case the real headroom is higher; or the profile exaggerated the gain, since `perf`'s own
+  system-call tracing (`perf_syscall_enter` and `trace_syscall_enter` appear in the profile) costs more the more
+  syscalls a request makes.
+- **`pipeline` is up about 10 %,** the same in both rounds. The figures are quantised: they are 8 million requests
+  divided by a time the client reports in coarse ticks, so 5.0 s against 5.5 s is the whole difference. It is
+  consistent, but it is two steps of the clock.
+- **`clients`, `latency` and `bigget` tie** within the spread. `clients` is 3 to 5 % lower on the new revision, with
+  the base and new ranges overlapping; the ratio to the reference does not move (0.98), so it is noise from the
+  runner. `bigget` rose in round 2 only, as did the reference.
+- **Tail latency does not move:** the `clients` p99 is 0.34 ms on both; the pipelined p99 is 0.62 against 0.65 ms.
+
+**Next:** a run with more load-generating capacity, to see whether the new revision's rate is the server's or the
+generator's: the server on one CPU, three client threads on the other three. The workflow has no inputs for the CPU
+lists yet.
+
 Stage 2: not started.
