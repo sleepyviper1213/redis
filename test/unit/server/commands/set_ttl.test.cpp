@@ -1,12 +1,16 @@
 #include "commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
 #include <string>
 #include <thread>
 #include <vector>
+
+using Catch::Matchers::EndsWith;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -174,8 +178,8 @@ SCENARIO("Malformed requests get RESP error replies", "[commands]") {
 			const auto reply = handler.execute(
 				server.ctx, resp::Value::from_array(resp::Value::Array{}));
 			THEN("it is rejected instead of indexing past the end") {
-				CHECK(reply.starts_with("-ERR Protocol error"));
-				CHECK(reply.ends_with("\r\n"));
+				CHECK_THAT(reply, StartsWith("-ERR Protocol error"));
+				CHECK_THAT(reply, EndsWith("\r\n"));
 			}
 		}
 
@@ -185,7 +189,7 @@ SCENARIO("Malformed requests get RESP error replies", "[commands]") {
 				resp::Value::from_array({resp::Value::from_bulk_string("GET"),
 										 resp::Value::from_integer(1)}));
 			THEN("it is rejected") {
-				CHECK(reply.starts_with("-ERR Protocol error"));
+				CHECK_THAT(reply, StartsWith("-ERR Protocol error"));
 			}
 		}
 

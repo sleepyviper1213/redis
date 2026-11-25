@@ -2,8 +2,9 @@
 // socket, scheduler or clock. Each behaviour is asserted in both modes: inline
 // (--io-threads 1) and threaded (parse on the session, execute on the keyspace
 // thread; here execute_ingested_requests() is simply called on the test's thread).
-#include "../commands/commands.fixture.hpp"
 #include "server/net/detail/conversation.hpp"
+
+#include "../commands/commands.fixture.hpp"
 #include "server/net/guard.hpp"
 #include "server/net/net_error.hpp"
 
@@ -11,6 +12,7 @@
 #include <boost/system/system_error.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -20,6 +22,8 @@
 #include <string>
 #include <string_view>
 #include <utility>
+
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -118,7 +122,7 @@ SCENARIO("A conversation takes in what a client sends", "[net][conversation]") {
 		const std::string reply = rig.answer("*0\r\n");
 
 		THEN("the error is answered and the conversation stays open") {
-			CHECK(reply.starts_with("-ERR"));
+			CHECK_THAT(reply, StartsWith("-ERR"));
 			CHECK_FALSE(rig.conversation.is_over());
 			CHECK(rig.answer("PING\r\n") == "+PONG\r\n");
 		}
@@ -268,7 +272,7 @@ SCENARIO("A protocol error ends a conversation after the replies before it",
 		const std::string replies = rig.answer("PING ok\r\n*1\r\n$3\r\nabcXY");
 
 		THEN("the first is answered, then the error, then it is over") {
-			CHECK(replies.starts_with("$2\r\nok\r\n-ERR Protocol error"));
+			CHECK_THAT(replies, StartsWith("$2\r\nok\r\n-ERR Protocol error"));
 			CHECK(rig.conversation.is_over());
 			CHECK(rig.guard.count(Violation::QueryBufferFull) == 0);
 			CHECK(rig.guard.count(Violation::OutputBufferFull) == 0);

@@ -3,8 +3,11 @@
 #include "server/net/guard.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <string>
+
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 
@@ -45,7 +48,7 @@ SCENARIO("INFO reports the server's state", "[commands][info]") {
 			const auto text = payload(server.run({"INFO", "keyspace"}));
 
 			THEN("only that section is returned") {
-				CHECK(text.starts_with("# Keyspace\r\n"));
+				CHECK_THAT(text, StartsWith("# Keyspace\r\n"));
 				CHECK(!absl::StrContains(text, "# Stats"));
 			}
 		}
@@ -87,7 +90,7 @@ SCENARIO("INFO counts lookups and times each command", "[commands][info]") {
 
 			THEN("each command has its calls and time") {
 				const auto text = payload(server.run({"INFO", "commandstats"}));
-				CHECK(text.starts_with("# Commandstats\r\n"));
+				CHECK_THAT(text, StartsWith("# Commandstats\r\n"));
 				CHECK(absl::StrContains(text, "cmdstat_get:calls=2,usec="));
 				CHECK(absl::StrContains(text, "cmdstat_set:calls=1,usec="));
 			}
@@ -119,8 +122,9 @@ SCENARIO("INFO reports the memory the keyspace holds", "[commands][info]") {
 			}
 			AND_THEN("INFO memory reports the figure") {
 				const auto text = payload(server.run({"INFO", "memory"}));
-				CHECK(text.starts_with("# Memory\r\nused_memory:" +
-									   std::to_string(after) + "\r\n"));
+				CHECK_THAT(text,
+						   StartsWith("# Memory\r\nused_memory:" +
+									  std::to_string(after) + "\r\n"));
 				CHECK(absl::StrContains(text, "used_memory_human:"));
 			}
 		}

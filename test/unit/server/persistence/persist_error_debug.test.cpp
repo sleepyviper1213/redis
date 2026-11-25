@@ -1,10 +1,13 @@
 #include "server/persistence/persist_error.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
 #include <string>
 #include <system_error>
+
+using Catch::Matchers::ContainsSubstring;
 
 using namespace redis;
 using persistence::PersistError;
@@ -59,7 +62,8 @@ SCENARIO("An error has a Display form and a Debug form, as in Rust",
 											denied.message())));
 		}
 		THEN("quoted text is escaped, so the structure stays readable") {
-			CHECK(fmt::format("{:?}", error).contains(R"(quoted: "a\"b")"));
+			CHECK_THAT(fmt::format("{:?}", error),
+					   ContainsSubstring(R"(quoted: "a\"b")"));
 		}
 	}
 }

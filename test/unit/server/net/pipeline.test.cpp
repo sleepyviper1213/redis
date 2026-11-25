@@ -1,9 +1,14 @@
-#include "../commands/commands.fixture.hpp"
 #include "server/net/detail/pipeline.hpp"
 
+#include "../commands/commands.fixture.hpp"
+
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <string>
+
+using Catch::Matchers::EndsWith;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 
@@ -51,7 +56,8 @@ SCENARIO("Splitting the hot path into stages", "[net][pipeline]") {
 
 			THEN("the valid request is kept and the error is recorded") {
 				CHECK(batch.size() == 1);
-				CHECK(batch.protocol_error.starts_with("-ERR Protocol error"));
+				CHECK_THAT(batch.protocol_error,
+						   StartsWith("-ERR Protocol error"));
 			}
 
 			AND_WHEN("the batch is executed") {
@@ -60,7 +66,8 @@ SCENARIO("Splitting the hot path into stages", "[net][pipeline]") {
 
 				THEN("the error reply follows the valid one, then close") {
 					CHECK(after == detail::AfterReplies::Close);
-					CHECK(replies.starts_with("+PONG\r\n-ERR Protocol error"));
+					CHECK_THAT(replies,
+							   StartsWith("+PONG\r\n-ERR Protocol error"));
 				}
 			}
 		}
@@ -122,8 +129,8 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 
 			THEN("the valid one is answered, then the error, then close") {
 				CHECK(after == detail::AfterReplies::Close);
-				CHECK(replies.starts_with("+PONG\r\n-ERR Protocol error"));
-				CHECK(replies.ends_with("\r\n"));
+				CHECK_THAT(replies, StartsWith("+PONG\r\n-ERR Protocol error"));
+				CHECK_THAT(replies, EndsWith("\r\n"));
 			}
 		}
 
@@ -134,8 +141,8 @@ SCENARIO("Executing buffered requests", "[net][pipeline]") {
 
 			THEN("it gets an error reply and the connection stays open") {
 				CHECK(after == detail::AfterReplies::KeepOpen);
-				CHECK(replies.starts_with("-ERR Protocol error"));
-				CHECK(replies.ends_with("\r\n+PONG\r\n"));
+				CHECK_THAT(replies, StartsWith("-ERR Protocol error"));
+				CHECK_THAT(replies, EndsWith("\r\n+PONG\r\n"));
 				CHECK(pending.empty());
 			}
 		}

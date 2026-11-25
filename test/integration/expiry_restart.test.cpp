@@ -11,12 +11,15 @@
 #include "test_client.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
+
+using Catch::Matchers::ContainsSubstring;
 
 using namespace std::chrono_literals;
 
@@ -75,6 +78,6 @@ TEST_CASE("TC-117, TC-118: deadlines after a restart", "[restart-verify][.]") {
 
 	SECTION("keys skipped on load are not counted as expired") {
 		const auto stats = client.send("INFO stats").value;
-		CHECK(stats.find("expired_keys:0\r\n") != std::string::npos);
+		CHECK_THAT(stats, ContainsSubstring("expired_keys:0\r\n"));
 	}
 }
