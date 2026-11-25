@@ -65,4 +65,46 @@ identical work), with no loss in `pipeline`. The numbers go in a results documen
 
 ## Results
 
-None yet.
+### Stage 1 (Profile workflow run #13, commit `d0b37cc`, 2026-11-25)
+
+`clients` scenario, 50 clients, no pipelining, 10 s sampled, a runner with 4 CPUs shared with `redis-benchmark`. The
+server ran under `perf`, so its rate (about 91,000 and 112,000 per second) is below the unobserved 130,000.
+
+| | gcc | clang |
+|---|---:|---:|
+| Commands handled in the window | 911,534 | 1,123,556 |
+| Task-clock per command | 9.91 µs | 7.49 µs |
+| Context switches per 1000 commands | 97.6 | 236.8 |
+| CPU migrations per 1000 commands | 0.02 | 0.02 |
+| Inside a system call (inclusive) | 77.4 % | 82.8 % |
+| of which `sendto` | 53.5 % | 55.1 % |
+| `recvfrom` | 7.1 % | 11.4 % |
+| `epoll_wait` | 4.3 % | 8.7 % |
+| `epoll_ctl` | 6.4 % | 3.0 % |
+
+The hardware counters (cycles, instructions, cache misses) are not available: the runner's VM exposes no PMU.
+
+**Reading it**
+
+- **The kernel is where the time goes.** Three quarters or more of the server's CPU is inside system calls, and the
+  code of this server (parsing, session, hash lookups, stdexec) is under a quarter. Making that code twice as fast
+  would speed a request up by about 10 %.
+- **Wakeups are not the cost.** Context switches are 0.1 to 0.24 per request, not about one: with 50 clients the loop
+  is rarely idle, so one `epoll_wait` returns several ready sockets.
+- **Most of it is `sendto`, and much of that is not this server's work.** About 54 % of the CPU is in `sendto`. The
+  client is on the same machine, so over loopback the kernel runs the client's receive path inside the server's
+  system call: `tcp_v4_rcv`, `tcp_rcv_established`, `tcp_ack` and `tcp_clean_rtx_queue` are in the server's self-time
+  list. This is an inference from those symbols; it was not isolated. On a real network card that part would run
+  elsewhere, so this profile overstates the server's own share, and io_uring cannot remove it either way: it does
+  the same TCP work.
+- **`epoll_ctl` appears at 3 to 6 %.** A socket registered once with the reactor needs no per-request `epoll_ctl`. That
+  it shows up suggests a registration change per request, which would be a cost with or without io_uring. Not
+  investigated.
+
+**Against the decision rule.** The first half is met (the kernel's share is about 77 to 83 %, against "about half").
+The second half is not (about 0.1 to 0.24 context switches per request, against "of the order of one"). What io_uring
+could remove is the system-call entry and exit, `epoll_wait` and `epoll_ctl`, and some per-call overhead of `sendto`
+and `recvfrom`: roughly 15 % of the server's CPU at most (self time of `do_syscall_64` plus the two `epoll`
+calls, a rough bound). That is near the 10 % bar for keeping the option and does not leave room for it to miss.
+
+Stage 2: not started.
