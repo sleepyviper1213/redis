@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -35,7 +34,7 @@ Value Value::from_bulk_string(std::string s) {
 }
 
 int64_t Value::as_integer() const {
-	assert(is_integer());
+	REDIS_VERIFY(is_integer(), "Value::as_integer() on another type");
 	return std::get<int64_t>(data_);
 }
 
@@ -45,19 +44,19 @@ std::expected<int64_t, std::errc> Value::try_as_integer() const {
 }
 
 const Value::Array &Value::as_array() const {
-	assert(is_array());
+	REDIS_VERIFY(is_array(), "Value::as_array() on another type");
 	return std::get<Array>(data_);
 }
 
 const std::string &Value::as_string() const {
-	// Not inline in the assert: the commas of a braced list would split its
+	// Not inline in the check: the commas of a braced list would split the
 	// macro arguments.
-	[[maybe_unused]] constexpr std::array TEXT_TYPES{Type::SimpleString,
-													 Type::BulkString,
-													 Type::SimpleError};
-	assert(std::ranges::contains(TEXT_TYPES, type_));
+	constexpr std::array TEXT_TYPES{
+		Type::SimpleString, Type::BulkString, Type::SimpleError};
+	REDIS_VERIFY(std::ranges::contains(TEXT_TYPES, type_),
+				 "Value::as_string() on a type with no text");
 
-	assert(is_string());
+	REDIS_VERIFY(is_string(), "Value::as_string() on another type");
 	return std::get<std::string>(data_);
 }
 
