@@ -157,4 +157,42 @@ passes on Windows (IOCP), with the new read also forced on there to exercise the
 timeout handling; the epoll reactor itself runs only in Linux CI (TC-299 for the configuration, the stress test for
 lost wakeups, and the Profile and Benchmark workflows for the cost).
 
+### Stage 1b results (Profile workflow run #14, commit `3d04455`, 2026-11-25)
+
+The same `clients` step, now with `Session::receive()` reading in one `async_read_some`. Both jobs built and ran on
+Linux, so the epoll branch compiles with gcc and clang.
+
+| | gcc, before | gcc, after | clang, before | clang, after |
+|---|---:|---:|---:|---:|
+| Commands handled in 10 s, under `perf` | 911,534 | 1,869,109 | 1,123,556 | 1,925,591 |
+| Task-clock per command | 9.91 µs | 5.04 µs | 7.49 µs | 4.84 µs |
+| Context switches per 1000 commands | 97.6 | 22.8 | 236.8 | 25.1 |
+| `epoll_ctl`, inclusive | 6.4 % | absent | 3.0 % | absent |
+| `sendto`, inclusive | 53.5 % | 58.2 % | 55.1 % | 58.7 % |
+| `recvfrom`, inclusive | 7.1 % | 11.5 % | 11.4 % | 11.2 % |
+| `epoll_wait`, inclusive | 4.3 % | 5.3 % | 8.7 % | 5.1 % |
+| Inside any system call | 77.4 % | 77.4 % | 82.8 % | 77.5 % |
+
+**Reading it, with its limits**
+
+- **`epoll_ctl` is gone,** as intended. That part is certain.
+- **The effect is about ten times what the profile predicted.** The prediction was the 3 to 6 % that `epoll_ctl` took.
+  CPU per command fell by about 49 % (gcc) and 35 % (clang), the rate under `perf` roughly doubled (gcc) and rose by
+  about 70 % (clang), and context switches fell four to nine times. The server's thread was busy about nine tenths of
+  the window in both runs (9.0 and 9.4 s of CPU in 10 s), so a lower cost per command is a higher rate.
+- **The mechanism is not established.** The shares of the system calls barely moved while the cost per command nearly
+  halved, so every part of a request got cheaper, not just the one removed. A guess, not tested: re-arming a
+  registration with `epoll_ctl(EPOLL_CTL_MOD)` while data is already waiting puts the socket back on the ready list,
+  which would explain more `epoll_wait` returns and more wakeups per request (the session's old comment mentions
+  "spurious" readiness), and the extra wakeups would make every `sendto` more expensive.
+- **One run per compiler, on different shared runners.** Run #13 and run #14 did not share a machine, and the 4 CPUs
+  are shared with `redis-benchmark`. A change this large is unlikely to be only noise, but it is a profile under
+  `perf`, not a benchmark: no reference Redis ran beside it.
+- **Lost wakeups are not ruled out.** The run served 1.9 million commands to 50 clients without stalling the whole
+  load, which would not show one client waiting for a reply. The stress test, which checks every reply, is the check,
+  and it runs in the main CI workflow, not here.
+
+**Next:** the stress test and the unit and integration suites on Linux (`test/` branch); then the Benchmark workflow,
+where the reference Redis in the same job gives a yardstick that survives the change of runner.
+
 Stage 2: not started.
