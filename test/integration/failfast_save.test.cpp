@@ -7,6 +7,7 @@
 #include "test_client.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
 #include <cstdlib>
@@ -20,6 +21,8 @@
 #include <csignal>
 #include <sys/wait.h>
 #include <unistd.h>
+
+using Catch::Matchers::ContainsSubstring;
 #endif
 
 #if !defined(_WIN32)
@@ -107,8 +110,8 @@ TEST_CASE("TC-262: A FailFast end still saves the final snapshot and exits "
 	std::ifstream in(dump, std::ios::binary);
 	const std::string bytes((std::istreambuf_iterator<char>(in)),
 							std::istreambuf_iterator<char>());
-	CHECK(bytes.find("tc262-key") != std::string::npos);
-	CHECK(bytes.find("tc262-value") != std::string::npos);
+	CHECK_THAT(bytes, ContainsSubstring("tc262-key"));
+	CHECK_THAT(bytes, ContainsSubstring("tc262-value"));
 
 	fs::remove_all(dir);
 }

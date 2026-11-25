@@ -9,6 +9,7 @@
 #include "server/persistence/snapshot_manager.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
 #include <atomic>
@@ -20,6 +21,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -122,7 +126,8 @@ SCENARIO("Write commands are logged", "[aof]") {
 			CHECK(server.run({"SET", "a", "1"}) == "+OK\r\n");
 			CHECK(server.run({"GET", "a"}) == "$1\r\n1\r\n");
 			CHECK(server.run({"INCR", "a"}) == ":2\r\n");
-			CHECK(server.run({"LPUSH", "a", "x"}).starts_with("-WRONGTYPE"));
+			CHECK_THAT(server.run({"LPUSH", "a", "x"}),
+					   StartsWith("-WRONGTYPE"));
 			CHECK(server.run({"DEL", "a"}) == ":1\r\n");
 
 			THEN("only the writes that succeeded are in the log, in order") {
@@ -147,8 +152,8 @@ SCENARIO("Commands that cannot be replayed as received",
 
 			THEN("the log has the absolute deadline") {
 				const auto log = server.log();
-				CHECK(log.contains("PXAT"));
-				CHECK_FALSE(log.contains("EX\r\n"));
+				CHECK_THAT(log, ContainsSubstring("PXAT"));
+				CHECK_THAT(log, !ContainsSubstring("EX\r\n"));
 			}
 		}
 
@@ -158,8 +163,8 @@ SCENARIO("Commands that cannot be replayed as received",
 
 			THEN("the log has PEXPIREAT") {
 				const auto log = server.log();
-				CHECK(log.contains("PEXPIREAT"));
-				CHECK_FALSE(log.contains("\r\nEXPIRE\r\n"));
+				CHECK_THAT(log, ContainsSubstring("PEXPIREAT"));
+				CHECK_THAT(log, !ContainsSubstring("\r\nEXPIRE\r\n"));
 			}
 		}
 
@@ -179,8 +184,8 @@ SCENARIO("Commands that cannot be replayed as received",
 
 			THEN("a replay leaves the same member behind") {
 				const auto remaining = server.run({"SMEMBERS", "s"});
-				CHECK(server.log().contains("SREM"));
-				CHECK_FALSE(server.log().contains("SPOP"));
+				CHECK_THAT(server.log(), ContainsSubstring("SREM"));
+				CHECK_THAT(server.log(), !ContainsSubstring("SPOP"));
 
 				// A restart, not a second server: the first lets go of the
 				// directory.
@@ -390,7 +395,8 @@ SCENARIO("Rewriting the log", "[aof][rewrite][fork]") {
 				THEN("the files are one base and one short incremental log") {
 					const auto files = server.aof.files();
 					REQUIRE(files.size() == 2);
-					CHECK(files[0].filename().string().contains("base"));
+					CHECK_THAT(files[0].filename().string(),
+							   ContainsSubstring("base"));
 					CHECK(server.log() == logged({"INCR", "counter"}));
 				}
 			}
@@ -742,7 +748,7 @@ SCENARIO("A replay does not extend a lifetime",
 			const auto reply = server.run({"PTTL", "k"});
 
 			THEN("what is left is what was left, not the full two seconds") {
-				REQUIRE(reply.starts_with(":"));
+				REQUIRE_THAT(reply, StartsWith(":"));
 				const auto left = std::stoll(reply.substr(1));
 				CHECK(left > 0);
 				CHECK(left <= 1500);

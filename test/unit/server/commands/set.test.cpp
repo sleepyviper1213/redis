@@ -1,6 +1,10 @@
 #include "commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 
@@ -40,9 +44,9 @@ SCENARIO("Intersecting sets", "[commands][set]") {
 			const auto both = server.run({"SINTER", "x", "y"});
 
 			THEN("the shared members are returned") {
-				CHECK(both.starts_with("*2\r\n"));
-				CHECK(both.contains("$1\r\nb\r\n"));
-				CHECK(both.contains("$1\r\nc\r\n"));
+				CHECK_THAT(both, StartsWith("*2\r\n"));
+				CHECK_THAT(both, ContainsSubstring("$1\r\nb\r\n"));
+				CHECK_THAT(both, ContainsSubstring("$1\r\nc\r\n"));
 			}
 		}
 
@@ -83,7 +87,7 @@ SCENARIO("Popping random members", "[commands][set]") {
 			const auto popped = server.run({"SPOP", "s", "5"});
 
 			THEN("all are returned and the set is deleted") {
-				CHECK(popped.starts_with("*3\r\n"));
+				CHECK_THAT(popped, StartsWith("*3\r\n"));
 				CHECK(server.run({"EXISTS", "s"}) == ":0\r\n");
 			}
 		}

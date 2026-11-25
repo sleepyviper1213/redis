@@ -1,9 +1,13 @@
 #include "commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
 #include <thread>
+
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -51,10 +55,10 @@ SCENARIO("Listing keys by pattern", "[commands][keyspace]") {
 			const auto reply = server.run({"KEYS", "user:*"});
 
 			THEN("only that namespace is returned") {
-				CHECK(reply.starts_with("*2\r\n"));
-				CHECK(reply.contains("user:1"));
-				CHECK(reply.contains("user:2"));
-				CHECK_FALSE(reply.contains("post:1"));
+				CHECK_THAT(reply, StartsWith("*2\r\n"));
+				CHECK_THAT(reply, ContainsSubstring("user:1"));
+				CHECK_THAT(reply, ContainsSubstring("user:2"));
+				CHECK_THAT(reply, !ContainsSubstring("post:1"));
 			}
 		}
 	}

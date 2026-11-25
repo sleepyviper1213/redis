@@ -4,11 +4,15 @@
 #include "commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
 #include <string>
 #include <thread>
+
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -32,7 +36,7 @@ void expect_ttl(test::Server &server, const std::string &key,
 				long long seconds) {
 	CAPTURE(key, seconds);
 	const auto reply = server.run({"TTL", key});
-	REQUIRE(reply.starts_with(':'));
+	REQUIRE_THAT(reply, StartsWith(":"));
 	const auto ttl = std::stoll(reply.substr(1));
 	CHECK(ttl <= seconds);
 	CHECK(ttl >= seconds - 1);
@@ -483,10 +487,12 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 		server.db.active_expire_cycle(100);
 
 		THEN("TC-121: expired_keys is 5 and FLUSHDB adds nothing") {
-			CHECK(server.run({"INFO", "stats"}).contains("expired_keys:5\r\n"));
+			CHECK_THAT(server.run({"INFO", "stats"}),
+					   ContainsSubstring("expired_keys:5\r\n"));
 			server.run({"SET", "x", "v"});
 			server.run({"FLUSHDB"});
-			CHECK(server.run({"INFO", "stats"}).contains("expired_keys:5\r\n"));
+			CHECK_THAT(server.run({"INFO", "stats"}),
+					   ContainsSubstring("expired_keys:5\r\n"));
 		}
 	}
 }

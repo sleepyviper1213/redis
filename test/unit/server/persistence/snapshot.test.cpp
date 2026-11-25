@@ -3,10 +3,14 @@
 #include "../commands/commands.fixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
 #include <fstream>
 #include <thread>
+
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -204,8 +208,10 @@ SCENARIO("Saving through commands", "[persistence][commands]") {
 			const auto reply = server.run({"CONFIG", "GET", "dbfilename"});
 
 			THEN("it reports the configured file") {
-				CHECK(reply.starts_with("*2\r\n$10\r\ndbfilename\r\n"));
-				CHECK(reply.contains(server.dump.path().filename().string()));
+				CHECK_THAT(reply, StartsWith("*2\r\n$10\r\ndbfilename\r\n"));
+				CHECK_THAT(
+					reply,
+					ContainsSubstring(server.dump.path().filename().string()));
 			}
 		}
 	}

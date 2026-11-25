@@ -1,7 +1,9 @@
-#include "support/temp_file.hpp"
 #include "core/os/save_file.hpp"
 
+#include "support/temp_file.hpp"
+
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -9,6 +11,8 @@
 #include <optional>
 #include <string>
 #include <system_error>
+
+using Catch::Matchers::ContainsSubstring;
 
 using namespace redis;
 namespace fs = std::filesystem;
@@ -142,7 +146,8 @@ SCENARIO("A save that cannot start says which step failed", "[save_file]") {
 				CHECK(save.error().kind == os::SaveKind::Create);
 				CHECK(save.error().cause);
 				CHECK(save.error().path == target.path());
-				CHECK(fmt::format("{}", save.error()).contains("create failed: "));
+				CHECK_THAT(fmt::format("{}", save.error()),
+						   ContainsSubstring("create failed: "));
 			}
 		}
 	}

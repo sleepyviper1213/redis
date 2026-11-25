@@ -3,8 +3,11 @@
 #include "server/log_channels.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <string>
+
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 
@@ -36,7 +39,7 @@ SCENARIO("Changing the log level at runtime", "[commands][config]") {
 				server.run({"CONFIG", "SET", "loglevel", "loud"});
 
 			THEN("it is refused and nothing changes") {
-				CHECK(reply.starts_with("-ERR Invalid argument 'loud'"));
+				CHECK_THAT(reply, StartsWith("-ERR Invalid argument 'loud'"));
 				CHECK(logging::level() == "info");
 			}
 		}
@@ -45,7 +48,8 @@ SCENARIO("Changing the log level at runtime", "[commands][config]") {
 			const auto reply = server.run({"CONFIG", "SET", "port", "1"});
 
 			THEN("it is refused") {
-				CHECK(reply.starts_with("-ERR Unsupported CONFIG parameter"));
+				CHECK_THAT(reply,
+						   StartsWith("-ERR Unsupported CONFIG parameter"));
 			}
 		}
 
@@ -66,7 +70,7 @@ SCENARIO("CONFIG SET is off unless the operator enables it",
 				server.run({"CONFIG", "SET", "loglevel", "trace"});
 
 			THEN("it is refused and nothing changes") {
-				CHECK(reply.starts_with("-ERR CONFIG SET is disabled"));
+				CHECK_THAT(reply, StartsWith("-ERR CONFIG SET is disabled"));
 				CHECK(logging::level() == "info");
 			}
 		}

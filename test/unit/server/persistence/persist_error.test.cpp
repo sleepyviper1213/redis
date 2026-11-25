@@ -3,11 +3,14 @@
 #include "common/resp/parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
 #include <cstdint>
 #include <string>
 #include <system_error>
+
+using Catch::Matchers::StartsWith;
 
 using namespace redis;
 using persistence::PersistError;
@@ -124,7 +127,7 @@ SCENARIO("A persistence failure is worded in one place", "[persist_error]") {
 					  .at   = 12,
 					  .code = static_cast<std::int64_t>(
 						  resp::Parser::RespError::PARSE_NUMBER)});
-			CHECK(corrupt.starts_with("l is corrupt at byte 12: "));
+			CHECK_THAT(corrupt, StartsWith("l is corrupt at byte 12: "));
 		}
 		THEN("a log torn in the middle says so") {
 			CHECK(text({.kind = PersistKind::LogTornInside, .path = "l"}) ==

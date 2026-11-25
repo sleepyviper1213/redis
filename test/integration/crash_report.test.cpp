@@ -8,6 +8,7 @@
 #include "test_client.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
 #include <cstdlib>
@@ -21,6 +22,8 @@
 #include <csignal>
 #include <sys/wait.h>
 #include <unistd.h>
+
+using Catch::Matchers::ContainsSubstring;
 #endif
 
 #if !defined(_WIN32)
@@ -110,9 +113,9 @@ TEST_CASE("TC-224: A fault ends with the report and the original signal",
 	CHECK(ending.signal == SIGSEGV);
 
 	const std::string log = read_file(log_file);
-	CHECK(log.find("=== REDIS BUG REPORT START") != std::string::npos);
-	CHECK(log.find("Crashed by signal: SIGSEGV") != std::string::npos);
-	CHECK(log.find("=== REDIS BUG REPORT END") != std::string::npos);
+	CHECK_THAT(log, ContainsSubstring("=== REDIS BUG REPORT START"));
+	CHECK_THAT(log, ContainsSubstring("Crashed by signal: SIGSEGV"));
+	CHECK_THAT(log, ContainsSubstring("=== REDIS BUG REPORT END"));
 
 	fs::remove_all(dir);
 }
