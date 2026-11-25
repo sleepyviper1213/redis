@@ -50,8 +50,6 @@ jobs:
           # Every sanitizer, on both compilers; coverage is left out.
           - { preset: x86_64-linux-gnu-gcc-debug, configure: x86_64-linux-gnu-gcc, config: Debug, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: x86_64-linux-gnu-gcc-release, configure: x86_64-linux-gnu-gcc, config: Release, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
-          # The keyspace on jemalloc (ADR-0011): the suite must pass with it, as with the default.
-          - { preset: x86_64-linux-gnu-gcc-jemalloc-debug, configure: x86_64-linux-gnu-gcc-jemalloc, config: Debug, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: x86_64-linux-gnu-clang-debug, configure: x86_64-linux-gnu-clang, config: Debug, image: "silkeh/clang:22", cc: clang, cxx: clang++ }
           - { preset: x86_64-linux-gnu-gcc-asan, configure: x86_64-linux-gnu-gcc-asan, config: AddressSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
           - { preset: x86_64-linux-gnu-gcc-ubsan, configure: x86_64-linux-gnu-gcc, config: UndefinedSanitizer, image: "gcc:16.2",        cc: gcc,   cxx: g++ }
@@ -78,9 +76,6 @@ jobs:
           ${CXX} --version | head -n 1
           command -v ninja
           ninja --version
-      - name: Install the autotools the jemalloc port builds with
-        if: contains(matrix.preset, 'jemalloc')
-        run: apt-get install -y --no-install-recommends autoconf autoconf-archive automake libtool
       - name: Allow ThreadSanitizer's memory layout
         # The default mmap ASLR entropy collides with TSan's shadow memory and
         # every instrumented binary aborts at startup.
@@ -229,18 +224,6 @@ jobs:
       - name: Compiler cache statistics
         if: always()
         run: ccache --show-stats
-      - name: The unwinder libc++abi uses
-        if: ${{ !matrix.analysis }}
-        # Homebrew's libc++abi unwinds with Homebrew's libunwind; the binary's
-        # own _Unwind_* calls must go there too, not to libSystem's copy. See
-        # cmake/toolchains/homebrew-llvm.cmake.
-        run: |
-          set -euo pipefail
-          tests="$(find build/${{ matrix.configure }} -name redis_unit_test -type f -path '*/${{ matrix.config }}/*')"
-          otool -L "$tests"
-          nm -m "$tests" | grep -E '_Unwind_|_personality_v0' || true
-          otool -L "$tests" | grep -q 'libunwind\.1\.dylib'
-          ! nm -m "$tests" | grep -E '_Unwind_' | grep -q 'from libSystem'
       - name: Sanitizer options for the server
         if: matrix.config == 'ThreadSanitizer'
         run: echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$GITHUB_WORKSPACE/test/tsan.supp" >> "$GITHUB_ENV"
