@@ -37,6 +37,14 @@ std::atomic<bool> reporting{false};
 
 constexpr std::array FATAL_SIGNALS{SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
 
+/// How long the report may take before on_report_timeout() ends the process.
+constexpr unsigned REPORT_TIMEOUT_SECONDS = 3;
+
+/// Test seam for TC-301: set at install time from REDIS_TEST_CRASH_REPORT_HANG,
+/// it makes the report stop after its first line, as if a lock were held.
+/// Not a documented option.
+bool stall_report = false;
+
 /// A crash on a thread that has run out of stack needs another stack to
 /// report from. Covers the thread that installed the handler (main).
 constexpr std::size_t ALT_STACK_SIZE = 64 * 1024;
@@ -103,10 +111,22 @@ void report_backtrace() noexcept {
 #endif
 }
 
+/// The report hung (a lock held by the crashed thread, a corrupt heap behind
+/// a libc call): give up on it and die with a core dump, which is what a
+/// crash with no report would have done.
+void on_report_timeout(int /*sig*/) {
+	::signal(SIGABRT, SIG_DFL);
+	::abort();
+}
+
 void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 	if (!reporting.exchange(true)) {
+		::alarm(REPORT_TIMEOUT_SECONDS);
 		out("\n\n=== REDIS BUG REPORT START: Cut & paste starting from "
 			"here ===\n");
+		if (stall_report) {
+			for (;;) ::pause(); // only SIGALRM gets us out
+		}
 		out("Crashed by signal: ");
 		out(signal_name(sig));
 		out(" (");
@@ -150,6 +170,8 @@ void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 } // namespace
 
 void install_crash_handler(const std::string &log_file) {
+	stall_report = std::getenv("REDIS_TEST_CRASH_REPORT_HANG") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
+
 	if (!log_file.empty())
 		log_fd = ::open(log_file.c_str(),
 						O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC,
@@ -176,6 +198,12 @@ void install_crash_handler(const std::string &log_file) {
 	action.sa_flags = SA_SIGINFO | SA_RESETHAND | SA_NODEFER | SA_ONSTACK;
 	sigemptyset(&action.sa_mask);
 	for (const int sig : FATAL_SIGNALS) ::sigaction(sig, &action, nullptr);
+
+	struct sigaction timeout {};
+	timeout.sa_handler = on_report_timeout;
+	timeout.sa_flags   = SA_RESETHAND | SA_ONSTACK;
+	sigemptyset(&timeout.sa_mask);
+	::sigaction(SIGALRM, &timeout, nullptr);
 
 	std::set_terminate(on_terminate);
 }

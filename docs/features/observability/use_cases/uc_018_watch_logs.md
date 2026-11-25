@@ -47,6 +47,8 @@ Operator (a person tailing the log, a log collector, a service manager's journal
   command that was running, and a backtrace
 * An uncaught exception is reported with its message before the report
 * The process then ends with the signal's default action, leaving a core dump where enabled
+* If writing the report takes longer than 3 seconds (it hangs), the process aborts at once with a core dump and
+  without the rest of the report
 * Where the C library has no backtrace support, the report says so and points to the core dump
 * On Windows there is no crash report
 

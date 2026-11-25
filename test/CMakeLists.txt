@@ -81,6 +81,7 @@ endif()
 # real applications use. Run via scripts/test_server.sh, which starts the server.
 add_executable(redis_integration_test
     integration/appendfsync_bound.test.cpp
+    integration/crash_report.test.cpp
     integration/del.test.cpp
     integration/expiry.test.cpp
     integration/expiry_restart.test.cpp
