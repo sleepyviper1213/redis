@@ -123,6 +123,21 @@ jobs:
           bash scripts/profile_server_linux.sh ${{ matrix.preset }} RelWithDebInfo \
             "${{ inputs.scenario || 'bigget' }}" | tee -a "$report"
           { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Profile without pipelining
+        # 50 clients, one request in flight each: what a round trip costs, in
+        # the kernel's system calls against this code (TC-298, the connection
+        # feature's io_uring_experiment.md). ANNOTATE is empty: the hash lookup
+        # it names is not what this run is about.
+        env:
+          DURATION: ${{ inputs.duration || '10' }}
+          CALLGRAPH: "1"
+          ANNOTATE: ""
+        run: |
+          report="profile/${{ matrix.compiler }}-clients.txt"
+          echo "${{ matrix.compiler }}, clients (no pipelining), runner: $(nproc) CPUs" | tee "$report"
+          bash scripts/profile_server_linux.sh ${{ matrix.preset }} RelWithDebInfo \
+            clients | tee -a "$report"
+          { echo '```'; cat "$report"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Profile with a keyspace that fits the CPU caches
         # The same run with 10000 keys: a symbol whose share drops sharply
         # against the report above was waiting on memory, not computing.
