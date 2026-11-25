@@ -1,5 +1,6 @@
 #include "server/net/listener.hpp"
 
+#include "core/chrono/elapsed_timer.hpp"
 #include "core/stdexec_ext/erased.hpp"
 #include "core/stdexec_ext/supervise.hpp"
 #include "server/net/detail/listener_impl.tpp" // instantiates the failing one
@@ -60,8 +61,8 @@ public:
 	/// failure alike, so no variant of the two is built per instantiation.
 	using AcceptSender =
 		stdexec_ext::ErasedSender<stdexec::set_value_t(tcp::socket),
-							 stdexec::set_error_t(std::exception_ptr),
-							 stdexec::set_stopped_t()>;
+								  stdexec::set_error_t(std::exception_ptr),
+								  stdexec::set_stopped_t()>;
 
 	/**
 	 * \brief The real accept, or a failure if one is due.
@@ -277,9 +278,9 @@ SCENARIO("A listener stops", "[net][listener][shutdown]") {
 
 SCENARIO("A listener survives failed accepts", "[net][listener][fault]") {
 	GIVEN("a listener whose next three accepts fail") {
-		const auto started = std::chrono::steady_clock::now();
-		auto plan          = std::make_shared<FaultPlan>();
-		plan->failures     = 3;
+		const ElapsedTimer timer;
+		auto plan      = std::make_shared<FaultPlan>();
+		plan->failures = 3;
 		FailingListenerFixture fixture(1, plan);
 
 		WHEN("a client connects") {
@@ -291,8 +292,7 @@ SCENARIO("A listener survives failed accepts", "[net][listener][fault]") {
 				CHECK(plan->injected == 3);
 				// A lower bound only: each failure waits ACCEPT_RETRY_DELAY
 				// before the next try, so the loop cannot have spun.
-				CHECK(std::chrono::steady_clock::now() - started >=
-					  3 * detail::ACCEPT_RETRY_DELAY);
+				CHECK(timer.has_expired(3 * detail::ACCEPT_RETRY_DELAY));
 				CHECK(!fixture.loop_failed());
 			}
 		}

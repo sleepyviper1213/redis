@@ -1,0 +1,329 @@
+# Experiment: is a request's cost in the syscalls, and would io_uring cut it? (TC-298)
+
+Two stages, with a decision between them. Nothing in the server changes until stage 1 has been read.
+
+## Question
+
+Without pipelining, the server handles about 130,000 requests per second with 50 clients; with 16 commands per batch it
+handles about 1,450,000 (Benchmark run #27, gcc job, a runner with 4 CPUs; the reference Redis there: 129,000 and
+1,332,000). A per-request cost that pipelining removes is a cost of the round trip, not of the command: reading,
+writing, waking the event loop. The guess is that it sits in system calls and context switches. This experiment checks
+that guess before spending effort on it.
+
+DPDK and `sendfile()` were considered and dropped: DPDK cannot run on the CI runners (no NIC to bind), and `sendfile()`
+sends files, while replies come from memory.
+
+## Stage 1: profile the non-pipelined case
+
+**Method.** The Profile workflow (`.github/workflows/profile.yml`) runs `scripts/profile_server_linux.sh` with the
+`clients` scenario: 50 clients, no pipelining, `SET`. RelWithDebInfo with frame pointers, `perf record` with call
+graphs, and `perf stat` counters over the same window, once per compiler.
+
+**What is read from the report**
+
+| Figure | Where in the report | What it says |
+|--------|--------------------|--------------|
+| Task-clock per command (µs) | counters block | The server's CPU cost of one request |
+| Context switches per 1000 commands | counters block | How often a request wakes a thread |
+| Self time in kernel symbols (`tcp_sendmsg`, `tcp_recvmsg`, `ep_poll`, syscall entry, `sock_*`) against user symbols (session, parser, hash lookups, stdexec) | self-time list | Whether the CPU is spent in the kernel or in this code |
+| Inclusive time of `Session` and `stdexec` frames | inclusive lists | Which stage of a request costs what |
+
+**Threats to validity.** One run is one sample, and a shared runner is noisy: compare the lists inside one job, never
+numbers across jobs. The 4 CPUs are shared with `redis-benchmark`, which takes some of them. A VM may not expose a
+hardware PMU, in which case cycles, instructions and cache misses are missing (the script says so) and only the
+software counters remain. Sampling at 999 Hz for 10 s gives on the order of ten thousand samples, enough for shares of a
+few percent, not for fine differences.
+
+**Decision.** Stage 2 is worth doing if the kernel's share of the server's CPU, system calls and the network stack
+together, is about half or more, and the context-switch rate is of the order of one per request. If most of the time
+is in this code (parsing, session, executor hops), io_uring would not help, and the finding to act on is there.
+These thresholds are a judgement, set here before the numbers are seen.
+
+## Stage 2: an io_uring build of the same server
+
+Only if the decision above says so. The backend is a build option and changes no server code.
+
+- **Mechanism.** In Boost.Asio 1.38.2 (Boost 1.92, the vcpkg version), `BOOST_ASIO_HAS_IO_URING_AS_DEFAULT` makes sockets
+  use io_uring, and it is defined automatically only when io_uring is enabled and epoll is not. So the variant defines
+  `BOOST_ASIO_HAS_IO_URING` and `BOOST_ASIO_DISABLE_EPOLL` and links `liburing`.
+- **Option.** `REDIS_USE_IO_URING`, off by default, Linux only (an error elsewhere), a vcpkg feature `io_uring`
+  (`liburing`), and a preset `x86_64-linux-gnu-gcc-iouring`: the pattern of `REDIS_USE_JEMALLOC` (ADR-0011).
+- **Container permissions.** Docker's default seccomp profile may refuse `io_uring_setup`, and the test and benchmark
+  jobs run in unprivileged containers (only the profile and ThreadSanitizer jobs are privileged). A probe step comes
+  first, so a refusal shows up as a clear message, not as a server that cannot start.
+- **Sanitizers.** Off in this variant at first, as for jemalloc.
+- **Other platforms.** Windows and macOS builds do not change.
+
+**What is measured.** The Benchmark workflow gains one job on the io_uring preset beside the existing ones: the
+`clients`, `latency`, `pipeline` and `bigget` scenarios of `bench_server.sh`, with the reference Redis in the same job.
+The full unit and integration suites run on the preset, as TC-275 does for jemalloc.
+
+**Keep it, or drop it.** The option stays off by default whatever the result. It is recorded as worth having only if
+the suite passes on it and the `clients` median is at least 10 % higher than the epoll build's in repeated runs
+(at least three, the spread being larger than one run shows: the jemalloc memory runs differed by 4 to 7 % for
+identical work), with no loss in `pipeline`. The numbers go in a results document in this folder, as for jemalloc.
+
+## Results
+
+### Stage 1 (Profile workflow run #13, commit `d0b37cc`, 2026-11-25)
+
+`clients` scenario, 50 clients, no pipelining, 10 s sampled, a runner with 4 CPUs shared with `redis-benchmark`. The
+server ran under `perf`, so its rate (about 91,000 and 112,000 per second) is below the unobserved 130,000.
+
+| | gcc | clang |
+|---|---:|---:|
+| Commands handled in the window | 911,534 | 1,123,556 |
+| Task-clock per command | 9.91 µs | 7.49 µs |
+| Context switches per 1000 commands | 97.6 | 236.8 |
+| CPU migrations per 1000 commands | 0.02 | 0.02 |
+| Inside a system call (inclusive) | 77.4 % | 82.8 % |
+| of which `sendto` | 53.5 % | 55.1 % |
+| `recvfrom` | 7.1 % | 11.4 % |
+| `epoll_wait` | 4.3 % | 8.7 % |
+| `epoll_ctl` | 6.4 % | 3.0 % |
+
+The hardware counters (cycles, instructions, cache misses) are not available: the runner's VM exposes no PMU.
+
+**Reading it**
+
+- **The kernel is where the time goes.** Three quarters or more of the server's CPU is inside system calls, and the
+  code of this server (parsing, session, hash lookups, stdexec) is under a quarter. Making that code twice as fast
+  would speed a request up by about 10 %.
+- **Wakeups are not the cost.** Context switches are 0.1 to 0.24 per request, not about one: with 50 clients the loop
+  is rarely idle, so one `epoll_wait` returns several ready sockets.
+- **Most of it is `sendto`, and much of that is not this server's work.** About 54 % of the CPU is in `sendto`. The
+  client is on the same machine, so over loopback the kernel runs the client's receive path inside the server's
+  system call: `tcp_v4_rcv`, `tcp_rcv_established`, `tcp_ack` and `tcp_clean_rtx_queue` are in the server's self-time
+  list. This is an inference from those symbols; it was not isolated. On a real network card that part would run
+  elsewhere, so this profile overstates the server's own share, and io_uring cannot remove it either way: it does
+  the same TCP work.
+- **`epoll_ctl` appears at 3 to 6 %.** A socket registered once with the reactor needs no per-request `epoll_ctl`. That
+  it shows up suggests a registration change per request, which would be a cost with or without io_uring. Not
+  investigated.
+
+**Against the decision rule.** The first half is met (the kernel's share is about 77 to 83 %, against "about half").
+The second half is not (about 0.1 to 0.24 context switches per request, against "of the order of one"). What io_uring
+could remove is the system-call entry and exit, `epoll_wait` and `epoll_ctl`, and some per-call overhead of `sendto`
+and `recvfrom`: roughly 15 % of the server's CPU at most (self time of `do_syscall_64` plus the two `epoll`
+calls, a rough bound). That is near the 10 % bar for keeping the option and does not leave room for it to miss.
+
+### Stage 1b: where the `epoll_ctl` comes from
+
+Read in Asio 1.38.2's source (`epoll_reactor.ipp`, `reactive_socket_service_base.hpp`, `reactive_socket_recv_op.hpp`);
+not yet measured.
+
+- **`async_wait(wait_read)` costs one `epoll_ctl` per call.** It starts its operation with speculation off, and the
+  reactor then re-arms the socket's edge-triggered registration with `epoll_ctl(EPOLL_CTL_MOD)`
+  (`epoll_reactor.ipp`, the `else` branch of `start_op`). `Session::read()` waits this way once per request, which is
+  the 3 to 6 % in the profile.
+- **`async_read_some` avoids it, but tries a `recv` first.** Its operation allows a speculative attempt. After a read
+  that completed from the reactor, Asio stops speculating only if the read was *exhausted*; by default a stream read
+  counts as exhausted only when it returned no bytes. A short read does not, so the next `async_read_some` calls `recv`
+  first and finds nothing: the wasted syscall that the comment in `Session::read()` describes, and the reason it
+  uses `async_wait`.
+- **So the session chose between two one-syscall options.** Either an `epoll_ctl` per request or a failed `recv` per
+  request.
+- **Asio has a switch for a third.** The configuration key `reactor.reset_edge_on_partial_read=1` makes a stream read
+  that filled less than its buffer count as exhausted. Speculation is then skipped after a short read, and
+  `async_read_some` starts with no system call at all. It is set when the `io_context` is built, from a
+  `config_from_string`; today `RedisServer` builds it from a concurrency hint, which would have to be given as
+  `scheduler.concurrency_hint=N` in the same string.
+
+**Variant to measure.** `Session::read()` waits with `async_read_some` into the connection's read buffer, and the
+`io_context` is built with `reactor.reset_edge_on_partial_read=1`, on Linux (epoll) only: the other platforms keep
+today's code, since the trade-off was measured on one of them and the epoll behaviour above does not apply to
+kqueue or IOCP.
+
+**Expected.** One system call fewer per request: `epoll_ctl` at about 3 to 6 % of the server's CPU should fall to
+nearly nothing in the `clients` profile, and `clients` throughput rise by about as much. A larger gain is not
+expected; a loss would mean the reset-edge setting costs more than it saves.
+
+**Risks to rule out**
+- A lost wakeup: a partial read treated as exhausted while data is already there would leave a request unanswered
+  until the idle timeout. The stress test, which splits every request at every byte boundary and checks every reply,
+  is the check; the unit and integration suites must also pass on Linux.
+- The idle and request time limits cancel the pending read; cancelling an `async_read_some` must behave as cancelling
+  the wait does. The session tests for both limits cover it.
+- The single-client case (`latency`): the wasted `recv` was measured as a quarter of the time there. It must not come
+  back.
+
+**Measured by.** The Profile workflow's `clients` step (the `epoll_ctl` share and the task-clock per command, against
+the figures above), and the Benchmark workflow's `clients` and `latency` scenarios, in a job that has both builds.
+
+**Built, not yet measured.** `Session::receive()` reads with one `async_read_some` where Asio uses epoll, and
+`RedisServer` builds its `io_context` from `io_config()` (`src/server/net/detail/io_config.hpp`), which keeps the
+concurrency hint and adds the reactor setting. The other platforms keep the wait-then-read path. The unit suite
+passes on Windows (IOCP), with the new read also forced on there to exercise the cancellation, end-of-stream and
+timeout handling; the epoll reactor itself runs only in Linux CI (TC-299 for the configuration, the stress test for
+lost wakeups, and the Profile and Benchmark workflows for the cost).
+
+### Stage 1b results (Profile workflow run #14, commit `3d04455`, 2026-11-25)
+
+The same `clients` step, now with `Session::receive()` reading in one `async_read_some`. Both jobs built and ran on
+Linux, so the epoll branch compiles with gcc and clang.
+
+| | gcc, before | gcc, after | clang, before | clang, after |
+|---|---:|---:|---:|---:|
+| Commands handled in 10 s, under `perf` | 911,534 | 1,869,109 | 1,123,556 | 1,925,591 |
+| Task-clock per command | 9.91 µs | 5.04 µs | 7.49 µs | 4.84 µs |
+| Context switches per 1000 commands | 97.6 | 22.8 | 236.8 | 25.1 |
+| `epoll_ctl`, inclusive | 6.4 % | absent | 3.0 % | absent |
+| `sendto`, inclusive | 53.5 % | 58.2 % | 55.1 % | 58.7 % |
+| `recvfrom`, inclusive | 7.1 % | 11.5 % | 11.4 % | 11.2 % |
+| `epoll_wait`, inclusive | 4.3 % | 5.3 % | 8.7 % | 5.1 % |
+| Inside any system call | 77.4 % | 77.4 % | 82.8 % | 77.5 % |
+
+**Reading it, with its limits**
+
+- **`epoll_ctl` is gone,** as intended. That part is certain.
+- **The effect is about ten times what the profile predicted.** The prediction was the 3 to 6 % that `epoll_ctl` took.
+  CPU per command fell by about 49 % (gcc) and 35 % (clang), the rate under `perf` roughly doubled (gcc) and rose by
+  about 70 % (clang), and context switches fell four to nine times. The server's thread was busy about nine tenths of
+  the window in both runs (9.0 and 9.4 s of CPU in 10 s), so a lower cost per command is a higher rate.
+- **The mechanism is not established.** The shares of the system calls barely moved while the cost per command nearly
+  halved, so every part of a request got cheaper, not just the one removed. A guess, not tested: re-arming a
+  registration with `epoll_ctl(EPOLL_CTL_MOD)` while data is already waiting puts the socket back on the ready list,
+  which would explain more `epoll_wait` returns and more wakeups per request (the session's old comment mentions
+  "spurious" readiness), and the extra wakeups would make every `sendto` more expensive.
+- **One run per compiler, on different shared runners.** Run #13 and run #14 did not share a machine, and the 4 CPUs
+  are shared with `redis-benchmark`. A change this large is unlikely to be only noise, but it is a profile under
+  `perf`, not a benchmark: no reference Redis ran beside it.
+- **Lost wakeups are not ruled out.** The run served 1.9 million commands to 50 clients without stalling the whole
+  load, which would not show one client waiting for a reply. The stress test, which checks every reply, is the check,
+  and it runs in the main CI workflow, not here.
+
+### Stage 1b: CI and benchmark (CI run #75, Benchmark run #29, commit `6f63349`, 2026-11-25)
+
+- **CI:** all 18 jobs passed: Linux gcc and clang in Debug and Release, the AddressSanitizer, UndefinedSanitizer,
+  ThreadSanitizer and RealtimeSanitizer builds, the jemalloc build, the macOS jobs, and the static analysis. No lost
+  wakeup showed up.
+- **Benchmark:** the server's median against the reference Redis in the same job (above 1 is faster than the
+  reference), against run #27 before the change:
+
+| Scenario | gcc, run #27 | gcc, run #29 | clang, run #29 |
+|---|---:|---:|---:|
+| `clients` | 1.00 | 1.00 (163,666 / 164,474) | 1.00 (163,265 / 163,132) |
+| `latency` | 1.03 | 0.99 (61,350 / 61,881) | 1.26 (79,302 / 62,972) |
+| `pipeline` | 1.09 | 1.06 | 1.12 |
+| `bigget` | 1.14 | 1.27 | 1.27 |
+
+**Reading it.** The benchmark does **not** show the doubling that the profile suggested. On `clients` the server and
+the reference sit at the same rate (about 164,000) in both jobs, before and after. Equal rates for two different
+servers point at a ceiling set by the load generator, not by either server. The workflow already keeps the two apart
+(the server on CPUs 0-1, `redis-benchmark` on 2-3), so it is not competition for CPUs: the `clients` scenario does not
+pass `--threads` to `redis-benchmark`, so one client thread drives all 50 connections, and one thread has a rate it
+cannot exceed. That the two servers match at 163,000 to 165,000 is what such a ceiling looks like; it is an
+inference, not something isolated. So this benchmark cannot see a drop in the server's CPU per command; the profile measures that, and the profile's
+rate under `perf` (187,000) is above the benchmark's, which fits a server that is no longer the limit. `latency` is
+one client, whose round trip is mostly the network: gcc shows nothing, clang shows 26 %, and the spread between runs
+of that scenario was 61,000 to 85,000 in an earlier run. `bigget` rose against the reference in both jobs, but it
+reads pipelined batches and its change is not explained by this one; one run is not enough to claim it.
+
+**What would show it** is stage 1c below. An earlier version of this paragraph said the workflow did not pin the CPUs
+and that the client shared the server's: both were wrong.
+
+### Stage 1c: the two revisions on one runner, with the server as the limit
+
+Planned. Two changes make the comparison fair and sensitive:
+
+- **A scenario that saturates the server.** `bench_server.sh` gains `saturate`: `SATURATE_CLIENTS` connections (500 by
+  default), no pipelining, with the client threads of `THREADS`, so the load generator can offer more than the server
+  can take. In `clients` the rate is bounded by the single client thread; here it should be bounded by the server.
+- **Both revisions in one job.** A new workflow, `bench-ab.yml` (Linux, gcc, pushed from a `bench-ab/` branch),
+  builds the base revision (the commit before the read-path change, `a9e892f`) and the new one in two worktrees of one
+  runner, and runs `bench_server.sh` on each in alternating rounds, with the reference Redis in every run and the
+  CPUs pinned as in `bench.yml`. The new revision's scripts run both sides, so both see the same scenarios. This is
+  the pattern of the macOS workflow (`bench-macos.yml`). **The workflow was removed after its two runs (2026-11-25)**:
+  the results below stand, and the `saturate` scenario stays in `bench_server.sh`. To repeat the comparison, restore
+  `.github/workflows/bench-ab.yml` from the history (commits `0adb765` and `2bcd043`).
+
+**Reading it.** Same-job, alternating: the gap between base and new on `saturate`, and each side's ratio to the
+reference, are the result; absolute rates are not. If the profile was right, `saturate` should be clearly higher on the
+new revision. If it is not, the profile's doubling was an artefact of sampling.
+
+### Stage 1c results (Benchmark A/B run #1, commit `0adb765`, 2026-11-25)
+
+Base `a9e892f` against the new revision on one runner (4 CPUs, server on 0-1, `redis-benchmark` on 2-3, 2 client
+threads), 2 rounds in alternating order of 5 runs each, with the reference Redis in every run. The runner was slower
+than in the earlier jobs (the reference's `clients` rate was about 100,000 against 164,000), which is why only same-job
+figures count.
+
+| Scenario | base (median of the two rounds) | new | new against base | server / reference: base, new |
+|---|---:|---:|---:|---|
+| `saturate` (500 connections) | 124,899 and 123,039 | 137,826 and 128,924 | +10 % and +5 % | 0.95 and 0.94; 1.07 and 1.02 |
+| `pipeline` | 1,454,546 and 1,454,281 | 1,599,680 and 1,599,680 | +10 % | 1.05; 1.15 |
+| `clients` | 100,654 and 98,377 | 97,229 and 93,809 | −3 % and −5 % | 0.98 and 1.00; 0.98 and 0.98 |
+| `latency` | 38,241 and 38,095 | 37,764 and 38,329 | 0 % | 1.05; 1.02 to 1.05 |
+| `bigget` | 1,102,840 and 1,102,688 | 1,103,296 and 1,185,010 | 0 % and +7 % | 1.24; 1.24 and 1.26 |
+
+**Reading it**
+
+- **At saturation the new revision is faster by about 9 to 11 %.** Over the 10 runs of each side, the new mean is
+  133.9k against 123.2k, and the ranges overlap little: every base run is at or below 127.0k, and the new median is
+  137.8k. Against the reference, which sat at 127,000 to 131,000 throughout, the base is 5 to 6 % below it and the new
+  revision level with it or up to 7 % above.
+- **That is a tenth of a doubling, not a doubling.** The profile put CPU per command down by 35 to 49 %. This benchmark
+  shows 9 to 11 % more requests per second. Two things could explain the gap, and the run cannot separate them: the
+  load generator may now be the limit (the reference tops out at the same rate, and the new revision's best runs
+  reach 140,000), in which case the real headroom is higher; or the profile exaggerated the gain, since `perf`'s own
+  system-call tracing (`perf_syscall_enter` and `trace_syscall_enter` appear in the profile) costs more the more
+  syscalls a request makes.
+- **`pipeline` is up about 10 %,** the same in both rounds. The figures are quantised: they are 8 million requests
+  divided by a time the client reports in coarse ticks, so 5.0 s against 5.5 s is the whole difference. It is
+  consistent, but it is two steps of the clock.
+- **`clients`, `latency` and `bigget` tie** within the spread. `clients` is 3 to 5 % lower on the new revision, with
+  the base and new ranges overlapping; the ratio to the reference does not move (0.98), so it is noise from the
+  runner. `bigget` rose in round 2 only, as did the reference.
+- **Tail latency does not move:** the `clients` p99 is 0.34 ms on both; the pipelined p99 is 0.62 against 0.65 ms.
+
+**Next (planned):** the workflow runs the A/B twice, as parallel jobs on separate runners, so that one push gives both
+views: `pinned` as in this run (the server on CPUs 0-1, two client threads on 2-3), and `wide` (the server on CPU 0,
+three client threads on 1-3), which can offer more load than `pinned` can. Each job is a same-runner A/B of its own;
+the two jobs are not compared with each other in absolute terms. If the new revision's `saturate` rate climbs in `wide`,
+`pinned` was limited by the generator and the gain is larger than 10 %; if it stays near the same figure, 10 % is the
+gain. The reference Redis in each run shows where each setup's ceiling is.
+
+### Stage 1c results, second run (Benchmark A/B run #2, commit `2bcd043`, 2026-11-25)
+
+Two jobs on two runners, each an A/B of its own: `pinned` (the server on CPUs 0-1, two client threads on 2-3, as run #1)
+and `wide` (the server on CPU 0, three client threads on 1-3). The runners were much faster than in run #1: the
+`clients` rate was 162,000 to 166,000 here against 97,000 there, so the two runs are not comparable in absolute terms.
+Means of 10 runs per side, 5 in each of 2 alternating rounds:
+
+| `saturate`, 500 connections | base | new | new against base | reference Redis | base, new against the reference |
+|---|---:|---:|---:|---:|---|
+| `pinned` | 159,939 | 168,004 | **+5.0 %** | 183,754 | 0.87; 0.91 |
+| `wide` | 164,170 | 170,133 | **+3.6 %** | 192,526 | 0.85; 0.88 |
+
+In `pinned` the ranges do not overlap: the lowest new run (163,225) is above the highest base run (163,145). In `wide` they
+touch (166,500 on both sides). The other scenarios, medians of the two rounds:
+
+| Scenario | `pinned`: base, new | `wide`: base, new |
+|---|---|---|
+| `clients` | 162,470 and 160,000; 162,470 and 162,866 | 165,426 and 165,700; 165,426 and 163,934 |
+| `pipeline` | 1,682,793 and 1,683,148; 1,777,383 and 1,777,383 | 1,777,383 and 1,776,199; 1,776,594 and 1,776,594 |
+| `bigget` | 1,142,041 and 1,142,041; 1,184,834 and 1,184,308 | 1,142,041 and 1,142,041; 1,184,133 and 1,184,835 |
+| `latency` | 31,000 to 94,000 within a job | the same spread |
+
+**Reading it**
+
+- **The gain at saturation is 4 to 5 %, and the server is the limit.** The new revision reaches about 168,000 to
+  170,000 in both jobs, with one CPU for the server and with two, and with two or three client threads: more offered
+  load does not raise it, so the server is what limits it. The reference Redis reaches 184,000 to 193,000 against the same
+  generator, so the generator is not the ceiling either. This settles the open question of run #1: the +9 to 11 % there
+  was on a slower runner, probably partly limited by the load generator, and the profile's reduction of 35 to 49 % in
+  CPU per command was an overstatement (the leading suspect is `perf`'s own per-syscall cost, still untested).
+- **`pipeline` and `bigget` are +4 to 6 % in `pinned`, but they move by one tick of the client's clock.** `bigget`
+  gains 3.7 % in all four rounds (7.0 s against 6.75 s); `pipeline` gains 5.6 % in `pinned` and nothing in `wide`, so I
+  do not count it as established.
+- **`clients` and `latency` tie,** as before; `latency` is unusable (its runs span 31,000 to 94,000).
+- **At saturation the reference Redis is ahead.** On this runner it is 12 to 15 % ahead of the base and 9 to 12 % ahead
+  of the new revision. In run #1 the new revision matched it, but that run's reference sat at 127,000 to 131,000, a
+  rate this one far exceeds, so run #1 was probably limited by its runner. On pipelined work (`pipeline`, `bigget`) the
+  server is ahead of the reference by 11 % and 26 %. So the weak spot, relative to Redis, is the non-pipelined round
+  trip at high concurrency: the same place the profile found the kernel's share of the time.
+
+Stage 2 (io_uring) would aim at that same cost. After this change, the share of the server's CPU in system calls is still
+about 77 % (stage 1b), mostly in `sendto`, which io_uring does not remove.
+
+Stage 2: not started.

@@ -148,6 +148,13 @@ Open for review: `Target` holds a `tcp::socket*`. TC-291 to TC-294 work with a r
 over "anything with `close(error_code&)`" would let them run without one, at the cost of a template on a class that is
 not templated today. The plan assumes the real socket until that is decided.
 
+## 7. The I/O backend ([io_uring_experiment.md](io_uring_experiment.md))
+
+| ID | Behaviour | Given / When | Expected | Level | Existing test | Tested at | Status |
+|----|-----------|--------------|----------|-------|---------------|-----------|--------|
+| TC-298 | Measured: what a non-pipelined request costs, and what io_uring changes | Stage 1: the Profile workflow on the `clients` scenario (50 clients, no pipelining), `perf` with call graphs and counters. Stage 2, if stage 1 says so: the Benchmark workflow with an io_uring build beside the epoll one, and the suites on that build | Stage 1: the kernel's share of the server's CPU, and context switches per 1000 commands, recorded. Stage 2: the `clients` median at least 10 % higher in repeated runs, `pipeline` not lower, every test passing on the io_uring build; the option stays off by default | Benchmark | `scripts/profile_server_linux.sh` and `.github/workflows/profile.yml` (stage 1, `clients` step; ran once, results in io_uring_experiment.md); stage 1b (the read without `epoll_ctl`): profiled in run #14, CI and the Benchmark workflow passed, but the benchmark cannot see the gain; stage 1c (an A/B of the base and the new revision with the `saturate` scenario of `bench_server.sh`): run twice, +4 to 5 % at saturation, in io_uring_experiment.md (the workflow that ran it was removed afterwards); stage 2 not built | none | Gap |
+| TC-299 | The `io_context` is configured as before, plus the reactor setting on epoll | `io_config(n)` for 1, 2 and 4 I/O threads, against an `io_context` built from the same number as a concurrency hint | The scheduler's concurrency hint and locking, and the reactor's I/O and registration locking, read back the same; `reactor.reset_edge_on_partial_read` is 1 where Asio uses epoll and 0 elsewhere | Unit | `io_config`: "The io_context is configured as it was, plus the reactor setting" (the epoll expectation is compiled only where Asio uses epoll: Linux CI) | Unit | Covered |
+
 ## Entry and exit criteria
 
 * **Entry**: the server builds; the unit and integration suites run in the chosen preset; the stress binary is built.

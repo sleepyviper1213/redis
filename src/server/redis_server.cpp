@@ -4,6 +4,7 @@
 #include "core/stdexec_ext/supervise.hpp"
 #include "log_channels.hpp"
 #include "net/detail/asio_context.hpp"
+#include "net/detail/io_config.hpp"
 #include "net/formatter.hpp"
 #include "net/listener.hpp"
 #include "net/net_error.hpp"
@@ -17,7 +18,6 @@
 #include <fmt/format.h>
 #include <stdexec/execution.hpp>
 
-#include <algorithm>
 #include <csignal>
 #include <exception>
 #include <expected>
@@ -172,7 +172,7 @@ serve(Listener &server, stdexec_ext::InlineTask<void> housekeeping,
 
 RedisServer::RedisServer(ServerConfig config)
 	: config_(std::move(config)),
-	  io_(static_cast<int>(std::max(1U, config_.io_threads))),
+	  io_(detail::io_config(config_.io_threads)),
 	  signals_(io_, SIGINT, SIGTERM),
 	  command_watchdog_(diagnostics::ReportPolicy::Once, config_.watchdog),
 	  services_(std::make_shared<Services>(

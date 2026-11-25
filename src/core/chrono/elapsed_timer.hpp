@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fmt/base.h>
+
 #include <chrono>
 #include <concepts>
 #include <cstdint>
@@ -68,8 +70,8 @@ public:
 
 	/// True if more than \p timeout has elapsed since start or last restart().
 	[[nodiscard]] bool
-	has_expired(std::chrono::milliseconds timeout) const noexcept {
-		return elapsed() >= timeout;
+	has_expired(std::chrono::duration<double> timeout) const noexcept {
+		return duration_elapsed() >= timeout;
 	}
 
 private:
@@ -77,6 +79,12 @@ private:
 };
 
 using ElapsedTimer = BasicElapsedTimer<>;
-
-
 } // namespace redis
+
+template <typename T>
+struct fmt::formatter<redis::BasicElapsedTimer<T>> : fmt::formatter<double> {
+	auto format(const redis::BasicElapsedTimer<T> &sw,
+				format_context &ctx) const -> format_context::iterator {
+		return formatter<double>::format(sw.duration_elapsed().count(), ctx);
+	}
+};

@@ -33,6 +33,12 @@ no gain within a job. **The option stays off.** Neither build gives memory back 
 451 MiB; the reference releases 40 to 50 MiB), so the cause is not the allocator. Revisit after repeated runs and a
 look at that retention.
 
+Two later runs (#28, #29; see [Later runs](../jemalloc_benchmark.md#later-runs)) correct the first reading. The default
+build's refill RSS is 450.6 to 451.3 MiB in every run; jemalloc's is 416.5 to 432.1 MiB, so it is 4 to 8 % lower,
+and not "inside the noise" (the reference server's spread was the wrong yardstick). The option still stays off, as a
+judgement: a gain of that size against an extra dependency and a second configuration to test. The CI job that built
+and tested it was removed on 2026-11-25, so the allocator's tests no longer run in any workflow.
+
 ## Alternatives considered
 
 - **Replace the global allocator (link jemalloc, change no code):** simplest, and covers connection buffers too. Not

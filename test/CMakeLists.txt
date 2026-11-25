@@ -50,6 +50,7 @@ add_executable(redis_unit_test
     unit/server/net/conversation.test.cpp
     unit/server/net/executor.test.cpp
     unit/server/net/guard.test.cpp
+    unit/server/net/io_config.test.cpp
     unit/server/net/net_error.test.cpp
     unit/server/net/net_error_debug.test.cpp
     unit/server/net/pipeline.test.cpp

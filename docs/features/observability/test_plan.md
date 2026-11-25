@@ -93,8 +93,10 @@ Coverage per use case is in [traceability.md](traceability.md).
 
 ## 5. Allocate the keyspace with jemalloc (DX-80, #50)
 
-The allocator tests run in the Linux CI job `x86_64-linux-gnu-gcc-jemalloc-debug` (preset with
-`REDIS_USE_JEMALLOC=ON`), except TC-274, which every build runs. They first ran on Windows against a stand-in
+The allocator tests ran in the Linux CI job `x86_64-linux-gnu-gcc-jemalloc-debug` (preset with
+`REDIS_USE_JEMALLOC=ON`), except TC-274, which every build runs. The job was removed from `ci.yml` on 2026-11-25:
+these tests still exist and build with the option on, but no workflow runs them (the Benchmark workflow still builds
+the preset). They first ran on Windows against a stand-in
 `jemalloc.h`, then in CI against real jemalloc (run 65, #50). TC-276 is a benchmark: it ran once (Benchmark workflow
 run #27) and its numbers are in [jemalloc_benchmark.md](jemalloc_benchmark.md); repeat runs are still wanted.
 
@@ -104,7 +106,7 @@ run #27) and its numbers are in [jemalloc_benchmark.md](jemalloc_benchmark.md); 
 | TC-272 | `used_memory` follows the keyspace | As TC-201, with jemalloc | `used_memory` rises by at least the value stored and falls back after the delete | Unit | `info`: "INFO reports the memory the keyspace holds" runs with the chosen `DefaultAllocator` | Unit (Linux CI) | Covered |
 | TC-273 | Counting does not drift | Allocate and free blocks of many sizes (1 byte to 1 MiB), in mixed order | The counter returns exactly to its start; usable size is counted on both sides | Unit | `jemalloc_allocator`: "The count returns to where it started" | Unit (Linux CI) | Covered |
 | TC-274 | The fallback is the default | Option off, or a platform without jemalloc | `DefaultAllocator` is `CountingAllocator` (`static_assert`); every existing test passes unchanged | Unit | `default_allocator`: "The keyspace allocator is the one the build chose" | Unit | Covered |
-| TC-275 | The whole suite passes with jemalloc | Linux CI, option on | Unit and integration tests pass; sanitizer presets build with the option off | CI | CI job `x86_64-linux-gnu-gcc-jemalloc-debug` (unit and integration) | CI | Covered |
+| TC-275 | The whole suite passes with jemalloc | Linux CI, option on | Unit and integration tests pass; sanitizer presets build with the option off | CI | None: the CI job `x86_64-linux-gnu-gcc-jemalloc-debug` (unit and integration) was removed on 2026-11-25; it passed while it ran (run 65) | none | Gap |
 | TC-276 | Measured gain | `redis-benchmark` (SET/GET throughput), and resident memory (`VmRSS`) beside `used_memory` through three phases, with and without the option, beside Debian's `redis-server`: (1) fill 200,000 random keys each of 16, 200 and 2000-byte values; (2) delete most of the large keys and half of the medium ones; (3) write 700-byte values over new keys, into the freed space | Both results recorded in this folder; the option's default is decided from them. The fragmentation ratio is `VmRSS` / `used_memory` after each phase; a lower ratio after phase 3 is the gain | Benchmark | `scripts/bench_memory.sh`, run by the Benchmark workflow (job per preset); first results in [jemalloc_benchmark.md](jemalloc_benchmark.md) (run #27: refill RSS 432 MiB with jemalloc, 451 MiB without; the option stays off) | Linux CI (benchmark workflow) | Covered |
 
 ## Entry and exit criteria

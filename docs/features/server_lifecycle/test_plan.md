@@ -58,6 +58,7 @@ one fixed sleep.
 | TC-238 | The append-only directory is locked | Another server holds `--appenddir`; start | Fails with `<dir> is in use by another server; refusing to share it`; the first server is undisturbed | Unit, Integration | `aof`: "One server at a time uses the directory" | Unit | Partial |
 | TC-239 | Port in use | The port is bound; start | A critical log line with the reason; exit non-zero | Integration | None found | none | Gap |
 | TC-240 | Log file cannot be opened | `--log-file` in a directory that does not exist; start | The server logs to stderr only, says so, and starts | Integration | None found | none | Gap |
+| TC-295 | A start that fails after its threads began stops them | `--appendonly --appendfsync everysec` over a good directory, and the port bound by another socket; start. The log is replayed and the sync thread runs before `listen()` fails, so only destructors stop what was started | A critical log line with the reason (as TC-239); exit non-zero within a few seconds, no hang; the append-only directory is free again (a second server starts over it); no sanitizer report | Integration | None found | none | Gap |
 
 ## 3. Stopping (UC-017 steps 1 to 8; FR-017)
 
@@ -76,6 +77,7 @@ one fixed sleep.
 | TC-251 | Killed, not stopped | `SIGKILL` with `--appendonly`, then with a snapshot only; restart | No final save; recovery from the log (at most the unsynced writes lost) or from the last snapshot | Integration | `aof` torn-tail and `save_file` atomic-replace unit tests cover the pieces | Unit | Partial |
 | TC-252 | Log lines survive the stop | Messages queued in the async logger; shutdown | Everything queued is written out before exit | Unit | `lifecycle`: "shutting down the async logger writes out everything queued" | Unit | Covered |
 | TC-262 | A FailFast end still saves | Housekeeping fails after 20 ticks (seam `REDIS_TEST_FAIL_HOUSEKEEPING_AFTER`) with `--dump` writable; a write before it; read the snapshot after exit | The snapshot holds the write; exit non-zero. Not yet covered: `--dump` unwritable (exit non-zero, previous file untouched) | Integration | `failfast_save`: "TC-262" (POSIX only, runs in `scripts/test_server.sh`) | none | Partial |
+| TC-296 | Tearing down the keyspace executor waits for its work | A threaded `Executor` with a slow batch running and more queued; it is destroyed (or `stop()` is called) while they run | Every queued batch has finished, in the order queued, before destruction returns. With `Services` in place of the `Executor`: a command that touches the keyspace after the destructor began still runs to the end against a live keyspace (the thread is joined before the keyspace goes away); under the sanitizer presets, no report | Unit | `executor`: "Destroying the executor waits for the work queued on it" and "Destroying the services waits for the keyspace thread first". Fail when `~Executor` does not stop (queued batches dropped) and when `keyspace` is declared before `db` in `Services` (abseil: "Use of destroyed hash table") | Unit | Covered |
 
 ## Entry and exit criteria
 

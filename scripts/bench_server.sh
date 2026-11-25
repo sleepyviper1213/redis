@@ -3,6 +3,9 @@
 # redis-server) with redis-benchmark, over three scenarios:
 #
 #   clients  50 parallel clients, no pipelining  (the default redis-benchmark run)
+#   saturate SATURATE_CLIENTS clients (500), no pipelining, THREADS client
+#            threads: more than the server can take, so the rate is the
+#            server's, not the load generator's (see below)
 #   latency  1 client, one round trip at a time  (per-request overhead)
 #   pipeline 50 clients, 16 commands per batch   (command execution cost)
 #   bigget   GET over KEYSPACE random keys, 16 per batch (cache-miss cost; the
@@ -35,6 +38,11 @@
 # pipeline and bigget scenarios before the server does; e.g. THREADS=4. The
 # latency scenario stays single-threaded: it has one connection, and so does
 # the clients scenario, which a server finishes far below the client's limit.
+# That is the point of saturate: with THREADS client threads and
+# SATURATE_CLIENTS connections (SATURATE_REQUESTS requests, default 2000000) the
+# load generator can offer more than a server takes, so a cheaper request shows
+# as a higher rate. In clients, one client thread caps the rate, and two servers
+# of different cost can tie.
 #
 # With --threads redis-benchmark seems to time a run in 250 ms ticks, so a run
 # must last seconds for the rate to mean anything: that is why pipeline and
@@ -51,6 +59,8 @@ RUNS="${RUNS:-3}"
 REQUESTS="${REQUESTS:-200000}"
 PIPE_REQUESTS="${PIPE_REQUESTS:-8000000}"
 KEYSPACE="${KEYSPACE:-2000000}"
+SATURATE_CLIENTS="${SATURATE_CLIENTS:-500}"
+SATURATE_REQUESTS="${SATURATE_REQUESTS:-2000000}"
 REF_SERVER="${REF_SERVER:-}"
 REF_PORT="${REF_PORT:-6382}"
 THREADS="${THREADS:-1}"
@@ -222,6 +232,8 @@ tail_scenario() {
 for port in "${SERVER_PORTS[@]}"; do wait_for_port "$port"; done
 
 scenario clients  -n "$REQUESTS"
+scenario saturate -n "$SATURATE_REQUESTS" -c "$SATURATE_CLIENTS" \
+    ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}
 scenario latency  -n "$((REQUESTS / 2))" -c 1
 scenario pipeline -n "$PIPE_REQUESTS" -P 16 \
     ${CLIENT_THREADS[@]+"${CLIENT_THREADS[@]}"}

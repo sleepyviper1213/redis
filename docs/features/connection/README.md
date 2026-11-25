@@ -31,4 +31,5 @@ Accepting TCP clients, the RESP protocol, limits per client.
 | [test_plan.md](test_plan.md) | Test scenarios `TC-nn` |
 | [traceability.md](traceability.md) | Use cases to requirements, scenarios and tests |
 | [design.md](design.md) | Design choices `DX-n`, code map, open questions |
+| [io_uring_experiment.md](io_uring_experiment.md) | Profile a request's cost, then try Asio's io_uring backend (TC-298) |
 | [adr/](adr/) | Decisions: ADR-0001 to 0003 |
