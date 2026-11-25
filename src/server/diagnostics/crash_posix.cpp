@@ -4,6 +4,7 @@
 #include "core/os/child_process.hpp"
 
 #include <fcntl.h>
+#include <pthread.h>
 #include <signal.h> // NOLINT(modernize-deprecated-headers): sigaction
 #include <unistd.h>
 
@@ -19,7 +20,6 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <string>
 #include <string_view>
 
 // Everything reachable from the signal handler must be async-signal-safe:
@@ -50,6 +50,47 @@ bool is_stalling_report = false;
 /// report from. Covers the thread that installed the handler (main).
 constexpr std::size_t ALT_STACK_SIZE = 64 * 1024;
 alignas(16) std::array<std::byte, ALT_STACK_SIZE> alt_stack;
+
+/// Bounds of the installing thread's stack (DX-84); 0 where unknown.
+std::uintptr_t stack_low = 0;
+
+/// How far below the stack's lowest address a fault still counts as running
+/// off it: the guard gap, and a large frame that jumps over part of it.
+constexpr std::uintptr_t OVERFLOW_WINDOW = 256 * 1024;
+
+/// Test seam for TC-302: set at install time from
+/// REDIS_TEST_CRASH_STACK_OVERFLOW, it makes install_crash_handler() recurse
+/// until the stack is gone. Not a documented option.
+bool is_overflowing_stack = false;
+
+void record_stack_bounds() noexcept {
+#ifdef __linux__
+	pthread_attr_t attr;
+	if (::pthread_getattr_np(::pthread_self(), &attr) != 0) return;
+	void *low = nullptr;
+	std::size_t size = 0;
+	if (::pthread_attr_getstack(&attr, &low, &size) == 0)
+		stack_low = reinterpret_cast<std::uintptr_t>(low);
+	::pthread_attr_destroy(&attr);
+#endif
+}
+
+/// Whether \p fault_address lies just below, or at the edge of, the recorded
+/// stack: a SIGSEGV there is an overflow, not a wild pointer.
+bool is_stack_overflow(std::uintptr_t fault_address) noexcept {
+	return stack_low != 0 && fault_address < stack_low + 4096 &&
+		   fault_address + OVERFLOW_WINDOW >= stack_low;
+}
+
+/// Never returns normally; the volatile buffer and the work after the call
+/// keep the compiler from turning the recursion into a loop.
+[[gnu::noinline]] int recurse_forever(int depth) {
+	volatile char buffer[1024];
+	buffer[0] = static_cast<char>(depth);
+	const int result = recurse_forever(depth + 1);
+	buffer[1] = static_cast<char>(result);
+	return buffer[0] + buffer[1];
+}
 
 void write_fd(int fd, std::string_view text) noexcept {
 	while (fd >= 0 && !text.empty()) {
@@ -207,6 +248,11 @@ void install_crash_handler(const std::filesystem::path &log_file) {
 	::sigaction(SIGALRM, &timeout, nullptr);
 
 	std::set_terminate(on_terminate);
+
+	record_stack_bounds();
+	is_overflowing_stack =
+		std::getenv("REDIS_TEST_CRASH_STACK_OVERFLOW") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
+	if (is_overflowing_stack) recurse_forever(0);
 }
 
 } // namespace redis::diagnostics
