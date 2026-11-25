@@ -209,15 +209,34 @@ Linux, so the epoll branch compiles with gcc and clang.
 
 **Reading it.** The benchmark does **not** show the doubling that the profile suggested. On `clients` the server and
 the reference sit at the same rate (about 164,000) in both jobs, before and after. Equal rates for two different
-servers point at a ceiling set by the load generator, not by either server: `redis-benchmark` runs on the same 4 CPUs.
-So this benchmark cannot see a drop in the server's CPU per command; the profile measures that, and the profile's
+servers point at a ceiling set by the load generator, not by either server. The workflow already keeps the two apart
+(the server on CPUs 0-1, `redis-benchmark` on 2-3), so it is not competition for CPUs: the `clients` scenario does not
+pass `--threads` to `redis-benchmark`, so one client thread drives all 50 connections, and one thread has a rate it
+cannot exceed. That the two servers match at 163,000 to 165,000 is what such a ceiling looks like; it is an
+inference, not something isolated. So this benchmark cannot see a drop in the server's CPU per command; the profile measures that, and the profile's
 rate under `perf` (187,000) is above the benchmark's, which fits a server that is no longer the limit. `latency` is
 one client, whose round trip is mostly the network: gcc shows nothing, clang shows 26 %, and the spread between runs
 of that scenario was 61,000 to 85,000 in an earlier run. `bigget` rose against the reference in both jobs, but it
 reads pipelined batches and its change is not explained by this one; one run is not enough to claim it.
 
-**What would show it.** A run where the server is the limit: the `SERVER_CPUS` and `CLIENT_CPUS` knobs of
-`bench_server.sh` pin the server to one CPU and the load generator to the other three. Then the same run on the
-commit before the change, for a same-conditions comparison. The workflow does not pass those knobs yet.
+**What would show it** is stage 1c below. An earlier version of this paragraph said the workflow did not pin the CPUs
+and that the client shared the server's: both were wrong.
+
+### Stage 1c: the two revisions on one runner, with the server as the limit
+
+Planned. Two changes make the comparison fair and sensitive:
+
+- **A scenario that saturates the server.** `bench_server.sh` gains `saturate`: `SATURATE_CLIENTS` connections (500 by
+  default), no pipelining, with the client threads of `THREADS`, so the load generator can offer more than the server
+  can take. In `clients` the rate is bounded by the single client thread; here it should be bounded by the server.
+- **Both revisions in one job.** A new workflow, `bench-ab.yml` (Linux, gcc, pushed from a `bench-ab/` branch),
+  builds the base revision (the commit before the read-path change, `a9e892f`) and the new one in two worktrees of one
+  runner, and runs `bench_server.sh` on each in alternating rounds, with the reference Redis in every run and the
+  CPUs pinned as in `bench.yml`. The new revision's scripts run both sides, so both see the same scenarios. This is
+  the pattern of the macOS workflow (`bench-macos.yml`).
+
+**Reading it.** Same-job, alternating: the gap between base and new on `saturate`, and each side's ratio to the
+reference, are the result; absolute rates are not. If the profile was right, `saturate` should be clearly higher on the
+new revision. If it is not, the profile's doubling was an artefact of sampling.
 
 Stage 2: not started.

@@ -7,9 +7,12 @@ What `REDIS_USE_JEMALLOC` gained in memory and throughput, and what that means f
 
 ## Conclusion
 
-* The option stays **off by default**. Memory after a delete-then-refill is about 4 % lower with jemalloc, which is
-  inside the run-to-run spread of the reference server (about 6 %). Throughput shows no gain that the same-job
-  comparison supports.
+* The option stays **off by default**, as a judgement. Over three runs, the memory after a delete-then-refill is 4 to
+  8 % lower with jemalloc, and that gain is real (see [Later runs](#later-runs)); throughput shows no gain that the
+  same-job comparison supports. A gain of that size does not pay for an extra dependency (the vcpkg jemalloc port
+  builds with autotools) and a second configuration to test, and the CI job that tested it was removed on
+  2026-11-25. The first version of this document called the gain "inside the noise" of the reference server; that
+  was the wrong yardstick, and is corrected below.
 * Neither build returns memory to the operating system after a mass delete: RSS stays at about 451 to 454 MiB while
   `used_memory` falls to 57 to 61 MiB. The reference Redis gives back 40 to 50 MiB in the same test. That gap exists
   with either allocator, so it comes from somewhere other than the choice of allocator (see
@@ -78,6 +81,29 @@ allocator and level with the reference with jemalloc. On `latency` it is 3 % ahe
 (jemalloc), but that scenario varied from 61,350 to 85,324 across the jemalloc job's seven runs, so it settles
 nothing.
 
+## Later runs
+
+Two more runs of the same script, on the same code path, change what can be said about the memory figures. The
+default build's figures hardly vary between runs; the reference server's vary by several percent. A difference between
+two builds must be judged against the builds' own spread, not the reference's.
+
+RSS after the refill phase, in MiB:
+
+| Run | Default allocator | jemalloc | Reference Redis |
+|---|---:|---:|---|
+| Benchmark #27 (2026-11-20) | 451.2 | 432.1 | 386.3 (gcc job), 410.3 (jemalloc job) |
+| Benchmark #28 (2026-11-24, gcc job failed on the network) | none | 416.5 | 381.5 |
+| Benchmark #29 (2026-11-25) | 451.3 (gcc), 450.6 (clang) | 421.4 | 402.5, 396.8, 376.9 |
+
+- **The default build is deterministic:** 450.6 to 451.3 MiB in all three samples, and the same in the fill, delete
+  and refill phases (it never gives anything back).
+- **Every jemalloc sample is below every default sample,** by 4.2 % (432.1), 7.7 % (416.5) and 6.6 % (421.4). The
+  jemalloc build's own spread is about 4 %, so the gain is real, and its size is between 4 and 8 %.
+- **The reference varies from 377 to 410 MiB** for identical work, which is why comparing a 4 % gain with it said
+  nothing either way.
+- **Fill and delete:** jemalloc is 0.6 to 0.7 % higher at the fill (about 454.5 against 451.3) and keeps 452.5 to
+  453.5 MiB after the delete, as the default does. Only the refill shows the gain.
+
 ## Threats to validity
 
 * One run per job, on different shared runners. No figure here has a confidence interval.
@@ -92,8 +118,8 @@ nothing.
   with both allocators. Candidates: the hash table or its nodes are never shrunk; freed arenas are not trimmed
   (jemalloc's `dirty_decay_ms`, glibc's `malloc_trim`). To find out, repeat the run with `MALLOC_TRIM_THRESHOLD_` set
   and log jemalloc's `stats.allocated` and `stats.resident` through `mallctl`.
-* **Is a 4 % gain real?** Repeat the Benchmark workflow at least five times per job and compare the spread of the
-  refill RSS before deciding the default.
+* **Is the gain real?** Answered in [Later runs](#later-runs): yes, 4 to 8 % with the refill phase of this script. Not
+  tested: other value sizes, or a longer churn.
 
 ## Decision
 
