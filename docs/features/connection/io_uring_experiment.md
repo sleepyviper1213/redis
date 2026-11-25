@@ -233,7 +233,9 @@ Planned. Two changes make the comparison fair and sensitive:
   builds the base revision (the commit before the read-path change, `a9e892f`) and the new one in two worktrees of one
   runner, and runs `bench_server.sh` on each in alternating rounds, with the reference Redis in every run and the
   CPUs pinned as in `bench.yml`. The new revision's scripts run both sides, so both see the same scenarios. This is
-  the pattern of the macOS workflow (`bench-macos.yml`).
+  the pattern of the macOS workflow (`bench-macos.yml`). **The workflow was removed after its two runs (2026-11-25)**:
+  the results below stand, and the `saturate` scenario stays in `bench_server.sh`. To repeat the comparison, restore
+  `.github/workflows/bench-ab.yml` from the history (commits `0adb765` and `2bcd043`).
 
 **Reading it.** Same-job, alternating: the gap between base and new on `saturate`, and each side's ratio to the
 reference, are the result; absolute rates are not. If the profile was right, `saturate` should be clearly higher on the
