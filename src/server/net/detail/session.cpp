@@ -105,8 +105,8 @@ Session::Session(tcp::socket socket, std::shared_ptr<Services> services,
 							  .ctx         = services_->ctx,
 							  .is_threaded = services_->keyspace.is_threaded()},
 		  peer_name(socket_)) {
-	// Needed for the immediate read_some in read(); async operations are
-	// unaffected.
+	// Needed for the immediate write_some in write(), and for read_some where
+	// read_available() is used; async operations are unaffected.
 	boost::system::error_code ignored;
 	socket_.non_blocking(true, ignored);
 	log().debug("Accepted from {}", conversation_.peer());
@@ -136,6 +136,7 @@ boost::asio::const_buffer Session::replies_buffer() const noexcept {
 	return {replies.data(), replies.size()};
 }
 
+#ifndef BOOST_ASIO_HAS_EPOLL
 Session::Outcome Session::read_available() {
 	boost::system::error_code ec;
 	const std::span<char> room = conversation_.read_buffer();
@@ -147,6 +148,7 @@ Session::Outcome Session::read_available() {
 	if (ec) throw boost::system::system_error(ec);
 	return Outcome{.bytes = n, .idle = false};
 }
+#endif
 
 void Session::give_up_waiting_for_response(std::chrono::seconds limit) {
 	conversation_.count_request_timeout(limit);
@@ -157,16 +159,38 @@ void Session::give_up_waiting_for_response(std::chrono::seconds limit) {
 	socket_.close(ignored);
 }
 
-stdexec::sender auto Session::read() {
+stdexec::sender auto Session::receive() {
+#ifdef BOOST_ASIO_HAS_EPOLL
+	// One operation, read in place. By default Asio would first try a
+	// speculative recv that, on a request/response connection, almost always
+	// finds nothing yet: a wasted syscall per request (v1 measured it at about
+	// a quarter of the server's time at one client). io_config() sets
+	// reactor.reset_edge_on_partial_read, which makes a read that filled less
+	// than its buffer count as having drained the socket, and then Asio does
+	// not speculate: the operation starts with no syscall at all. Waiting with
+	// async_wait and reading afterwards avoids the recv too, but costs an
+	// epoll_ctl per request (3 to 6 % of the server's CPU in the Profile run;
+	// see docs/features/connection/io_uring_experiment.md).
+	const std::span<char> room = conversation_.read_buffer();
+	return socket_.async_read_some(
+			   boost::asio::buffer(room.data(), room.size()),
+			   exec::asio::use_sender) |
+		   stdexec::then(
+			   [](size_t n) { return Outcome{.bytes = n, .idle = false}; });
+#else
 	// Wait for readability, then read in place. async_read_some would first
 	// try a speculative recv that, on a request/response connection, almost
 	// always finds nothing yet: a wasted syscall per request (v1 measured it at
 	// about a quarter of the server's time at one client).
+	return socket_.async_wait(boost::asio::socket_base::wait_read,
+							  exec::asio::use_sender) |
+		   stdexec::then([this] { return read_available(); });
+#endif
+}
+
+stdexec::sender auto Session::read() {
 	stdexec::sender auto bytes =
-		socket_.async_wait(boost::asio::socket_base::wait_read,
-						   exec::asio::use_sender) |
-		stdexec::then([this] { return read_available(); }) |
-		stdexec::let_error([this](const std::exception_ptr &error) {
+		receive() | stdexec::let_error([this](const std::exception_ptr &error) {
 			fail_io(ConnectionKind::ReadFailed, error);
 			return stdexec::just(Outcome{.bytes = std::nullopt, .idle = false});
 		});

@@ -150,4 +150,11 @@ expected; a loss would mean the reset-edge setting costs more than it saves.
 **Measured by.** The Profile workflow's `clients` step (the `epoll_ctl` share and the task-clock per command, against
 the figures above), and the Benchmark workflow's `clients` and `latency` scenarios, in a job that has both builds.
 
+**Built, not yet measured.** `Session::receive()` reads with one `async_read_some` where Asio uses epoll, and
+`RedisServer` builds its `io_context` from `io_config()` (`src/server/net/detail/io_config.hpp`), which keeps the
+concurrency hint and adds the reactor setting. The other platforms keep the wait-then-read path. The unit suite
+passes on Windows (IOCP), with the new read also forced on there to exercise the cancellation, end-of-stream and
+timeout handling; the epoll reactor itself runs only in Linux CI (TC-299 for the configuration, the stress test for
+lost wakeups, and the Profile and Benchmark workflows for the cost).
+
 Stage 2: not started.

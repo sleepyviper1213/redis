@@ -8,6 +8,7 @@
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/detail/config.hpp> // BOOST_ASIO_HAS_EPOLL
 #include <boost/asio/steady_timer.hpp>
 #include <exec/any_sender_of.hpp>
 #include <stdexec/execution.hpp>
@@ -67,6 +68,12 @@ private:
 	// which is where the chain of a whole session is cut: too deep otherwise
 	// for stdexec to compute its completion signatures in reasonable time and
 	// memory.
+	/// The client's next bytes, read into the conversation's buffer. Completes
+	/// with the Outcome; an error from the socket completes with that error.
+	/// Where Asio uses epoll it is one async_read_some, with the reactor
+	/// setting that io_config() makes; elsewhere a wait for readiness and then
+	/// a read.
+	stdexec::sender auto receive();
 	/// Waits for the client's next bytes, or for the idle limit. Completes with
 	/// the byte count, or with nothing once the session is over.
 	stdexec::sender auto read();
@@ -100,10 +107,12 @@ private:
 		std::optional<size_t> bytes; ///< Nothing once the session is over.
 		bool idle = false;           ///< The idle timer won.
 	};
+#ifndef BOOST_ASIO_HAS_EPOLL
 	/// Reads what the socket has. Readiness can be spurious: that is a round
 	/// that read nothing, which ingests nothing and goes back to waiting.
 	/// Throws the socket's error.
 	[[nodiscard]] Outcome read_available();
+#endif
 	/**
 	 * The request limit ran out: count it and close the socket.
 	 *
