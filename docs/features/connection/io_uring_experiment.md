@@ -107,4 +107,47 @@ could remove is the system-call entry and exit, `epoll_wait` and `epoll_ctl`, an
 and `recvfrom`: roughly 15 % of the server's CPU at most (self time of `do_syscall_64` plus the two `epoll`
 calls, a rough bound). That is near the 10 % bar for keeping the option and does not leave room for it to miss.
 
+### Stage 1b: where the `epoll_ctl` comes from
+
+Read in Asio 1.38.2's source (`epoll_reactor.ipp`, `reactive_socket_service_base.hpp`, `reactive_socket_recv_op.hpp`);
+not yet measured.
+
+- **`async_wait(wait_read)` costs one `epoll_ctl` per call.** It starts its operation with speculation off, and the
+  reactor then re-arms the socket's edge-triggered registration with `epoll_ctl(EPOLL_CTL_MOD)`
+  (`epoll_reactor.ipp`, the `else` branch of `start_op`). `Session::read()` waits this way once per request, which is
+  the 3 to 6 % in the profile.
+- **`async_read_some` avoids it, but tries a `recv` first.** Its operation allows a speculative attempt. After a read
+  that completed from the reactor, Asio stops speculating only if the read was *exhausted*; by default a stream read
+  counts as exhausted only when it returned no bytes. A short read does not, so the next `async_read_some` calls `recv`
+  first and finds nothing: the wasted syscall that the comment in `Session::read()` describes, and the reason it
+  uses `async_wait`.
+- **So the session chose between two one-syscall options.** Either an `epoll_ctl` per request or a failed `recv` per
+  request.
+- **Asio has a switch for a third.** The configuration key `reactor.reset_edge_on_partial_read=1` makes a stream read
+  that filled less than its buffer count as exhausted. Speculation is then skipped after a short read, and
+  `async_read_some` starts with no system call at all. It is set when the `io_context` is built, from a
+  `config_from_string`; today `RedisServer` builds it from a concurrency hint, which would have to be given as
+  `scheduler.concurrency_hint=N` in the same string.
+
+**Variant to measure.** `Session::read()` waits with `async_read_some` into the connection's read buffer, and the
+`io_context` is built with `reactor.reset_edge_on_partial_read=1`, on Linux (epoll) only: the other platforms keep
+today's code, since the trade-off was measured on one of them and the epoll behaviour above does not apply to
+kqueue or IOCP.
+
+**Expected.** One system call fewer per request: `epoll_ctl` at about 3 to 6 % of the server's CPU should fall to
+nearly nothing in the `clients` profile, and `clients` throughput rise by about as much. A larger gain is not
+expected; a loss would mean the reset-edge setting costs more than it saves.
+
+**Risks to rule out**
+- A lost wakeup: a partial read treated as exhausted while data is already there would leave a request unanswered
+  until the idle timeout. The stress test, which splits every request at every byte boundary and checks every reply,
+  is the check; the unit and integration suites must also pass on Linux.
+- The idle and request time limits cancel the pending read; cancelling an `async_read_some` must behave as cancelling
+  the wait does. The session tests for both limits cover it.
+- The single-client case (`latency`): the wasted `recv` was measured as a quarter of the time there. It must not come
+  back.
+
+**Measured by.** The Profile workflow's `clients` step (the `epoll_ctl` share and the task-clock per command, against
+the figures above), and the Benchmark workflow's `clients` and `latency` scenarios, in a job that has both builds.
+
 Stage 2: not started.
