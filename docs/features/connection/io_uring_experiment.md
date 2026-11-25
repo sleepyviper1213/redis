@@ -281,4 +281,47 @@ the two jobs are not compared with each other in absolute terms. If the new revi
 `pinned` was limited by the generator and the gain is larger than 10 %; if it stays near the same figure, 10 % is the
 gain. The reference Redis in each run shows where each setup's ceiling is.
 
+### Stage 1c results, second run (Benchmark A/B run #2, commit `2bcd043`, 2026-11-25)
+
+Two jobs on two runners, each an A/B of its own: `pinned` (the server on CPUs 0-1, two client threads on 2-3, as run #1)
+and `wide` (the server on CPU 0, three client threads on 1-3). The runners were much faster than in run #1: the
+`clients` rate was 162,000 to 166,000 here against 97,000 there, so the two runs are not comparable in absolute terms.
+Means of 10 runs per side, 5 in each of 2 alternating rounds:
+
+| `saturate`, 500 connections | base | new | new against base | reference Redis | base, new against the reference |
+|---|---:|---:|---:|---:|---|
+| `pinned` | 159,939 | 168,004 | **+5.0 %** | 183,754 | 0.87; 0.91 |
+| `wide` | 164,170 | 170,133 | **+3.6 %** | 192,526 | 0.85; 0.88 |
+
+In `pinned` the ranges do not overlap: the lowest new run (163,225) is above the highest base run (163,145). In `wide` they
+touch (166,500 on both sides). The other scenarios, medians of the two rounds:
+
+| Scenario | `pinned`: base, new | `wide`: base, new |
+|---|---|---|
+| `clients` | 162,470 and 160,000; 162,470 and 162,866 | 165,426 and 165,700; 165,426 and 163,934 |
+| `pipeline` | 1,682,793 and 1,683,148; 1,777,383 and 1,777,383 | 1,777,383 and 1,776,199; 1,776,594 and 1,776,594 |
+| `bigget` | 1,142,041 and 1,142,041; 1,184,834 and 1,184,308 | 1,142,041 and 1,142,041; 1,184,133 and 1,184,835 |
+| `latency` | 31,000 to 94,000 within a job | the same spread |
+
+**Reading it**
+
+- **The gain at saturation is 4 to 5 %, and the server is the limit.** The new revision reaches about 168,000 to
+  170,000 in both jobs, with one CPU for the server and with two, and with two or three client threads: more offered
+  load does not raise it, so the server is what limits it. The reference Redis reaches 184,000 to 193,000 against the same
+  generator, so the generator is not the ceiling either. This settles the open question of run #1: the +9 to 11 % there
+  was on a slower runner, probably partly limited by the load generator, and the profile's reduction of 35 to 49 % in
+  CPU per command was an overstatement (the leading suspect is `perf`'s own per-syscall cost, still untested).
+- **`pipeline` and `bigget` are +4 to 6 % in `pinned`, but they move by one tick of the client's clock.** `bigget`
+  gains 3.7 % in all four rounds (7.0 s against 6.75 s); `pipeline` gains 5.6 % in `pinned` and nothing in `wide`, so I
+  do not count it as established.
+- **`clients` and `latency` tie,** as before; `latency` is unusable (its runs span 31,000 to 94,000).
+- **At saturation the reference Redis is ahead.** On this runner it is 12 to 15 % ahead of the base and 9 to 12 % ahead
+  of the new revision. In run #1 the new revision matched it, but that run's reference sat at 127,000 to 131,000, a
+  rate this one far exceeds, so run #1 was probably limited by its runner. On pipelined work (`pipeline`, `bigget`) the
+  server is ahead of the reference by 11 % and 26 %. So the weak spot, relative to Redis, is the non-pipelined round
+  trip at high concurrency: the same place the profile found the kernel's share of the time.
+
+Stage 2 (io_uring) would aim at that same cost. After this change, the share of the server's CPU in system calls is still
+about 77 % (stage 1b), mostly in `sendto`, which io_uring does not remove.
+
 Stage 2: not started.
