@@ -802,3 +802,47 @@ SCENARIO("The once-a-second sync thread stops with the log",
 		}
 	}
 }
+
+SCENARIO("A base keeps a deadline that passes before the restart",
+		 "[aof][expiry]") {
+	constexpr auto DEADLINE_MS = "500";
+	GIVEN("a base with a short deadline and a logged command on that key") {
+		TempDir const dir;
+		test::TempFile const snapshot;
+		{
+			// The snapshot the server had before AOF was turned on: it becomes
+			// the base on the first start.
+			test::Server plain;
+			plain.run({"SET", "short", "v", "PX", DEADLINE_MS});
+			plain.run({"SET", "kept", "v"});
+			SnapshotManager manager(snapshot.path());
+			REQUIRE(manager.save(plain.db).has_value());
+		}
+		{
+			AofServer server(dir.path(), snapshot.path());
+			REQUIRE(server.start().has_value());
+			// Still before the deadline: the key is there to be appended to.
+			REQUIRE(server.run({"APPEND", "short", "x"}) == ":2\r\n");
+		}
+		std::this_thread::sleep_for(700ms);
+
+		WHEN("TC-119: the files are replayed after the deadline") {
+			Restarted server(dir.path(), snapshot.path());
+
+			THEN("the logged command found the key, so it kept its deadline") {
+				CHECK(server.db.size() == 2);
+				CHECK(server.db.expiring() == 1);
+			}
+
+			AND_THEN("the key expires once a command looks at it, and a DEL is "
+					 "logged") {
+				CHECK(server.run({"GET", "short"}) == "$-1\r\n");
+				CHECK(server.db.expired_keys() == 1);
+				server.aof.log_expired(server.db);
+				server.aof.after_batch();
+				CHECK(occurrences(server.log(), logged({"DEL", "short"})) == 1);
+				CHECK(server.run({"GET", "kept"}) == "$1\r\nv\r\n");
+			}
+		}
+	}
+}
