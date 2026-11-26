@@ -63,6 +63,18 @@ constexpr std::uintptr_t OVERFLOW_WINDOW = 256 * 1024;
 /// until the stack is gone. Not a documented option.
 bool is_overflowing_stack = false;
 
+/// Test seam for TC-224 and TC-301: set at install time from
+/// REDIS_TEST_CRASH_FAULT, it makes install_crash_handler() write to an
+/// unmapped address. A synchronous SIGSEGV, as a real crash is, unlike a
+/// kill() from outside, which ThreadSanitizer may hold back. Not a documented
+/// option.
+bool is_faulting = false;
+
+/// Unmapped on every supported system (the first page never is), and not null,
+/// so neither the compiler nor UBSan turns the write into a trap of its own.
+/// Volatile, so the compiler cannot see what it points to.
+volatile std::uintptr_t seam_fault_address = 16;
+
 void record_stack_bounds() noexcept {
 #if defined(__linux__)
 	pthread_attr_t attr;
@@ -265,6 +277,10 @@ void install_crash_handler(const std::filesystem::path &log_file) {
 	is_overflowing_stack =
 		std::getenv("REDIS_TEST_CRASH_STACK_OVERFLOW") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
 	if (is_overflowing_stack) recurse_forever(0);
+
+	is_faulting = std::getenv("REDIS_TEST_CRASH_FAULT") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
+	if (is_faulting)
+		*reinterpret_cast<volatile int *>(seam_fault_address) = 0; // NOLINT(performance-no-int-to-ptr): the seam's fault
 }
 
 } // namespace redis::diagnostics

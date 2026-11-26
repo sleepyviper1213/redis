@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <string>
 #include <thread>
@@ -38,17 +39,18 @@ struct Ending {
 	std::chrono::milliseconds waited{0};
 };
 
-/// Starts \p binary on \p port with its log in \p log_file. \p seam, if not
-/// null, is a test-seam environment variable to set: the crash report stalls
-/// (REDIS_TEST_CRASH_REPORT_HANG) or the server overflows its stack once the
-/// handler is installed (REDIS_TEST_CRASH_STACK_OVERFLOW).
+/// Starts \p binary on \p port with its log in \p log_file, with each of
+/// \p seams set in its environment. The test seams, read once the crash
+/// handler is installed: the server faults (REDIS_TEST_CRASH_FAULT), overflows
+/// its stack (REDIS_TEST_CRASH_STACK_OVERFLOW), or its report stalls
+/// (REDIS_TEST_CRASH_REPORT_HANG).
 pid_t spawn_server(const std::string &binary, int port, const fs::path &log_file,
-				   const char *seam) {
+				   std::initializer_list<const char *> seams) {
 	const std::string port_text = std::to_string(port);
 	const std::string log_text  = log_file.string();
 	const pid_t pid = fork();
 	if (pid == 0) {
-		if (seam != nullptr) setenv(seam, "1", 1);
+		for (const char *seam : seams) setenv(seam, "1", 1);
 		execl(binary.c_str(), binary.c_str(), "--port", port_text.c_str(),
 			  "--log-file", log_text.c_str(), static_cast<char *>(nullptr));
 		_exit(127);
@@ -74,26 +76,24 @@ Ending wait_for_signal(pid_t pid) {
 	return {-1, std::chrono::milliseconds(15000)};
 }
 
-bool wait_until_listening(int port) {
-	for (int i = 0; i < 100; ++i) {
-		if (TestClient("127.0.0.1", port).is_connected()) return true;
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	}
-	return false;
-}
-
 std::string read_file(const fs::path &path) {
 	std::ifstream in(path, std::ios::binary);
 	return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
-/// Starts a server, faults it with SIGSEGV and reports how it ended.
+/// Starts a server that faults with a real SIGSEGV once its crash handler is
+/// installed (REDIS_TEST_CRASH_FAULT), plus \p extra_seam if not null, and
+/// reports how it ended. Not kill() from here: ThreadSanitizer holds an
+/// asynchronous signal back until the thread reaches a call it intercepts, and
+/// the server may not end in time.
 Ending crash_server(const std::string &binary, int port, const fs::path &log_file,
-					const char *seam) {
-	const pid_t pid = spawn_server(binary, port, log_file, seam);
+					const char *extra_seam) {
+	const pid_t pid =
+		extra_seam == nullptr
+			? spawn_server(binary, port, log_file, {"REDIS_TEST_CRASH_FAULT"})
+			: spawn_server(binary, port, log_file,
+						   {"REDIS_TEST_CRASH_FAULT", extra_seam});
 	REQUIRE(pid > 0);
-	REQUIRE(wait_until_listening(port));
-	kill(pid, SIGSEGV);
 	return wait_for_signal(pid);
 }
 
@@ -138,7 +138,7 @@ TEST_CASE("TC-301: A hung crash report ends in an abort",
 									"REDIS_TEST_CRASH_REPORT_HANG");
 	// SIGABRT, not SIGSEGV (the report never finished) and not -1 (it ended).
 	CHECK(ending.signal == SIGABRT);
-	// The watchdog is 3 s; the poll adds up to 100 ms.
+	// The watchdog is 3 s; startup and the poll add a little.
 	CHECK(ending.waited >= std::chrono::milliseconds(2500));
 	CHECK(ending.waited < std::chrono::milliseconds(6000));
 
@@ -163,7 +163,7 @@ TEST_CASE("TC-302: A stack overflow is named in the report",
 	// The seam overflows the stack at install time, so the server never listens:
 	// wait for it to end, not for it to accept a connection.
 	const pid_t pid = spawn_server(binary, test_port() + 4, log_file,
-								   "REDIS_TEST_CRASH_STACK_OVERFLOW");
+								   {"REDIS_TEST_CRASH_STACK_OVERFLOW"});
 	REQUIRE(pid > 0);
 	const auto ending = wait_for_signal(pid);
 	CHECK(ending.signal == SIGSEGV);
