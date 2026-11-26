@@ -1,5 +1,5 @@
-// TC-224, TC-301, TC-302: a fatal signal gets a crash report, and a report that hangs
-// still ends in an abort (UC-018 A2, DX-81).
+// TC-224, TC-301, TC-302: a fatal signal gets a crash report, and a report that
+// hangs still ends in an abort (UC-018 A2, DX-81).
 //
 // Starts its own server binary, so it runs only where the suite is given one
 // (scripts/test_server.sh sets REDIS_TEST_SERVER_BIN) and only on POSIX, which
@@ -10,18 +10,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <initializer_list>
 #include <iterator>
+#include <span>
 #include <string>
 #include <thread>
 
 #if !defined(_WIN32)
-#include <csignal>
 #include <sys/wait.h>
+
+#include <csignal>
 #include <unistd.h>
 
 using Catch::Matchers::ContainsSubstring;
@@ -31,7 +33,7 @@ using Catch::Matchers::ContainsSubstring;
 namespace {
 
 namespace fs = std::filesystem;
-using Clock = std::chrono::steady_clock;
+using Clock  = std::chrono::steady_clock;
 
 /// How a process ended: the signal that killed it, or 0.
 struct Ending {
@@ -44,15 +46,21 @@ struct Ending {
 /// handler is installed: the server faults (REDIS_TEST_CRASH_FAULT), overflows
 /// its stack (REDIS_TEST_CRASH_STACK_OVERFLOW), or its report stalls
 /// (REDIS_TEST_CRASH_REPORT_HANG).
-pid_t spawn_server(const std::string &binary, int port, const fs::path &log_file,
-				   std::initializer_list<const char *> seams) {
+pid_t spawn_server(const std::string &binary, int port,
+				   const fs::path &log_file,
+				   std::span<const char *const> seams) {
 	const std::string port_text = std::to_string(port);
 	const std::string log_text  = log_file.string();
-	const pid_t pid = fork();
+	const pid_t pid             = fork();
 	if (pid == 0) {
 		for (const char *seam : seams) setenv(seam, "1", 1);
-		execl(binary.c_str(), binary.c_str(), "--port", port_text.c_str(),
-			  "--log-file", log_text.c_str(), static_cast<char *>(nullptr));
+		execl(binary.c_str(),
+			  binary.c_str(),
+			  "--port",
+			  port_text.c_str(),
+			  "--log-file",
+			  log_text.c_str(),
+			  static_cast<char *>(nullptr));
 		_exit(127);
 	}
 	return pid;
@@ -78,7 +86,8 @@ Ending wait_for_signal(pid_t pid) {
 
 std::string read_file(const fs::path &path) {
 	std::ifstream in(path, std::ios::binary);
-	return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+	return {std::istreambuf_iterator<char>(in),
+			std::istreambuf_iterator<char>()};
 }
 
 /// Starts a server that faults with a real SIGSEGV once its crash handler is
@@ -86,13 +95,12 @@ std::string read_file(const fs::path &path) {
 /// reports how it ended. Not kill() from here: ThreadSanitizer holds an
 /// asynchronous signal back until the thread reaches a call it intercepts, and
 /// the server may not end in time.
-Ending crash_server(const std::string &binary, int port, const fs::path &log_file,
-					const char *extra_seam) {
-	const pid_t pid =
-		extra_seam == nullptr
-			? spawn_server(binary, port, log_file, {"REDIS_TEST_CRASH_FAULT"})
-			: spawn_server(binary, port, log_file,
-						   {"REDIS_TEST_CRASH_FAULT", extra_seam});
+Ending crash_server(const std::string &binary, int port,
+					const fs::path &log_file, const char *extra_seam) {
+	const std::array seams{"REDIS_TEST_CRASH_FAULT", extra_seam};
+	const std::span<const char *const> used(seams.data(),
+											extra_seam == nullptr ? 1 : 2);
+	const pid_t pid = spawn_server(binary, port, log_file, used);
 	REQUIRE(pid > 0);
 	return wait_for_signal(pid);
 }
@@ -103,7 +111,8 @@ TEST_CASE("TC-224: A fault ends with the report and the original signal",
 		  "[crash][integration]") {
 	const char *binary = std::getenv("REDIS_TEST_SERVER_BIN");
 	if (binary == nullptr)
-		SKIP("REDIS_TEST_SERVER_BIN is not set; run through scripts/test_server.sh");
+		SKIP("REDIS_TEST_SERVER_BIN is not set; run through "
+			 "scripts/test_server.sh");
 
 	const fs::path dir =
 		fs::temp_directory_path() / ("tc224-" + std::to_string(getpid()));
@@ -111,7 +120,8 @@ TEST_CASE("TC-224: A fault ends with the report and the original signal",
 	fs::create_directories(dir);
 	const fs::path log_file = dir / "server.log";
 
-	const auto ending = crash_server(binary, test_port() + 2, log_file, nullptr);
+	const auto ending =
+		crash_server(binary, test_port() + 2, log_file, nullptr);
 	CHECK(ending.signal == SIGSEGV);
 
 	const std::string log = read_file(log_file);
@@ -126,7 +136,8 @@ TEST_CASE("TC-301: A hung crash report ends in an abort",
 		  "[crash][integration]") {
 	const char *binary = std::getenv("REDIS_TEST_SERVER_BIN");
 	if (binary == nullptr)
-		SKIP("REDIS_TEST_SERVER_BIN is not set; run through scripts/test_server.sh");
+		SKIP("REDIS_TEST_SERVER_BIN is not set; run through "
+			 "scripts/test_server.sh");
 
 	const fs::path dir =
 		fs::temp_directory_path() / ("tc301-" + std::to_string(getpid()));
@@ -134,16 +145,19 @@ TEST_CASE("TC-301: A hung crash report ends in an abort",
 	fs::create_directories(dir);
 	const fs::path log_file = dir / "server.log";
 
-	const auto ending = crash_server(binary, test_port() + 3, log_file,
-									"REDIS_TEST_CRASH_REPORT_HANG");
+	const auto ending = crash_server(binary,
+									 test_port() + 3,
+									 log_file,
+									 "REDIS_TEST_CRASH_REPORT_HANG");
 	// SIGABRT, not SIGSEGV (the report never finished) and not -1 (it ended).
 	CHECK(ending.signal == SIGABRT);
 	// The watchdog is 3 s; startup and the poll add a little.
 	CHECK(ending.waited >= std::chrono::milliseconds(2500));
 	CHECK(ending.waited < std::chrono::milliseconds(6000));
 
-	CHECK(read_file(log_file).find("=== REDIS BUG REPORT END") ==
-		  std::string::npos);
+	// The report stalled after its first line, so it never got to its end.
+	CHECK_THAT(read_file(log_file),
+			   !ContainsSubstring("=== REDIS BUG REPORT END"));
 
 	fs::remove_all(dir);
 }
@@ -152,7 +166,8 @@ TEST_CASE("TC-302: A stack overflow is named in the report",
 		  "[crash][integration]") {
 	const char *binary = std::getenv("REDIS_TEST_SERVER_BIN");
 	if (binary == nullptr)
-		SKIP("REDIS_TEST_SERVER_BIN is not set; run through scripts/test_server.sh");
+		SKIP("REDIS_TEST_SERVER_BIN is not set; run through "
+			 "scripts/test_server.sh");
 
 	const fs::path dir =
 		fs::temp_directory_path() / ("tc302-" + std::to_string(getpid()));
@@ -160,10 +175,10 @@ TEST_CASE("TC-302: A stack overflow is named in the report",
 	fs::create_directories(dir);
 	const fs::path log_file = dir / "server.log";
 
-	// The seam overflows the stack at install time, so the server never listens:
-	// wait for it to end, not for it to accept a connection.
-	const pid_t pid = spawn_server(binary, test_port() + 4, log_file,
-								   {"REDIS_TEST_CRASH_STACK_OVERFLOW"});
+	// The seam overflows the stack at install time, so the server never
+	// listens: wait for it to end, not for it to accept a connection.
+	constexpr std::array seams{"REDIS_TEST_CRASH_STACK_OVERFLOW"};
+	const pid_t pid = spawn_server(binary, test_port() + 4, log_file, seams);
 	REQUIRE(pid > 0);
 	const auto ending = wait_for_signal(pid);
 	CHECK(ending.signal == SIGSEGV);
