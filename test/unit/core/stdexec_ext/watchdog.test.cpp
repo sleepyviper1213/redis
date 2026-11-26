@@ -207,15 +207,19 @@ struct Ending {
 
 /// Turns a race's value into an Ending.
 struct EndedWithValue {
-	Ending operator()(int value) const { return {.value = value}; }
+	Ending operator()(int value) const {
+		return {.value = value, .code = {}, .threw = false};
+	}
 };
 
 /// Turns a race's error into an Ending, telling an error code from an
 /// exception.
 struct EndedWithError {
-	Ending operator()(std::error_code code) const { return {.code = code}; }
+	Ending operator()(std::error_code code) const {
+		return {.value = 0, .code = code, .threw = false};
+	}
 	Ending operator()(const std::exception_ptr &) const {
-		return {.threw = true};
+		return {.value = 0, .code = {}, .threw = true};
 	}
 };
 

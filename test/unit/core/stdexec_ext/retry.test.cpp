@@ -54,21 +54,29 @@ struct Answer {
 };
 
 /**
- * An attempt that hangs on its first try (an hour's wait that a stop ends)
- * and answers 42 at once on every later one, each try failed after \p limit.
+ * The hang of hangs_once(): an hour's wait that a stop ends. A function that
+ * takes the scheduler as const&, so that every use builds the same type:
+ * schedule_after()'s sender depends on how the scheduler is passed, and a
+ * capture named in a decltype is not const where the same name in the
+ * lambda's body is.
+ */
+auto hang(const exec::timed_thread_scheduler &scheduler) {
+	return exec::schedule_after(scheduler, 1h) | ex::then(Answer{});
+}
+
+/**
+ * An attempt that hangs on its first try (see hang()) and answers 42 at once
+ * on every later one, each try failed after \p limit.
  */
 AttemptFunc auto hangs_once(int &calls, exec::timed_thread_scheduler scheduler,
 							std::chrono::milliseconds limit) {
 	return [&calls, scheduler, limit] {
-		using Hang = decltype(exec::schedule_after(scheduler, 1h) |
-							  ex::then(Answer{}));
+		using Hang    = decltype(hang(scheduler));
 		using Quick   = decltype(ex::just(42));
 		using Attempt = exec::variant_sender<Hang, Quick>;
 
 		Attempt attempt =
-			++calls == 1
-				? Attempt(exec::schedule_after(scheduler, 1h) | ex::then(Answer{}))
-				: Attempt(ex::just(42));
+			++calls == 1 ? Attempt(hang(scheduler)) : Attempt(ex::just(42));
 		return std::move(attempt) | fail_after(scheduler, limit);
 	};
 }
