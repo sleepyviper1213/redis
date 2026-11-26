@@ -86,3 +86,5 @@ docs/doxygen
 
 .claude
 artifacts/
+# Crashing inputs written by scripts/fuzz.sh
+fuzz-artifacts/

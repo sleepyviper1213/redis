@@ -27,7 +27,8 @@ redis/
     ├── core/              Unit tests for redis_core
     ├── server/            Storage, command and persistence tests, in-process
     ├── integration/       hiredis tests against a running server
-    └── stress/            Verifying stress test against a running server
+    ├── stress/            Verifying stress test against a running server
+    └── fuzz/              libFuzzer harnesses for the parsers, seed corpus, replay driver
 ```
 
 ```text
@@ -173,6 +174,7 @@ and exits with `_exit`; the parent keeps serving. All POSIX calls live in
 | Unit          | `test/core`, `test/server`       | `ctest --preset <preset>`                  |
 | Integration   | `test/integration`               | `scripts/test_server.sh <preset> <config>` |
 | Stress        | `test/stress`                    | `scripts/stress_server.sh <preset> <config>` |
+| Fuzz          | `test/fuzz`                      | corpus replay: `ctest --preset <preset>`; fuzzing: `cmake --workflow --preset x86_64-linux-gnu-clang-fuzz`, then the binaries |
 
 The stress test (`redis_stress_test`) is not a benchmark. Many clients work on
 their own keys against a local model, so every reply has an exact expected

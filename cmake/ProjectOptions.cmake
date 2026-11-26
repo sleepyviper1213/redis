@@ -17,6 +17,8 @@ option(REDIS_ENABLE_CLANG_TIDY "Run clang-tidy only" OFF)
 option(REDIS_ENABLE_CPPCHECK "Run cppcheck only" OFF)
 option(REDIS_USE_JEMALLOC
        "Allocate the keyspace with jemalloc (Linux and macOS; needs the vcpkg feature jemalloc)" OFF)
+option(REDIS_BUILD_FUZZERS
+       "Link test/fuzz with libFuzzer and instrument the code for it and UBSan (Clang only; see cmake/Fuzzing.cmake)" OFF)
 option(REDIS_WARN_UNSAFE_BUFFERS
        "Enable Clang -Wunsafe-buffer-usage (noisy; never promoted to error)" OFF)
 
