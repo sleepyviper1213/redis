@@ -27,13 +27,16 @@ stdexec_ext::InlineTask<void> accept_loop(AcceptSource &source) {
 	};
 
 	// Transient failures (e.g. EMFILE when out of descriptors) must not kill
-	// the loop, and the failed socket is unusable: log, wait, try again. Once
-	// the acceptor is closed there is nothing to retry, and that is not a
-	// failure to report.
+	// the loop, and the failed socket is unusable: log, wait, try again, each
+	// wait longer than the last up to the cap (DX-89). Once the acceptor is
+	// closed there is nothing to retry, and that is not a failure to report.
+	// Not retry_policy::exponential_backoff(): this policy also logs, and gives
+	// up on the acceptor closing rather than on a count.
 	stdexec_ext::RetryFunc auto after_failure =
-		[&source](size_t, const std::exception_ptr &error) {
+		[&source](size_t failures, const std::exception_ptr &error) {
 			if (source.is_open()) log_accept_failure(error);
-			return source.pause();
+			return source.pause(stdexec_ext::retry_policy::backoff_delay(
+				ACCEPT_BACKOFF_INITIAL, ACCEPT_BACKOFF_CAP, failures));
 		};
 
 	while (source.is_open()) {

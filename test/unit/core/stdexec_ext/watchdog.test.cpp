@@ -10,9 +10,12 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <exception>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 #include <thread>
+#include <utility>
 
 using namespace redis::stdexec_ext;
 using namespace std::chrono_literals;
@@ -189,6 +192,127 @@ SCENARIO("time_limited() abandons work that runs past its limit",
 		THEN("it is the same race") {
 			CHECK(value == -1);
 			CHECK(expiries == 1);
+		}
+	}
+}
+
+namespace {
+/// How a fail_after() race ended, for a test to look at: with a value, with
+/// an error code, or with an exception.
+struct Ending {
+	int value = 0;
+	std::error_code code;
+	bool threw = false;
+};
+
+/// Turns a race's value into an Ending.
+struct EndedWithValue {
+	Ending operator()(int value) const { return {.value = value}; }
+};
+
+/// Turns a race's error into an Ending, telling an error code from an
+/// exception.
+struct EndedWithError {
+	Ending operator()(std::error_code code) const { return {.code = code}; }
+	Ending operator()(const std::exception_ptr &) const {
+		return {.threw = true};
+	}
+};
+
+/// How \p race ended, waiting for it.
+template <class Race>
+Ending ending_of(Race &&race) {
+	auto [ending] = ex::sync_wait(std::forward<Race>(race) |
+								  ex::then(EndedWithValue{}) |
+								  ex::upon_error(EndedWithError{}))
+						.value();
+	return ending;
+}
+
+/// Blocks until \p flag is set: work that a stop request cannot end.
+void spin_until(const std::atomic<bool> &flag) {
+	while (!flag) std::this_thread::sleep_for(1ms);
+}
+} // namespace
+
+SCENARIO("fail_after() fails work that runs past its limit",
+		 "[watchdog][fail_after]") {
+	exec::timed_thread_context work_context;
+	exec::timed_thread_context timer_context;
+	const auto work_on  = work_context.get_scheduler();
+	const auto timer_on = timer_context.get_scheduler();
+
+	GIVEN("work that would run past the limit, and ends when stopped") {
+		std::atomic<bool> stopped{false};
+		auto work = slow(work_on, 10s) | ex::let_stopped([&stopped] {
+						stopped = true;
+						return ex::just_stopped();
+					});
+
+		const redis::ElapsedTimer timer;
+		const Ending ending = ending_of(std::move(work) |
+									   fail_after(timer_on, 100ms));
+
+		THEN("it fails with timed_out, an error code, once the work stopped") {
+			CHECK(ending.code == std::errc::timed_out);
+			CHECK_FALSE(ending.threw);
+			CHECK(stopped);
+			CHECK(timer.elapsed() < 5s);
+		}
+	}
+
+	GIVEN("work that answers within the limit") {
+		const redis::ElapsedTimer timer;
+		const Ending ending = ending_of(ex::just(42) | fail_after(timer_on, 10s));
+
+		THEN("its value comes through, without waiting out the limit") {
+			CHECK(ending.value == 42);
+			CHECK_FALSE(ending.code);
+			CHECK(timer.elapsed() < 5s);
+		}
+	}
+
+	GIVEN("work that fails within the limit") {
+		const redis::ElapsedTimer timer;
+		const Ending ending = ending_of(
+			ex::just_error(std::make_error_code(std::errc::connection_refused)) |
+			fail_after(timer_on, 10s));
+
+		THEN("its error comes through, not timed_out") {
+			CHECK(ending.code == std::errc::connection_refused);
+			CHECK(timer.elapsed() < 5s);
+		}
+	}
+
+	GIVEN("work that a stop cannot end, and an on_expiry that forces it") {
+		std::atomic<bool> released{false};
+		std::atomic<bool> work_ended{false};
+		std::atomic<bool> forced_while_running{false};
+		std::atomic<int> expiries{0};
+
+		auto work = ex::schedule(work_on) | ex::then([&] {
+						spin_until(released);
+						work_ended = true;
+						return 42;
+					});
+		const auto force = [&] {
+			++expiries;
+			forced_while_running = !work_ended;
+			released             = true;
+		};
+
+		const redis::ElapsedTimer timer;
+		const Ending ending =
+			ending_of(fail_after(std::move(work), timer_on, 100ms, force));
+
+		THEN("on_expiry runs once, at the limit, while the work still runs") {
+			CHECK(expiries == 1);
+			CHECK(forced_while_running);
+			CHECK(timer.elapsed() >= 100ms);
+		}
+
+		THEN("the race fails with timed_out") {
+			CHECK(ending.code == std::errc::timed_out);
 		}
 	}
 }

@@ -21,9 +21,12 @@
 
 namespace redis::detail {
 
-/// How long to wait after a failed accept. The failure usually persists (out of
-/// descriptors lasts until one is freed), and retrying at once would spin.
-inline constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds(100);
+/// The wait after the first failed accept. The failure usually persists (out
+/// of descriptors lasts until one is freed), and retrying at once would spin.
+inline constexpr auto ACCEPT_BACKOFF_INITIAL = std::chrono::milliseconds(100);
+/// The longest wait between failed accepts, however long they go on failing:
+/// it bounds how long a freed descriptor goes unused (DX-89).
+inline constexpr auto ACCEPT_BACKOFF_CAP = std::chrono::milliseconds(1000);
 
 /// One accept, serving the client it got: completes with nothing.
 using AcceptAttempt = stdexec_ext::ErasedSender<stdexec::set_value_t(),
@@ -49,8 +52,8 @@ public:
 	/// A fresh attempt: accept one client and start its session. Called afresh
 	/// for every attempt, as that is what gives each client its own strand.
 	[[nodiscard]] virtual AcceptAttempt attempt() = 0;
-	/// Starts the wait after a failure; completes with is_open().
-	[[nodiscard]] virtual AcceptPause pause() = 0;
+	/// Starts a wait of \p wait after a failure; completes with is_open().
+	[[nodiscard]] virtual AcceptPause pause(std::chrono::milliseconds wait) = 0;
 
 protected:
 	AcceptSource()                                = default;
@@ -63,8 +66,11 @@ protected:
  * \brief Accepts until the acceptor is closed or a stop request arrives.
  *
  * A failed attempt is logged (unless the acceptor was closed, which is how the
- * loop is told to end), then the loop waits as source.pause() says and tries
- * again, so a transient failure does not end it. Cancellation reaches the
+ * loop is told to end), then the loop waits through source.pause() and tries
+ * again, so a transient failure does not end it. The waits grow as the
+ * failures go on, from ACCEPT_BACKOFF_INITIAL, doubling, to ACCEPT_BACKOFF_CAP
+ * (retry_policy::backoff_delay), and start again from the first once a
+ * client is served. Cancellation reaches the
  * suspended co_await as set_stopped and unwinds the task without an error.
  */
 stdexec_ext::InlineTask<void> accept_loop(AcceptSource &source);

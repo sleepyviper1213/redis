@@ -60,7 +60,8 @@ counted it, not an exact instant.
 | TC-171 | Admission stops at `--maxclients` | Guard allows 2; admit 2, then a third | Third refused and takes no slot; a freed slot is reusable | Unit | `guard`: "The guard admits clients up to its limit" | Unit | Covered |
 | TC-172 | A full server answers and closes | Client past `--maxclients` connects | `-ERR max number of clients reached`, then closed; `rejected_connections` rises | Integration | `guard` (refusal only); `info`: "INFO reports connections when there is a network" (counter set by hand); no test asserts the reply text | Unit | Partial |
 | TC-173 | Connections are counted | Admit one, refuse one | `INFO` shows `connected_clients`, `maxclients`, `rejected_connections`, `total_connections_received` | Unit | `info`: "INFO reports connections when there is a network" | Unit | Covered |
-| TC-174 | A failed accept does not stop the listener | The next accepts fail, or keep failing | The listener retries with a pause, not in a tight loop, then serves | Unit | `listener`: "A listener survives failed accepts" | Unit | Covered |
+| TC-174 | A failed accept does not stop the listener | The next accepts fail, or keep failing | The listener retries after 100, 200, 400 ms, not in a tight loop, then serves | Unit | `listener`: "A listener survives failed accepts" | Unit | Covered |
+| TC-320 | The waits after failed accepts grow (DX-89) | Accepts that keep failing, for 1.6 s | About five tries (at 0, 0.1, 0.3, 0.7 and 1.5 s), at most eight; a fixed 100 ms wait would make sixteen | Unit | `listener`: "A listener survives failed accepts" (keeps failing) | Unit | Covered |
 | TC-175 | A client that hangs up frees its session (A6) | Client closes the socket | The session ends by itself; the slot is freed | Unit | `session`: "A session answers over a real connection" (hang up case); `guard` (slot reuse) | Unit | Covered |
 
 ## 3. Requests and framing (UC-006 steps 3-5, A1, A3, A4)

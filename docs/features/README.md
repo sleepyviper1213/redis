@@ -51,10 +51,10 @@ branches worked on side by side never take the same number and never edit a shar
 | keyspace | TC-065 to TC-085 | LI-02, LI-03; #40 | DX-10 to DX-16 | |
 | key_expiry | TC-086 to TC-123, TC-263 to TC-270, TC-322 to TC-328 | LI-05; #40 to #42, #45, #48, #49, #53, #54 | DX-17 to DX-23, DX-79, DX-90, DX-91 | AC-01 to AC-11 |
 | persistence | TC-124 to TC-159, TC-261, TC-297 | | DX-24 to DX-33, DX-77 | |
-| connection | TC-160 to TC-192, TC-271, TC-278 to TC-294, TC-298 to TC-300, TC-307, TC-308, TC-321 | | DX-34 to DX-44, DX-81, DX-86 | |
+| connection | TC-160 to TC-192, TC-271, TC-278 to TC-294, TC-298 to TC-300, TC-307, TC-308, TC-320, TC-321 | | DX-34 to DX-44, DX-81, DX-86, DX-89 | |
 | observability | TC-193 to TC-226, TC-272 to TC-277, TC-301 to TC-306 | | DX-45 to DX-55, DX-80, DX-84, DX-85 | |
 | server_lifecycle | TC-227 to TC-252, TC-262, TC-295, TC-296 | | DX-56 to DX-65, DX-76, DX-78, DX-82 | |
-| extensibility | TC-253 to TC-260 | | DX-66 to DX-75 | |
+| extensibility | TC-253 to TC-260, TC-309 to TC-319 | | DX-66 to DX-75, DX-87, DX-88 | |
 
 Legacy scenario IDs outside these ranges keep their numbers and are not
 renumbered: `TC-1001` to `TC-1004` (ping and echo, in `connection`) and `TC-2001`, `TC-2002` (RESP encoding and

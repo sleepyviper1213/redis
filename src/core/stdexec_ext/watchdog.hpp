@@ -13,6 +13,7 @@
  * |----------------|-------------------------|-----------------------|
  * | watched()      | a sender, start to end  | a report; it runs on  |
  * | time_limited() | a sender, start to end  | it is cancelled       |
+ * | fail_after()   | a sender, start to end  | cancelled, as failed  |
  * | escalate()     | a sender, start to end  | a report, then cancel |
  * | monitor()      | a HeartbeatSlot, polled | a report; it runs on  |
  *
@@ -22,8 +23,9 @@
  * is.
  *
  * Which to use: time_limited() when the work can be cancelled and a late
- * answer is worthless; watched() when it cannot, or must finish anyway;
- * escalate() when slow work deserves a warning before it is given up on;
+ * answer is worthless; fail_after() when a late answer is a failure, to be
+ * retried; watched() when it cannot, or must finish anyway; escalate() when
+ * slow work deserves a warning before it is given up on;
  * monitor() when there is no sender to wrap (synchronous work on a thread of
  * its own) or when a timer per piece of work would cost too much.
  *
@@ -32,6 +34,7 @@
  */
 
 #include "watchdog/escalate.hpp"     // IWYU pragma: export
+#include "watchdog/fail_after.hpp"   // IWYU pragma: export
 #include "watchdog/heartbeat.hpp"    // IWYU pragma: export
 #include "watchdog/policy.hpp"       // IWYU pragma: export
 #include "watchdog/time_limited.hpp" // IWYU pragma: export
