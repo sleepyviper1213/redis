@@ -1,4 +1,5 @@
 #include "commands.fixture.hpp"
+#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -6,7 +7,6 @@
 
 #include <chrono>
 #include <string>
-#include <thread>
 #include <vector>
 
 using Catch::Matchers::EndsWith;
@@ -18,6 +18,9 @@ using namespace std::chrono_literals;
 SCENARIO("SET applies each expiration option",
 		 "[commands][set]") {
 	GIVEN("an empty keyspace") {
+		// On a whole second, so absolute deadlines give exact TTLs (DX-90).
+		test::SimulatedWallClock clock(
+			DateTime::from_secs_since_epoch(1'700'000'000));
 		test::Server server;
 
 		WHEN("TC-093: a key is set with EX") {
@@ -31,33 +34,36 @@ SCENARIO("SET applies each expiration option",
 			REQUIRE(server.run({"SET", "k", "v", "PX", "50"}) == "+OK\r\n");
 			THEN("its TTL is in milliseconds") {
 				CHECK(server.run({"TTL", "k"}) == ":0\r\n");
+				CHECK(server.run({"PTTL", "k"}) == ":50\r\n");
 			}
-			AND_WHEN("the TTL passes") {
-				std::this_thread::sleep_for(80ms);
-				THEN("the key is gone") {
-					CHECK(server.run({"GET", "k"}) == "$-1\r\n");
+			// TC-323: the deadline passes when the clock reaches it, not
+			// before, however long the machine took to get here.
+			AND_WHEN("49 ms pass") {
+				clock.advance(49ms);
+				THEN("the key is still there, 1 ms from its deadline") {
+					CHECK(server.run({"PTTL", "k"}) == ":1\r\n");
+					CHECK(server.run({"GET", "k"}) == "$1\r\nv\r\n");
+				}
+				AND_WHEN("the last millisecond passes") {
+					clock.advance(1ms);
+					THEN("the key is gone") {
+						CHECK(server.run({"GET", "k"}) == "$-1\r\n");
+						CHECK(server.run({"PTTL", "k"}) == ":-2\r\n");
+					}
 				}
 			}
 		}
 
 		WHEN("TC-093: keys are set with EXAT and PXAT") {
-			const auto in_100s =
-				std::chrono::duration_cast<std::chrono::seconds>(
-					std::chrono::system_clock::now().time_since_epoch())
-					.count() +
-				100;
+			const auto in_100s = clock.now().to_secs_since_epoch() + 100;
 			REQUIRE(server.run({"SET", "a", "v", "EXAT",
 								fmt::to_string(in_100s)}) == "+OK\r\n");
 			REQUIRE(server.run({"SET", "b", "v", "PXAT",
 								fmt::to_string(in_100s * 1000)}) == "+OK\r\n");
 
 			THEN("both expire at the absolute time") {
-				// in_100s was truncated to a whole second, so up to a second
-				// has already elapsed: TTL rounds to 99 or 100.
-				const auto ttl_a = server.run({"TTL", "a"});
-				const auto ttl_b = server.run({"TTL", "b"});
-				CHECK((ttl_a == ":100\r\n" || ttl_a == ":99\r\n"));
-				CHECK((ttl_b == ":100\r\n" || ttl_b == ":99\r\n"));
+				CHECK(server.run({"TTL", "a"}) == ":100\r\n");
+				CHECK(server.run({"TTL", "b"}) == ":100\r\n");
 			}
 		}
 	}
@@ -89,6 +95,7 @@ SCENARIO("SET handles an existing TTL like Redis",
 SCENARIO("SET option validation",
 		 "[commands][set]") {
 	GIVEN("an empty keyspace") {
+		test::SimulatedWallClock clock; // DX-90: PTTL reads exactly
 		test::Server server;
 
 		WHEN("TC-096: options conflict or are incomplete") {
@@ -117,14 +124,10 @@ SCENARIO("SET option validation",
 					  "-ERR invalid expire time in 'set' command\r\n");
 				CHECK(server.run({"SET", "k", "v", "EX", "0", "EX", "100"}) ==
 					  "+OK\r\n");
-				const auto pttl = [&] {
-					return std::stoll(server.run({"PTTL", "k"}).substr(1));
-				};
-				CHECK(pttl() > 90000);
-				CHECK(pttl() <= 100000);
+				CHECK(server.run({"PTTL", "k"}) == ":100000\r\n");
 				CHECK(server.run({"SET", "k", "w", "KEEPTTL", "KEEPTTL"}) ==
 					  "+OK\r\n");
-				CHECK(pttl() > 90000);
+				CHECK(server.run({"PTTL", "k"}) == ":100000\r\n");
 			}
 		}
 

@@ -327,8 +327,8 @@ public:
 			return ExpiryResult::Deleted;
 		}
 		if (old != expires_.end()) erase_deadline(old);
-		auto [it, _] = expires_.emplace(make_key(key), timer.deadline());
-		by_deadline_.emplace(timer.deadline(), it->first);
+		auto [it, _] = expires_.emplace(make_key(key), timer.date_time());
+		by_deadline_.emplace(timer.date_time(), it->first);
 		return ExpiryResult::Set;
 	}
 
@@ -415,8 +415,8 @@ private:
 		const auto current = has_deadline ? it->second : time_point{};
 		if (options.is_nx && has_deadline) return false;
 		if (options.is_xx && !has_deadline) return false;
-		if (options.is_gt && (!has_deadline || timer.deadline() <= current)) return false;
-		if (options.is_lt && has_deadline && timer.deadline() >= current) return false;
+		if (options.is_gt && (!has_deadline || timer.date_time() <= current)) return false;
+		if (options.is_lt && has_deadline && timer.date_time() >= current) return false;
 		return true;
 	}
 

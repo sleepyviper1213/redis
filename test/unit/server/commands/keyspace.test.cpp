@@ -1,10 +1,10 @@
 #include "commands.fixture.hpp"
+#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
-#include <thread>
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::StartsWith;
@@ -67,6 +67,7 @@ SCENARIO("Listing keys by pattern", "[commands][keyspace]") {
 SCENARIO("Setting and clearing expiry",
 		 "[commands][keyspace][ttl]") {
 	GIVEN("a persistent key") {
+		test::SimulatedWallClock clock; // DX-90: time passes only when told
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
 
@@ -96,7 +97,7 @@ SCENARIO("Setting and clearing expiry",
 
 		WHEN("PEXPIRE sets a short TTL that passes") {
 			REQUIRE(server.run({"PEXPIRE", "k", "20"}) == ":1\r\n");
-			std::this_thread::sleep_for(40ms);
+			clock.advance(20ms);
 
 			THEN("the key is gone") {
 				CHECK(server.run({"EXISTS", "k"}) == ":0\r\n");

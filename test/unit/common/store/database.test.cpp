@@ -1,11 +1,11 @@
 #include "common/store/database.hpp"
+#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
 #include <string>
-#include <thread>
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -76,6 +76,9 @@ SCENARIO("Removing empty collections", "[storage]") {
 }
 
 SCENARIO("Expiring keys", "[storage][expiry]") {
+	// Deadlines pass when the clock is moved, never early (DX-90).
+	test::SimulatedWallClock clock;
+
 	GIVEN("one short-lived, one long-lived and one persistent key") {
 		Database db;
 		db.set("short", String("v"));
@@ -92,7 +95,7 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 		}
 
 		AND_GIVEN("the short deadline has passed") {
-			std::this_thread::sleep_for(40ms);
+			clock.advance(20ms);
 
 			WHEN("the active expiry cycle runs") {
 				REQUIRE(db.size() == 3);
@@ -118,9 +121,8 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 
 	GIVEN("ten keys that expired at the same time") {
 		Database db;
-		// Generous margins: a deadline that passes while the keys are still
-		// being added deletes them at once and the test miscounts (seen under
-		// a sanitizer with the whole suite running in parallel).
+		// The simulated clock stands still while the keys are added, so none
+		// expires early and the counts below are exact.
 		const DeadlineTimer deadline = DeadlineTimer::after(200ms);
 		constexpr int KEYS_WITH_DEADLINE = 10;
 		for (int i = 0; i < KEYS_WITH_DEADLINE; ++i) {
@@ -128,7 +130,7 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 			db.set(key, String("v"));
 			(void)db.set_expiry(key, deadline);
 		}
-		std::this_thread::sleep_for(250ms);
+		clock.advance(200ms);
 
 		WHEN("cycles run with a budget of 4, then a large one") {
 			const auto first  = db.active_expire_cycle(4);
@@ -166,6 +168,7 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 
 SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 	GIVEN("a key whose deadline is replaced, persisted, then erased") {
+		test::SimulatedWallClock clock;
 		Database db;
 		db.set("k", String("v"));
 		(void)db.set_expiry("k", DeadlineTimer::after(10ms));
@@ -177,7 +180,7 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 
 		WHEN("the key is recreated without a deadline and old ones pass") {
 			db.set("k", String("again"));
-			std::this_thread::sleep_for(20ms);
+			clock.advance(10ms);
 			const auto removed = db.active_expire_cycle(100);
 
 			THEN("no stale deadline expires the new key") {

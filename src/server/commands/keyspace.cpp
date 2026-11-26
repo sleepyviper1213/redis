@@ -185,7 +185,7 @@ Value ttl_generic(CommandContext &ctx, Args args) {
 	const auto deadline = ctx.db.expiry(key);
 	if (!deadline) return reply::integer(-1);
 
-	const auto left = DeadlineTimer::at(*deadline).remaining_time_ms().count();
+	const auto left = DeadlineTimer::at(*deadline).remaining_time().count();
 	// Round to the nearest second like Redis; truncating would report 99
 	// immediately after SET ... EX 100.
 	return reply::integer(InMillis ? left

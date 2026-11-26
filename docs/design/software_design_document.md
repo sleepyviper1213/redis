@@ -156,7 +156,8 @@ The server is built from layers, one library per directory
   fsync policy, replay, manifest, rewrite).
 * **`core`:** `error` (`REDIS_TRY`, `REDIS_FAILED`, `Failure<Kind>`), `logging` (channels `server`, `net`,
   `commands`, `persistence`), `os` (`fork_and_run`, `reap`, `SaveFile`, `fsync` family), `stdexec_ext` (`retry`,
-  `every`, `supervise`, `InlineTask`), `chrono` (`DeadlineTimer`), `utils` (glob, number parsing, ring buffer).
+  `every`, `supervise`, `InlineTask`), `chrono` (`DateTime`; `BasicElapsedTimer` and `BasicDeadlineTimer` over any `std::chrono` clock, ADR-0013:
+  `DeadlineTimer` on `WallTime`, `TickTimer` on `TickClock`), `utils` (glob, number parsing, ring buffer).
 
 ## 6. Logical viewpoint
 

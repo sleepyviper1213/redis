@@ -1,6 +1,7 @@
 #include "server/persistence/detail/snapshot.hpp"
 
 #include "../commands/commands.fixture.hpp"
+#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -18,6 +19,7 @@ using persistence::PersistKind;
 
 SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 	GIVEN("a keyspace with one key of each type and a TTL") {
+		test::SimulatedWallClock clock; // DX-90: the TTL reads exactly
 		test::Server server;
 		REQUIRE(server.run({"SET", "s", "hello", "EX", "100"}) == "+OK\r\n");
 		REQUIRE(server.run({"RPUSH", "l", "a", "b", "c"}) == ":3\r\n");
@@ -44,9 +46,11 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 			}
 
 			THEN("the TTL is kept as an absolute deadline") {
-				// 99 once a second has passed since the SET, on a slow machine.
-				const auto ttl = restored.run({"TTL", "s"});
-				CHECK((ttl == ":100\r\n" || ttl == ":99\r\n"));
+				CHECK(restored.run({"TTL", "s"}) == ":100\r\n");
+				// Absolute, not 100 s from the load: it counts down with
+				// the clock.
+				clock.advance(1s);
+				CHECK(restored.run({"TTL", "s"}) == ":99\r\n");
 				CHECK(restored.run({"TTL", "l"}) == ":-1\r\n");
 			}
 		}
@@ -78,12 +82,13 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 	}
 
 	GIVEN("a key whose TTL passes after the snapshot is written") {
+		test::SimulatedWallClock clock; // DX-90
 		test::Server server;
 		REQUIRE(server.run({"SET", "short", "v", "PX", "200"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
 		REQUIRE(
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
-		std::this_thread::sleep_for(300ms);
+		clock.advance(200ms);
 
 		WHEN("TC-118: the snapshot is loaded") {
 			test::Server restored;
@@ -189,12 +194,14 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 
 SCENARIO("Saving through commands", "[persistence][commands]") {
 	GIVEN("a keyspace with data") {
+		// Before the server, which records its start as the last save.
+		test::SimulatedWallClock clock;
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
 
 		WHEN("SAVE is called") {
 			const auto before = server.run({"LASTSAVE"});
-			std::this_thread::sleep_for(1100ms); // LASTSAVE has 1s resolution
+			clock.advance(1s); // LASTSAVE has 1 s resolution (DX-90)
 			const auto reply = server.run({"SAVE"});
 
 			THEN("the file is written and LASTSAVE advances") {
@@ -281,12 +288,13 @@ SCENARIO("A snapshot keeps absolute deadlines",
 	}
 
 	GIVEN("a snapshot whose short deadline has passed since it was written") {
+		test::SimulatedWallClock clock; // DX-90
 		test::Server server;
 		REQUIRE(server.run({"SET", "short", "v", "PX", "200"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
 		REQUIRE(
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
-		std::this_thread::sleep_for(300ms);
+		clock.advance(200ms);
 
 		WHEN("TC-119: it is loaded as the base of an append-only file") {
 			test::Server restored;
