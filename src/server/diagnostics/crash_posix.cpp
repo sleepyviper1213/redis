@@ -64,7 +64,7 @@ constexpr std::uintptr_t OVERFLOW_WINDOW = 256 * 1024;
 bool is_overflowing_stack = false;
 
 void record_stack_bounds() noexcept {
-#ifdef __linux__
+#if defined(__linux__)
 	pthread_attr_t attr;
 	if (::pthread_getattr_np(::pthread_self(), &attr) != 0) return;
 	void *low = nullptr;
@@ -72,6 +72,12 @@ void record_stack_bounds() noexcept {
 	if (::pthread_attr_getstack(&attr, &low, &size) == 0)
 		stack_low = reinterpret_cast<std::uintptr_t>(low);
 	::pthread_attr_destroy(&attr);
+#elif defined(__APPLE__)
+	// macOS gives the top of the stack, which grows down from it.
+	const auto top =
+		reinterpret_cast<std::uintptr_t>(::pthread_get_stackaddr_np(::pthread_self()));
+	const std::size_t size = ::pthread_get_stacksize_np(::pthread_self());
+	if (top > size) stack_low = top - size;
 #endif
 }
 
@@ -175,9 +181,15 @@ void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 		out_number(static_cast<unsigned>(sig));
 		out(")\n");
 		if ((sig == SIGSEGV || sig == SIGBUS) && info != nullptr) {
+			const auto fault = reinterpret_cast<std::uintptr_t>(info->si_addr);
 			out("Fault address: ");
-			out_number(reinterpret_cast<std::uintptr_t>(info->si_addr), 16);
+			out_number(fault, 16);
 			out("\n");
+			// DX-84: a fault at the end of the stack is the stack running out,
+			// not a wild pointer.
+			if (is_stack_overflow(fault))
+				out("Stack overflow: the fault is at the end of the main "
+					"thread's stack\n");
 		}
 		out("Pid: ");
 		out_number(static_cast<std::uintmax_t>(::getpid()));
