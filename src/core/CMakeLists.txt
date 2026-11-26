@@ -10,7 +10,6 @@ add_library(
     utils/glob.cpp
     utils/parse_number.cpp
     chrono/date_time.cpp
-    chrono/deadline_timer.cpp
     chrono/tick_clock.cpp
 )
 

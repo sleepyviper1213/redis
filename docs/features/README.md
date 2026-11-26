@@ -46,7 +46,7 @@ another document means one thing. Take the next free number from the table, then
 | (master test plan, integration) | TC-001 to TC-027 | | | |
 | data_types | TC-028 to TC-064 | LI-01 | DX-01 to DX-09 | |
 | keyspace | TC-065 to TC-085 | LI-02, LI-03; #40 | DX-10 to DX-16 | |
-| key_expiry | TC-086 to TC-123, TC-263 to TC-270, TC-322 to TC-324 | LI-05; #40 to #42, #45, #48, #49, #53 | DX-17 to DX-23, DX-79, DX-90 | AC-01 to AC-11 |
+| key_expiry | TC-086 to TC-123, TC-263 to TC-270, TC-322 to TC-328 | LI-05; #40 to #42, #45, #48, #49, #53, #54 | DX-17 to DX-23, DX-79, DX-90, DX-91 | AC-01 to AC-11 |
 | persistence | TC-124 to TC-159, TC-261, TC-297 | | DX-24 to DX-33, DX-77 | |
 | connection | TC-160 to TC-192, TC-271, TC-278 to TC-294, TC-298, TC-299 | | DX-34 to DX-44, DX-81 | |
 | observability | TC-193 to TC-226, TC-272 to TC-277 | | DX-45 to DX-55, DX-80 | |

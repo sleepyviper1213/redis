@@ -116,7 +116,7 @@ std::expected<SetOptions, SetError> parse_set_options(Args args) {
 			*time > 0 ? detail::expire_time(*time, chosen->unit, chosen->base)
 					  : std::nullopt;
 		if (!timer) REDIS_FAILED(SetError::InvalidExpire);
-		opts.deadline = timer->deadline();
+		opts.deadline = timer->date_time();
 	}
 	return opts;
 }

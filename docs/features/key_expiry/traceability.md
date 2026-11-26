@@ -25,7 +25,8 @@ Coverage marks come from [test_plan.md](test_plan.md) and were matched by test n
 The unimplemented #42, and the limit by design LI-05 are not tied to a criterion; see
 [test_plan.md](test_plan.md). TC-103 (arity,
 FR-010) and TC-123 (deadline arithmetic, NFR-010.1) check a requirement directly, not a criterion. TC-322 to TC-324
-(the fake wall clock, DX-90, #53) check that the tests themselves are sound (NFR-003), not a criterion.
+(the simulated wall clock, DX-90, #53) check that the tests themselves are sound (NFR-003), not a criterion; TC-325
+to TC-328 (the timers over any clock, DX-91, ADR-0013, #54) check the timing library (NFR-006, NFR-010.1).
 
 The differential test sends nothing that depends on time (master test plan §5.2). Scenarios marked Differential can
 join it only in a time-independent form. That is a change to `scripts/diff_test.py`, not part of this feature yet.

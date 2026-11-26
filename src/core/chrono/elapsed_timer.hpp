@@ -1,32 +1,23 @@
 #pragma once
 
+#include "clock.hpp"
+
 #include <fmt/base.h>
 
 #include <chrono>
-#include <concepts>
 #include <cstdint>
 
 namespace redis {
-/// A clock that never goes back: what an elapsed time must be measured on.
-/// Spells out std::chrono::is_clock_v, which libc++ does not ship yet.
-template <class C>
-concept MonotonicClock = requires {
-	typename C::rep;
-	typename C::period;
-	typename C::duration;
-	typename C::time_point;
-	{ C::now() } -> std::same_as<typename C::time_point>;
-} && C::is_steady;
-
 /**
  * \brief Measures time elapsed since a start point.
  *
- * API modelled after QElapsedTimer. Distinct from DeadlineTimer, which tracks
- * a fixed future wall-clock deadline; ElapsedTimer uses a monotonic clock
- * and grows forward from a chosen start point.
+ * API modelled after QElapsedTimer; the counterpart of BasicDeadlineTimer,
+ * which is when something must be done by, on the same choice of clock
+ * (ADR-0013).
  *
  * \tparam Clock A steady clock. steady_clock by default; TickClock for short
- * spans on the hot path, where steady_clock is costly on macOS.
+ * spans on the hot path, where steady_clock is costly on macOS;
+ * test::SimulatedClock in tests.
  */
 template <MonotonicClock Clock = std::chrono::steady_clock>
 class BasicElapsedTimer {
