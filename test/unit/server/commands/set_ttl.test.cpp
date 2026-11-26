@@ -95,6 +95,7 @@ SCENARIO("SET handles an existing TTL like Redis",
 SCENARIO("SET option validation",
 		 "[commands][set]") {
 	GIVEN("an empty keyspace") {
+		test::SimulatedWallClock clock; // DX-90: PTTL reads exactly
 		test::Server server;
 
 		WHEN("TC-096: options conflict or are incomplete") {
@@ -123,14 +124,10 @@ SCENARIO("SET option validation",
 					  "-ERR invalid expire time in 'set' command\r\n");
 				CHECK(server.run({"SET", "k", "v", "EX", "0", "EX", "100"}) ==
 					  "+OK\r\n");
-				const auto pttl = [&] {
-					return std::stoll(server.run({"PTTL", "k"}).substr(1));
-				};
-				CHECK(pttl() > 90000);
-				CHECK(pttl() <= 100000);
+				CHECK(server.run({"PTTL", "k"}) == ":100000\r\n");
 				CHECK(server.run({"SET", "k", "w", "KEEPTTL", "KEEPTTL"}) ==
 					  "+OK\r\n");
-				CHECK(pttl() > 90000);
+				CHECK(server.run({"PTTL", "k"}) == ":100000\r\n");
 			}
 		}
 

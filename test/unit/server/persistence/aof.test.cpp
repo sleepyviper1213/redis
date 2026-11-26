@@ -200,6 +200,7 @@ SCENARIO("Commands that cannot be replayed as received",
 
 SCENARIO("A restart gets back what was logged", "[aof]") {
 	GIVEN("a server that logged every kind of value") {
+		test::SimulatedWallClock clock; // DX-90: the deadline reads exactly
 		TempDir const dir;
 		test::TempFile const snapshot;
 		std::string ttl;
@@ -233,10 +234,10 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 			}
 
 			AND_THEN("the deadline is the original, not one from the restart") {
-				const auto left =
-					std::stoll(server.run({"PTTL", "ttl"}).substr(1));
-				CHECK(left > 90000);
-				CHECK(left <= 100000);
+				// A deadline renewed at the restart would read the same while
+				// the clock stands still: move it, so only the original fits.
+				clock.advance(1s);
+				CHECK(server.run({"PTTL", "ttl"}) == ":99000\r\n");
 			}
 
 			AND_THEN("it keeps logging after the old commands") {

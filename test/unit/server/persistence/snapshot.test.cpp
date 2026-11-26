@@ -19,6 +19,7 @@ using persistence::PersistKind;
 
 SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 	GIVEN("a keyspace with one key of each type and a TTL") {
+		test::SimulatedWallClock clock; // DX-90: the TTL reads exactly
 		test::Server server;
 		REQUIRE(server.run({"SET", "s", "hello", "EX", "100"}) == "+OK\r\n");
 		REQUIRE(server.run({"RPUSH", "l", "a", "b", "c"}) == ":3\r\n");
@@ -45,9 +46,11 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 			}
 
 			THEN("the TTL is kept as an absolute deadline") {
-				// 99 once a second has passed since the SET, on a slow machine.
-				const auto ttl = restored.run({"TTL", "s"});
-				CHECK((ttl == ":100\r\n" || ttl == ":99\r\n"));
+				CHECK(restored.run({"TTL", "s"}) == ":100\r\n");
+				// Absolute, not 100 s from the load: it counts down with
+				// the clock.
+				clock.advance(1s);
+				CHECK(restored.run({"TTL", "s"}) == ":99\r\n");
 				CHECK(restored.run({"TTL", "l"}) == ":-1\r\n");
 			}
 		}
