@@ -7,6 +7,7 @@
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
+#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -251,26 +252,26 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 
 SCENARIO("A replay does not depend on when it runs", "[aof]") {
 	GIVEN("a key that expired before the restart, and one that was persisted") {
+		// The clock moves only when told (DX-90), so no machine is too slow
+		// for the INCR to run before k's deadline.
+		test::SimulatedWallClock clock;
 		TempDir const dir;
 		test::TempFile const snapshot;
 		{
 			AofServer server(dir.path(), snapshot.path());
 			REQUIRE(server.start().has_value());
 			// k is alive for the INCR and then made permanent; by the time of
-			// the restart its original deadline has passed. The deadline is
-			// generous so a loaded machine (TSan, parallel tests) still runs the
-			// INCR before it.
-			const auto k_set_at = std::chrono::steady_clock::now();
+			// the restart its original deadline has passed.
 			server.run({"SET", "k", "5", "PX", "500"});
 			REQUIRE(server.run({"INCR", "k"}) == ":6\r\n");
 			server.run({"PERSIST", "k"});
 			// gone is found expired by a read, which logs a DEL; INCR then
 			// starts over from 1.
 			server.run({"SET", "gone", "5", "PX", "1"});
-			std::this_thread::sleep_for(20ms);
+			clock.advance(1ms);
 			CHECK(server.run({"GET", "gone"}) == "$-1\r\n");
 			CHECK(server.run({"INCR", "gone"}) == ":1\r\n");
-			std::this_thread::sleep_until(k_set_at + 600ms);
+			clock.advance(500ms); // k's deadline is behind us now
 		}
 
 		WHEN("TC-116: the files are replayed after the deadlines") {
@@ -706,6 +707,7 @@ SCENARIO("A discard does not outlive its command",
 SCENARIO("A key that expires is logged as DEL, once",
 		 "[aof][expiry]") {
 	GIVEN("two keys that expire and one that does not") {
+		test::SimulatedWallClock clock; // DX-90
 		TempDir const dir;
 		test::TempFile const snapshot;
 		AofServer server(dir.path(), snapshot.path());
@@ -713,7 +715,7 @@ SCENARIO("A key that expires is logged as DEL, once",
 		server.run({"SET", "by_access", "v", "PX", "20"});
 		server.run({"SET", "by_sweep", "v", "PX", "20"});
 		server.run({"SET", "kept", "v"});
-		std::this_thread::sleep_for(60ms);
+		clock.advance(20ms);
 
 		WHEN("TC-114: one is found by a read and the other by the sweep") {
 			CHECK(server.run({"GET", "by_access"}) == "$-1\r\n");
@@ -734,24 +736,21 @@ SCENARIO("A key that expires is logged as DEL, once",
 SCENARIO("A replay does not extend a lifetime",
 		 "[aof][expiry]") {
 	GIVEN("a key set to live two seconds, restarted after part of that") {
+		test::SimulatedWallClock clock; // DX-90: so what is left is exact
 		TempDir const dir;
 		test::TempFile const snapshot;
 		{
 			AofServer server(dir.path(), snapshot.path());
 			REQUIRE(server.start().has_value());
 			server.run({"SET", "k", "v", "EX", "2"});
-			std::this_thread::sleep_for(700ms);
+			clock.advance(700ms);
 		}
 
 		WHEN("TC-115: the files are replayed") {
 			Restarted server(dir.path(), snapshot.path());
-			const auto reply = server.run({"PTTL", "k"});
 
 			THEN("what is left is what was left, not the full two seconds") {
-				REQUIRE_THAT(reply, StartsWith(":"));
-				const auto left = std::stoll(reply.substr(1));
-				CHECK(left > 0);
-				CHECK(left <= 1500);
+				CHECK(server.run({"PTTL", "k"}) == ":1300\r\n");
 			}
 		}
 	}
@@ -813,6 +812,8 @@ SCENARIO("A base keeps a deadline that passes before the restart",
 		 "[aof][expiry]") {
 	constexpr auto DEADLINE_MS = "500";
 	GIVEN("a base with a short deadline and a logged command on that key") {
+		// The restart cannot take the key past its deadline early (DX-90).
+		test::SimulatedWallClock clock;
 		TempDir const dir;
 		test::TempFile const snapshot;
 		{
@@ -830,7 +831,7 @@ SCENARIO("A base keeps a deadline that passes before the restart",
 			// Still before the deadline: the key is there to be appended to.
 			REQUIRE(server.run({"APPEND", "short", "x"}) == ":2\r\n");
 		}
-		std::this_thread::sleep_for(700ms);
+		clock.advance(500ms); // the deadline
 
 		WHEN("TC-119: the files are replayed after the deadline") {
 			Restarted server(dir.path(), snapshot.path());

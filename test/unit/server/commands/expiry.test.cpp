@@ -2,6 +2,7 @@
 // of docs/features/key_expiry/test_plan.md; the issue is #43.
 #include "absl/strings/match.h"
 #include "commands.fixture.hpp"
+#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -9,7 +10,6 @@
 
 #include <chrono>
 #include <string>
-#include <thread>
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::StartsWith;
@@ -18,15 +18,16 @@ using namespace redis;
 using namespace std::chrono_literals;
 
 namespace {
-// A margin that survives a loaded machine (sanitizers, parallel tests): the
-// deadline is short, the wait is three times longer.
+// Deadlines pass when the simulated clock is moved, not by waiting (DX-90), so a
+// loaded machine cannot reach one early.
 constexpr auto SHORT_DEADLINE_MS = "20";
-constexpr auto PAST_DEADLINE     = 60ms;
+constexpr auto SHORT_DEADLINE    = 20ms;
 
-/// Give \p key a deadline that passes before this returns.
-void make_due(test::Server &server, const std::string &key) {
+/// Give \p key a deadline, then move \p clock to it: the key is due.
+void make_due(test::Server &server, test::SimulatedWallClock &clock,
+			  const std::string &key) {
 	REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) == ":1\r\n");
-	std::this_thread::sleep_for(PAST_DEADLINE);
+	clock.advance(SHORT_DEADLINE);
 }
 
 /// \p key has about \p seconds left. TTL rounds to the nearest second, so a slow
@@ -211,9 +212,10 @@ SCENARIO("Options with a missing key, a due key and a past deadline",
 	}
 
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
+		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		make_due(server, "k");
+		make_due(server, clock, "k");
 
 		WHEN("TC-268: EXPIRE is sent with XX") {
 			THEN("the key is missing, so the reply is 0") {
@@ -401,6 +403,7 @@ SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
 SCENARIO("A key past its deadline is missing to every command",
 		 "[commands][expiry]") {
 	GIVEN("keys of each type whose deadlines have passed, and one live key") {
+		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "str", "v"});
 		server.run({"RPUSH", "list", "x"});
@@ -409,7 +412,7 @@ SCENARIO("A key past its deadline is missing to every command",
 		for (const char *key : {"str", "list", "hash"})
 			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) ==
 					":1\r\n");
-		std::this_thread::sleep_for(PAST_DEADLINE);
+		clock.advance(SHORT_DEADLINE);
 
 		THEN("TC-105: reads see them as missing") {
 			CHECK(server.run({"GET", "str"}) == "$-1\r\n");
@@ -475,6 +478,7 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 	}
 
 	GIVEN("five keys that expire, by a read and by the sweep") {
+		test::SimulatedWallClock clock;
 		test::Server server;
 		for (int i = 0; i < 5; ++i) {
 			const auto key = fmt::format("k{}", i);
@@ -482,7 +486,7 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) ==
 					":1\r\n");
 		}
-		std::this_thread::sleep_for(PAST_DEADLINE);
+		clock.advance(SHORT_DEADLINE);
 		server.run({"GET", "k0"});
 		server.db.active_expire_cycle(100);
 
@@ -501,9 +505,10 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 		 "[commands][expiry]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
+		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		make_due(server, "k");
+		make_due(server, clock, "k");
 
 		THEN("DEL finds no key, and the key counts as expired") {
 			const auto before = server.db.expired_keys();
@@ -518,9 +523,10 @@ SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 SCENARIO("Key expiry limits by design and commands not implemented",
 		 "[commands][expiry][limit]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
+		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		make_due(server, "k");
+		make_due(server, clock, "k");
 
 		THEN("DBSIZE still counts it, until it is removed (LI-05)") {
 			CHECK(server.run({"DBSIZE"}) == ":1\r\n");
@@ -547,50 +553,40 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 // TC-087, TC-088, TC-089: deadlines in the future, set by each command.
 SCENARIO("Deadlines in the future are read back in their unit",
 		 "[commands][expiry]") {
+	// On a whole second, so every reading below is exact (DX-90).
+	test::SimulatedWallClock clock(DateTime::from_secs_since_epoch(1'700'000'000));
+
 	GIVEN("a key, and PEXPIRE with 5000 milliseconds") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
 		REQUIRE(server.run({"PEXPIRE", "k", "5000"}) == ":1\r\n");
 
-		THEN("TC-087: PTTL is in milliseconds, 4000 to 5000") {
-			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
-			CHECK(ms > 4000);
-			CHECK(ms <= 5000);
+		THEN("TC-087: PTTL is in milliseconds") {
+			CHECK(server.run({"PTTL", "k"}) == ":5000\r\n");
 		}
 	}
 
 	GIVEN("a key, and EXPIREAT 100 seconds from now") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		const auto now =
-			std::chrono::duration_cast<std::chrono::seconds>(
-				std::chrono::system_clock::now().time_since_epoch())
-				.count();
+		const auto now = clock.now().to_secs_since_epoch();
 		REQUIRE(server.run({"EXPIREAT", "k", fmt::format("{}", now + 100)}) ==
 				":1\r\n");
 
-		THEN("TC-088: TTL is about 100 seconds") {
-			const auto secs = std::stoll(server.run({"TTL", "k"}).substr(1));
-			CHECK(secs >= 98);
-			CHECK(secs <= 100);
+		THEN("TC-088: TTL is 100 seconds") {
+			CHECK(server.run({"TTL", "k"}) == ":100\r\n");
 		}
 	}
 
 	GIVEN("a key, and PEXPIREAT 100000 milliseconds from now") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		const auto now =
-			std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::system_clock::now().time_since_epoch())
-				.count();
-		REQUIRE(
-			server.run({"PEXPIREAT", "k", fmt::format("{}", now + 100'000)}) ==
-			":1\r\n");
+		REQUIRE(server.run({"PEXPIREAT", "k",
+							fmt::format("{}", clock.now_ms() + 100'000)}) ==
+				":1\r\n");
 
-		THEN("TC-089: PTTL is about 100000 milliseconds") {
-			const auto ms = std::stoll(server.run({"PTTL", "k"}).substr(1));
-			CHECK(ms > 98000);
-			CHECK(ms <= 100'000);
+		THEN("TC-089: PTTL is 100000 milliseconds") {
+			CHECK(server.run({"PTTL", "k"}) == ":100000\r\n");
 		}
 	}
 }

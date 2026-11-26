@@ -1,10 +1,14 @@
 #include "core/chrono/date_time.hpp"
 
+#include "support/simulated_wall_clock.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <utility>
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -67,5 +71,42 @@ SCENARIO("DateTime is Unix milliseconds with saturating arithmetic",
 		CHECK(DateTime::from_std_time_point(
 				  Sec(std::chrono::seconds(std::numeric_limits<int64_t>::min()))) ==
 			  DateTime::distant_past());
+	}
+}
+
+// TC-322 (DX-90, #53)
+SCENARIO("A test can fix the wall clock", "[core][date_time][simulated_clock]") {
+	GIVEN("a simulated clock at a chosen time") {
+		const auto start = DateTime::from_msecs_since_epoch(1'700'000'000'000);
+		std::optional<test::SimulatedWallClock> clock(std::in_place, start);
+
+		THEN("the current time is the simulated clock's, however long the test runs") {
+			CHECK(DateTime::current() == start);
+			CHECK(DateTime::current() == start);
+		}
+
+		WHEN("it advances") {
+			clock->advance(1500ms);
+			THEN("the current time moves by exactly that much") {
+				CHECK(DateTime::current() == start.add_msecs(1500));
+				CHECK(clock->now_ms() == 1'700'000'001'500);
+			}
+		}
+
+		WHEN("it is destroyed") {
+			clock.reset();
+			THEN("the system clock is back") {
+				const auto before = DateTime::from_std_time_point(
+					std::chrono::time_point_cast<std::chrono::milliseconds>(
+						std::chrono::system_clock::now()));
+				const auto now = DateTime::current();
+				const auto after = DateTime::from_std_time_point(
+					std::chrono::time_point_cast<std::chrono::milliseconds>(
+						std::chrono::system_clock::now()));
+				CHECK(before <= now);
+				CHECK(now <= after);
+				CHECK(now != start);
+			}
+		}
 	}
 }
