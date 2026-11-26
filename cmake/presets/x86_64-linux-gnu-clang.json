@@ -32,6 +32,21 @@
             }
         },
         {
+            "name": "x86_64-linux-gnu-clang-fuzz",
+            "displayName": "Linux Clang / libFuzzer",
+            "description": "The fuzz harnesses of test/fuzz linked with libFuzzer, the code instrumented for it and for UBSan, in the AddressSanitizer configuration; dependencies as in the ASan tree. Build only the fuzzers here (DX-86, #51).",
+            "inherits": [
+                "asan-deps-clang",
+                "dev-options",
+                "x86_64-linux-gnu-clang-toolchain"
+            ],
+            "cacheVariables": {
+                "REDIS_SANITIZER": "Address",
+                "REDIS_BUILD_FUZZERS": "ON",
+                "REDIS_ENABLE_IPO": "OFF"
+            }
+        },
+        {
             "name": "x86_64-linux-gnu-clang-coverage",
             "displayName": "Linux Clang / coverage",
             "inherits": [
@@ -80,6 +95,15 @@
             "configuration": "AddressSanitizer"
         },
         {
+            "name": "x86_64-linux-gnu-clang-fuzz",
+            "configurePreset": "x86_64-linux-gnu-clang-fuzz",
+            "configuration": "AddressSanitizer",
+            "targets": [
+                "redis_fuzz_resp_parser",
+                "redis_fuzz_resp_request"
+            ]
+        },
+        {
             "name": "x86_64-linux-gnu-clang-tsan",
             "configurePreset": "x86_64-linux-gnu-clang",
             "configuration": "ThreadSanitizer"
@@ -119,6 +143,18 @@
             "inherits": "asan-test-base",
             "configurePreset": "x86_64-linux-gnu-clang-asan",
             "configuration": "AddressSanitizer"
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-fuzz",
+            "description": "Replays the corpus through the libFuzzer binaries; only the fuzzers are built in this tree.",
+            "inherits": "asan-test-base",
+            "configurePreset": "x86_64-linux-gnu-clang-fuzz",
+            "configuration": "AddressSanitizer",
+            "filter": {
+                "include": {
+                    "name": "^fuzz\\."
+                }
+            }
         },
         {
             "name": "x86_64-linux-gnu-clang-tsan",
@@ -269,6 +305,23 @@
                 {
                     "type": "test",
                     "name": "x86_64-linux-gnu-clang-rtsan"
+                }
+            ]
+        },
+        {
+            "name": "x86_64-linux-gnu-clang-fuzz",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-linux-gnu-clang-fuzz"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-linux-gnu-clang-fuzz"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-linux-gnu-clang-fuzz"
                 }
             ]
         }

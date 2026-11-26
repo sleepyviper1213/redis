@@ -4,6 +4,7 @@
 #include "core/os/child_process.hpp"
 
 #include <fcntl.h>
+#include <pthread.h>
 #include <signal.h> // NOLINT(modernize-deprecated-headers): sigaction
 #include <unistd.h>
 
@@ -19,7 +20,6 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <string>
 #include <string_view>
 
 // Everything reachable from the signal handler must be async-signal-safe:
@@ -50,6 +50,65 @@ bool is_stalling_report = false;
 /// report from. Covers the thread that installed the handler (main).
 constexpr std::size_t ALT_STACK_SIZE = 64 * 1024;
 alignas(16) std::array<std::byte, ALT_STACK_SIZE> alt_stack;
+
+/// Bounds of the installing thread's stack (DX-84); 0 where unknown.
+std::uintptr_t stack_low = 0;
+
+/// How far below the stack's lowest address a fault still counts as running
+/// off it: the guard gap, and a large frame that jumps over part of it.
+constexpr std::uintptr_t OVERFLOW_WINDOW = 256 * 1024;
+
+/// Test seam for TC-302: set at install time from
+/// REDIS_TEST_CRASH_STACK_OVERFLOW, it makes install_crash_handler() recurse
+/// until the stack is gone. Not a documented option.
+bool is_overflowing_stack = false;
+
+/// Test seam for TC-224 and TC-301: set at install time from
+/// REDIS_TEST_CRASH_FAULT, it makes install_crash_handler() write to an
+/// unmapped address. A synchronous SIGSEGV, as a real crash is, unlike a
+/// kill() from outside, which ThreadSanitizer may hold back. Not a documented
+/// option.
+bool is_faulting = false;
+
+/// Unmapped on every supported system (the first page never is), and not null,
+/// so neither the compiler nor UBSan turns the write into a trap of its own.
+/// Volatile, so the compiler cannot see what it points to.
+volatile std::uintptr_t seam_fault_address = 16;
+
+void record_stack_bounds() noexcept {
+#if defined(__linux__)
+	pthread_attr_t attr;
+	if (::pthread_getattr_np(::pthread_self(), &attr) != 0) return;
+	void *low = nullptr;
+	std::size_t size = 0;
+	if (::pthread_attr_getstack(&attr, &low, &size) == 0)
+		stack_low = reinterpret_cast<std::uintptr_t>(low);
+	::pthread_attr_destroy(&attr);
+#elif defined(__APPLE__)
+	// macOS gives the top of the stack, which grows down from it.
+	const auto top =
+		reinterpret_cast<std::uintptr_t>(::pthread_get_stackaddr_np(::pthread_self()));
+	const std::size_t size = ::pthread_get_stacksize_np(::pthread_self());
+	if (top > size) stack_low = top - size;
+#endif
+}
+
+/// Whether \p fault_address lies just below, or at the edge of, the recorded
+/// stack: a SIGSEGV there is an overflow, not a wild pointer.
+bool is_stack_overflow(std::uintptr_t fault_address) noexcept {
+	return stack_low != 0 && fault_address < stack_low + 4096 &&
+		   fault_address + OVERFLOW_WINDOW >= stack_low;
+}
+
+/// Never returns normally; the volatile buffer and the work after the call
+/// keep the compiler from turning the recursion into a loop.
+[[gnu::noinline]] int recurse_forever(int depth) {
+	volatile char buffer[1024];
+	buffer[0] = static_cast<char>(depth);
+	const int result = recurse_forever(depth + 1);
+	buffer[1] = static_cast<char>(result);
+	return buffer[0] + buffer[1];
+}
 
 void write_fd(int fd, std::string_view text) noexcept {
 	while (fd >= 0 && !text.empty()) {
@@ -134,9 +193,15 @@ void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 		out_number(static_cast<unsigned>(sig));
 		out(")\n");
 		if ((sig == SIGSEGV || sig == SIGBUS) && info != nullptr) {
+			const auto fault = reinterpret_cast<std::uintptr_t>(info->si_addr);
 			out("Fault address: ");
-			out_number(reinterpret_cast<std::uintptr_t>(info->si_addr), 16);
+			out_number(fault, 16);
 			out("\n");
+			// DX-84: a fault at the end of the stack is the stack running out,
+			// not a wild pointer.
+			if (is_stack_overflow(fault))
+				out("Stack overflow: the fault is at the end of the main "
+					"thread's stack\n");
 		}
 		out("Pid: ");
 		out_number(static_cast<std::uintmax_t>(::getpid()));
@@ -207,6 +272,15 @@ void install_crash_handler(const std::filesystem::path &log_file) {
 	::sigaction(SIGALRM, &timeout, nullptr);
 
 	std::set_terminate(on_terminate);
+
+	record_stack_bounds();
+	is_overflowing_stack =
+		std::getenv("REDIS_TEST_CRASH_STACK_OVERFLOW") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
+	if (is_overflowing_stack) recurse_forever(0);
+
+	is_faulting = std::getenv("REDIS_TEST_CRASH_FAULT") != nullptr; // NOLINT(concurrency-mt-unsafe): read before any thread starts
+	if (is_faulting)
+		*reinterpret_cast<volatile int *>(seam_fault_address) = 0; // NOLINT(performance-no-int-to-ptr): the seam's fault
 }
 
 } // namespace redis::diagnostics

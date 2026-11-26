@@ -170,6 +170,69 @@ jobs:
           DIFF_ARGS: --expiry --keep-going --max-report 0 --ops 100000
         run: bash scripts/diff_server.sh ${{ matrix.configure }} ${{ matrix.config }} 6387 6388
 
+  # libFuzzer on the two parsers of client input (DX-86, #51): the corpus
+  # replay, then a fixed budget per harness. A crash fails the job and its
+  # input is uploaded; add it to test/fuzz/corpus/ once fixed.
+  fuzz:
+    name: x86_64-linux-gnu-clang-fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: "silkeh/clang:22"
+    env:
+      CC: clang
+      CXX: clang++
+      CCACHE_DIR: /root/.ccache
+      CCACHE_MAXSIZE: 500M
+      FUZZ_SECONDS: 120
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ninja-build git curl             ca-certificates zip unzip tar pkg-config ccache
+          ${CXX} --version | head -n 1
+      - name: Install the latest CMake
+        run: |
+          v="$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Kitware/CMake/releases/latest | sed 's#.*/v##')"
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${v}/cmake-${v}-linux-x86_64.tar.gz" |
+            tar -xz --strip-components=1 -C /usr/local
+          cmake --version | head -n 1
+      - uses: actions/checkout@v4
+      - name: Use every core
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
+      - name: Point vcpkg at the container's paths
+        run: |
+          echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=/root/vcpkg-cache" >> "$GITHUB_ENV"
+      - name: Bootstrap vcpkg
+        run: scripts/bootstrap_vcpkg.sh
+      # The same triplet as the ASan tree (asan-deps-clang), so its cache.
+      - name: Restore the built dependencies
+        uses: actions/cache@v4
+        with:
+          path: /root/vcpkg-cache
+          key: vcpkg-x86_64-linux-gnu-clang-asan-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-x86_64-linux-gnu-clang-asan-
+      - name: Make the cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: /root/.ccache
+          key: ccache-x86_64-linux-gnu-clang-fuzz-${{ github.sha }}
+          restore-keys: ccache-x86_64-linux-gnu-clang-fuzz-
+      - name: Configure, build and replay the corpus
+        run: cmake --workflow --preset x86_64-linux-gnu-clang-fuzz
+      - name: Fuzz
+        run: bash scripts/fuzz.sh "$FUZZ_SECONDS"
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz-artifacts/
+          if-no-files-found: ignore
+
   macos:
     name: ${{ matrix.preset }}
     runs-on: macos-15

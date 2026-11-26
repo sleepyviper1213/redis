@@ -10,6 +10,7 @@
 |-------------|----------|--------------------|---------------------------------------------|
 | 13 Nov 2026 | 1.0      | Khac Truong Nguyen | First version; replaces `TEST_CHECKLIST.md` |
 | 17 Nov 2026 | 1.1      | Khac Truong Nguyen | Section 12 split by feature; A-9 and A-10 added; the checklist file removed |
+| 26 Nov 2026 | 1.2      | Khac Truong Nguyen | Fuzz level added (parsers, #51): sections 5.2, 6, 9 |
 
 ## Table of contents
 
@@ -117,6 +118,7 @@ Each feature is identified by its requirement in the SRS and its use case [5]. S
 | Integration     | `test/integration/`       | A running server, via hiredis | `scripts/test_server.sh <preset> <config>`   |
 | Stress          | `test/stress/`            | A running server              | `scripts/stress_server.sh <preset> <config>` |
 | Differential    | `scripts/diff_test.py`    | This server and real Redis    | `scripts/diff_server.sh <preset> <config>`   |
+| Fuzz            | `test/fuzz/`              | The parsers in-process        | `cmake --workflow --preset x86_64-linux-gnu-clang-fuzz`; CI job `fuzz` |
 | Static analysis | clang-tidy, cppcheck      | The source                    | CI job `x86_64-linux-gnu-clang-analysis`                |
 | Performance     | `scripts/bench_server.sh` | This server and real Redis    | See [4]                                      |
 
@@ -135,6 +137,12 @@ large binary values and shared counters and sets checked for exact totals; (3) a
 **Differential test** sends one seeded, deterministic command stream (strings, lists, sets, hashes, keys) to both
 servers and stops at the first reply that differs. It sends nothing that depends on time, so expiry is not covered.
 
+**Fuzz tests** (`redis_fuzz_resp_parser`, `redis_fuzz_resp_request`) feed libFuzzer-generated input to
+`resp::Parser::parse` and `resp::parse_request` under AddressSanitizer and UBSan, and check properties as well as
+the absence of crashes: bounded allocation, prefix consistency of framing, and encoding idempotence (TC-300, TC-307,
+TC-308 in the connection test plan). Without libFuzzer (Windows, GCC) the same harnesses link a replay driver, and
+CTest replays the checked-in corpus in every preset. Each crashing input found is added to that corpus.
+
 ### 5.3 Test design technique
 
 Each test follows the use case's flows [5]: the main flow first, then each alternate flow (wrong arity, wrong type,
@@ -145,6 +153,8 @@ missing key, out of range, resource failure). Boundaries are tested at, below an
 * A test case passes when every assertion in it holds. A level passes when all its test cases pass or are skipped
   for a stated reason.
 * The stress and differential tests pass when they finish with no wrong reply.
+* The fuzz level passes when the corpus replay passes and each harness runs its CI time budget with no crash,
+  sanitizer report, failed property, timeout or out-of-memory.
 * A release passes when the exit criteria in section 17.3 are met.
 
 ## 7. Suspension and resumption criteria
@@ -173,6 +183,7 @@ missing key, out of range, resource failure). Boundaries are tested at, below an
 | Linux, Clang 22, Debug       | GitHub Actions    | Unit, integration (`x86_64-linux-gnu-clang-debug`)                     |
 | Linux, GCC, ThreadSanitizer  | GitHub Actions    | Unit, integration (`x86_64-linux-gnu-gcc-tsan`, privileged container)  |
 | macOS, Homebrew LLVM         | GitHub Actions    | Unit, integration (`aarch64-apple-darwin-llvm-debug`)                |
+| Linux, Clang 22, libFuzzer + ASan | GitHub Actions | Fuzz (`x86_64-linux-gnu-clang-fuzz`, job `fuzz`)       |
 | Windows 11, Clang-cl         | Developer machine | Unit tests (Part B)                                         |
 
 Tools: CMake with Ninja, vcpkg for the dependencies, Catch2 (test framework), hiredis (client), `redis-benchmark`

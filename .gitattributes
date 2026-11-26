@@ -7,3 +7,6 @@
 
 # Shell scripts must always use LF
 *.sh text eol=lf
+
+# Fuzz corpus inputs are exact bytes (CRLF, NUL): never convert them
+test/fuzz/corpus/** -text

@@ -47,9 +47,11 @@ parse_inline(std::string_view data, size_t &pos,
 }
 
 // Reads an unsigned decimal followed by CRLF at `pos` into `out`, moving `pos`
-// past it. Anything else (a sign, more than 18 digits, no CRLF yet) is left to
-// the generic parser, which is why this is a plain digit loop and not a general
-// integer parser: it runs for every header of every request.
+// past it. Anything else (a sign, a leading zero, more than 18 digits, no CRLF
+// yet) is left to the generic parser, which is why this is a plain digit loop
+// and not a general integer parser: it runs for every header of every request.
+// It must accept no more than the generic parser does, or the same request
+// would be answered differently depending on where a read ended (#52).
 bool read_length(std::string_view data, size_t &pos, int64_t &out) {
 	constexpr size_t MAX_DIGITS = 18; // 19 digits could overflow an int64_t
 	constexpr int64_t BASE      = 10;
@@ -58,6 +60,7 @@ bool read_length(std::string_view data, size_t &pos, int64_t &out) {
 	int64_t value = 0;
 	while (i < data.size() && data[i] >= '0' && data[i] <= '9') {
 		if (i - pos == MAX_DIGITS) return false;
+		if (i > pos && value == 0) return false; // "04": a leading zero
 		value = (value * BASE) + (data[i] - '0');
 		++i;
 	}

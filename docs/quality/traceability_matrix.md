@@ -13,7 +13,7 @@ Design column seeded from [SDD §16](../design/software_design_document.md#16-re
 | FR-001–005 Data commands   | 5, 6.3           | `server/commands`   | TODO | TODO |
 | FR-006 Key expiry          | 6.2, 13.1        | `server/storage`    | [features/key_expiry/traceability.md](../features/key_expiry/traceability.md) | TODO |
 | FR-007 Server commands     | 5.1              | `server/commands`   | TODO | TODO |
-| FR-008 TCP and protocol    | 5.1, 11.1        | `core/resp`, `server/net` | TODO | TODO |
+| FR-008 TCP and protocol    | 5.1, 11.1        | `core/resp`, `server/net` | [features/connection/traceability.md](../features/connection/traceability.md) (fuzz: TC-300, 307, 308) | #51 |
 | FR-009 Concurrent clients  | 14.1, 14.2       | `server/net`        | TODO | TODO |
 | FR-010 Error replies       | 10.1, 14.5       | `server/commands`   | TODO | TODO |
 | FR-011 Snapshots           | 8.1, 13.2, 13.3  | `server/persistence`| TODO | TODO |

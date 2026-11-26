@@ -79,6 +79,10 @@ else()
     catch_discover_tests(redis_unit_test)
 endif()
 
+# Fuzz harnesses for the parsers; their corpus replay runs under CTest in every
+# preset (DX-86, #51).
+add_subdirectory(fuzz)
+
 # Integration tests: drive a running redis_server through hiredis, the C client
 # real applications use. Run via scripts/test_server.sh, which starts the server.
 add_executable(redis_integration_test

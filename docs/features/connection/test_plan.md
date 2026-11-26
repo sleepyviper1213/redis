@@ -32,6 +32,7 @@ gating (the differential step for expiry has gated since CI run 59; see the key-
 | Integration  | A running server through the test client (`test/integration/`)                                   |
 | Stress       | Many clients, fragmented and malformed input, checked against a model (`test/stress/`)           |
 | Differential | Replies compared with real Redis; no timing in the request stream                                |
+| Fuzz         | Generated input to the two parsers under ASan and UBSan, with properties checked (`test/fuzz/`, section 8). Counts as tested where the CI fuzz job runs the harness and the corpus replay passes under `ctest` |
 
 Timing rules: limits are set to one second in the session tests; assert that the limit fired and that the guard
 counted it, not an exact instant.
@@ -75,6 +76,7 @@ counted it, not an exact instant.
 | TC-182 | Wrong arity | `GET a b` | `-ERR wrong number of arguments for 'get' command`; connection open | Unit, Stress, Differential | `set_ttl`: "Malformed requests get RESP error replies"; stress phase 1; `diff_test.py` | Differential, Stress | Partial |
 | TC-183 | Command names ignore case | `get`, `GeT`, `strlen` | Dispatched; arity errors name the command in lower case | Unit | `set_ttl`: "Command names are matched without regard to case" | Unit | Covered |
 | TC-184 | Declared lengths and nesting are bounded | Oversized bulk length; huge array length; deep nesting; over-long inline line | Rejected; nothing allocated up front; no stack overflow | Unit | `parser`: "Parser rejects or bounds client-declared lengths", "Parser bounds array nesting"; `request`: inline command longer than the limit | Unit | Covered |
+| TC-321 | A length with a leading zero is a protocol error, however the request is split ([#52](https://github.com/sleepyviper1213/redis/issues/52)) | `*2\r\n$04\r\nECHO\r\n$2\r\nhi\r\n` whole and cut at every byte; `*02` as an array length; `$0\r\n\r\n` (still valid) | `PARSE_NUMBER` once the length line is complete, an incomplete error before it, never a command; as Redis (`string2ll`) | FR-008, NFR-004 | Unit, Fuzz | `request`: "Parsing request lengths and payloads" (leading zeros); fuzz corpus `lead_zero_bulk_length` (found by TC-307) | Unit | Partial |
 | TC-185 | Payloads are binary-safe | Bulk payload with CRLF and NUL | Cut by its length, not by line breaks | Unit, Stress | `request`: "Parsing request lengths and payloads"; stress phase 2 (binary values) | Stress | Partial |
 | TC-186 | Garbage input does not kill the server | 200 connections of random bytes, some opened and dropped at once | The server keeps serving afterwards | Stress | stress phase 1 (garbage and vanishing connections) | Stress | Covered |
 
@@ -154,6 +156,24 @@ not templated today. The plan assumes the real socket until that is decided.
 |----|-----------|--------------|----------|-------|---------------|-----------|--------|
 | TC-298 | Measured: what a non-pipelined request costs, and what io_uring changes | Stage 1: the Profile workflow on the `clients` scenario (50 clients, no pipelining), `perf` with call graphs and counters. Stage 2, if stage 1 says so: the Benchmark workflow with an io_uring build beside the epoll one, and the suites on that build | Stage 1: the kernel's share of the server's CPU, and context switches per 1000 commands, recorded. Stage 2: the `clients` median at least 10 % higher in repeated runs, `pipeline` not lower, every test passing on the io_uring build; the option stays off by default | Benchmark | `scripts/profile_server_linux.sh` and `.github/workflows/profile.yml` (stage 1, `clients` step; ran once, results in io_uring_experiment.md); stage 1b (the read without `epoll_ctl`): profiled in run #14, CI and the Benchmark workflow passed, but the benchmark cannot see the gain; stage 1c (an A/B of the base and the new revision with the `saturate` scenario of `bench_server.sh`): run twice, +4 to 5 % at saturation, in io_uring_experiment.md (the workflow that ran it was removed afterwards); stage 2 not built | none | Gap |
 | TC-299 | The `io_context` is configured as before, plus the reactor setting on epoll | `io_config(n)` for 1, 2 and 4 I/O threads, against an `io_context` built from the same number as a concurrency hint | The scheduler's concurrency hint and locking, and the reactor's I/O and registration locking, read back the same; `reactor.reset_edge_on_partial_read` is 1 where Asio uses epoll and 0 elsewhere | Unit | `io_config`: "The io_context is configured as it was, plus the reactor setting" (the epoll expectation is compiled only where Asio uses epoll: Linux CI) | Unit | Covered |
+
+## 8. Fuzzing the parsers ([#51](https://github.com/sleepyviper1213/redis/issues/51), DX-86)
+
+The two functions that read untrusted bytes, fed input that libFuzzer generates and mutates from a seed corpus and a
+RESP dictionary. A failure is a sanitizer report, an abort (`REDIS_VERIFY`, a failed property) or a timeout. Every
+crashing input is minimised and added to the corpus, and the corpus is replayed by `ctest` in every preset, so it stays a
+regression test. Sections 3 and 5 keep the hand-picked cases. These rows check that no input outside those cases breaks
+the same rules.
+
+| ID | Behaviour | Given / When | Expected | Req | Level | Existing test | Tested at | Status |
+|----|-----------|--------------|----------|-----|-------|---------------|-----------|--------|
+| TC-300 | `Parser::parse` is total and bounded on any input | Any byte string, up to 64 KiB | Returns a `Value` or a `RespError`; no sanitizer report, no abort, no stack overflow (nesting stops at `MAX_DEPTH`); no allocation larger than the input plus `MAX_ARRAY_RESERVE` elements (`-rss_limit_mb` and `-malloc_limit_mb`) | NFR-002, FR-008 | Fuzz | `test/fuzz/resp_parser.fuzz.cpp` (planned) | none | Gap |
+| TC-307 | `parse_request` frames any byte stream consistently | Any byte string, cut into requests by calling `parse_request` until it fails, as a session does; the first byte also picks a cut point `k` | On success `pos` strictly advances and stays within the input; on error `pos` and `args` are unchanged. Parsing only the first `k` bytes never yields a different first request than the whole input, and fails only with an incomplete error (`Parser::is_incomplete`) or with the same error as the whole input (TC-177 for every stream, not only the listed ones) | NFR-002, FR-008 | Fuzz | `test/fuzz/resp_request.fuzz.cpp` (planned) | none | Gap |
+| TC-308 | Encoding a parsed value is idempotent | Any input that `Parser::parse` accepts | `encode(parse(encode(v)))` equals `encode(v)` byte for byte, where `v = parse(input)`: the encoder never writes what the parser cannot read back (TC-2001, TC-2002 for every value) | FR-008, NFR-004 | Fuzz | `test/fuzz/resp_parser.fuzz.cpp` (planned) | none | Gap |
+
+How it runs: `cmake --workflow --preset x86_64-linux-gnu-clang-fuzz` builds with libFuzzer and ASan, and replays the
+corpus. The CI job `fuzz` then runs each harness for a fixed budget (`-max_total_time`) and uploads any crashing input.
+Other presets build the same harnesses with the replay driver and run only the corpus.
 
 ## Entry and exit criteria
 

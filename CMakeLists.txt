@@ -21,6 +21,7 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 include(cmake/ProjectOptions.cmake)
 include(cmake/Dependencies.cmake)
+include(cmake/Fuzzing.cmake)
 
 add_subdirectory(src)
 

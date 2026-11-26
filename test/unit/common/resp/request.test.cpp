@@ -303,6 +303,38 @@ SCENARIO("Parsing request lengths and payloads", "[resp][request]") {
 		}
 	}
 
+	// TC-321 (#52): the fast path once accepted "$04" when the request was
+	// whole, while the generic parser, which runs on a partial read, refused it.
+	GIVEN("lengths with a leading zero") {
+		const std::string_view bulk  = "*2\r\n$04\r\nECHO\r\n$2\r\nhi\r\n";
+		const std::string_view array = "*02\r\n$4\r\nECHO\r\n$2\r\nhi\r\n";
+
+		THEN("both are protocol errors, wherever the request is cut") {
+			for (const std::string_view data : {bulk, array}) {
+				for (size_t cut = 0; cut <= data.size(); ++cut) {
+					size_t pos         = 0;
+					const auto request = parse(data.substr(0, cut), pos);
+					INFO(fmt::format("{:?} cut at {}", data, cut));
+					REQUIRE_FALSE(request.result.has_value());
+					CHECK((request.result.error() ==
+							   Parser::RespError::PARSE_NUMBER ||
+						   Parser::is_incomplete(request.result.error())));
+					CHECK(pos == 0);
+				}
+				size_t pos = 0;
+				CHECK(parse(data, pos).result.error() ==
+					  Parser::RespError::PARSE_NUMBER);
+			}
+		}
+
+		THEN("a zero length is still one") {
+			size_t pos         = 0;
+			const auto request = parse("*2\r\n$4\r\nECHO\r\n$0\r\n\r\n", pos);
+			REQUIRE(request.result == RequestKind::Command);
+			CHECK(request.args == Args{"ECHO", ""});
+		}
+	}
+
 	GIVEN("an empty and a null array") {
 		THEN("both are consumed as malformed requests") {
 			size_t pos = 0;
