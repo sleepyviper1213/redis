@@ -1,0 +1,14 @@
+~ING
+*1
+$4
+PING
+*2
+$04
+ECHO
+$2
+hi
+*2
+$4
+ECHO
+$5
+hal
