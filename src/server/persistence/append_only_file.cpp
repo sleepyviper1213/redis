@@ -4,6 +4,7 @@
 #include "common/resp/request.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.drain_expired())
 #include "core/error/failed.hpp"
+#include "core/error/try.hpp"
 #include "core/error/verify.hpp"
 #include "core/os/save_file.hpp"
 #include "detail/snapshot.hpp"
@@ -256,23 +257,25 @@ AppendOnlyFile::replay(const fs::path &file, bool is_last, CommandContext &ctx,
 }
 
 std::expected<void, PersistError>
-AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
+AppendOnlyFile::create_directory(const fs::path &dir) {
 	std::error_code ec;
-	const bool is_created = fs::create_directories(config_.dir, ec);
+	const bool is_created = fs::create_directories(dir, ec);
 	if (ec)
 		REDIS_FAILED(PersistError{.kind  = PersistKind::CannotCreate,
 								  .cause = ec,
-								  .path  = config_.dir});
+								  .path  = dir});
 	// A directory the server makes is the server's alone. One it was pointed at
 	// keeps the permissions its owner gave it.
 	if (is_created) {
-		fs::permissions(config_.dir,
-						fs::perms::owner_all,
-						fs::perm_options::replace,
-						ec);
-		if (ec)
-			log().warn("Cannot make {} private: {}", config_.dir, ec.message());
+		fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
+		if (ec) log().warn("Cannot make {} private: {}", dir, ec.message());
 	}
+	return {};
+}
+
+std::expected<void, PersistError>
+AppendOnlyFile::load(CommandContext &ctx, const CommandHandler &handler) {
+	REDIS_TRY(create_directory(config_.dir));
 
 	// Before anything is read or written: from here on this server is the only
 	// one using the directory, so what it checks about the files in it (is

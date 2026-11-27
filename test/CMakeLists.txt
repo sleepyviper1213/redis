@@ -62,6 +62,7 @@ add_executable(redis_unit_test
     unit/server/persistence/persist_error.test.cpp
     unit/server/persistence/persist_error_debug.test.cpp
     unit/core/os/child_process.test.cpp
+    unit/core/os/sandbox.test.cpp
     unit/core/os/save_file.test.cpp
     unit/server/persistence/snapshot.test.cpp
 )

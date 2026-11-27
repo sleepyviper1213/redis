@@ -92,6 +92,11 @@ public:
 	[[nodiscard]] std::expected<void, persistence::PersistError>
 	load(CommandContext &ctx, const CommandHandler &handler);
 
+	/// Create \p dir if it is missing, private to its owner. load() does it;
+	/// main() does it first when the sandbox will confine files to it.
+	[[nodiscard]] static std::expected<void, persistence::PersistError>
+	create_directory(const std::filesystem::path &dir);
+
 	/**
 	 * \brief Called after every command: log the keys that expired meanwhile
 	 * (as DEL, before the command, which may have found them gone), then, if

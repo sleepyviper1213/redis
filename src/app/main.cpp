@@ -1,19 +1,26 @@
+#include "core/os/sandbox.hpp"
 #include "core/utils/enum_name.hpp"
 #include "server/diagnostics/crash.hpp"
 #include "server/log_channels.hpp"
+#include "server/persistence/append_only_file.hpp"
 #include "server/redis_server.hpp"
 #include "setup_cli_options.hpp"
 
 #include <CLI/CLI.hpp>
 #include <fmt/base.h>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <expected>
+#include <filesystem>
 #include <optional>
 #include <string>
+#include <system_error>
+#include <vector>
 
 #ifdef _WIN32
 #include <process.h>
@@ -64,6 +71,44 @@ std::optional<unsigned> test_fail_housekeeping_after() {
 	return static_cast<unsigned>(std::strtoul(env, nullptr, 10));
 }
 
+/// The directory \p file is in, absolute: "redis_server.log" is in the
+/// working directory, not in "".
+std::filesystem::path directory_of(const std::filesystem::path &file) {
+	std::error_code ec;
+	const auto absolute = std::filesystem::absolute(file, ec);
+	return (ec ? file : absolute).parent_path();
+}
+
+/**
+ * rief Confine the files every later thread can open to the server's own
+ * (ADR-0014): the dump file's, the append-only and the log file's
+ * directories, and the time zone, read only.
+ *
+ * Before the server starts its threads (the keyspace, the I/O): Landlock
+ * covers only the calling thread and those it starts. The log writer, already
+ * running, holds only the log file.
+ */
+std::expected<redis::os::Confinement, std::string>
+confine_files(const CLI::App &app) {
+	std::vector<std::filesystem::path> read_write{
+		directory_of(app.get_option("--dump")->as<std::string>()),
+		directory_of(app.get_option("--log-file")->as<std::string>()),
+	};
+	if (const auto aof = aof_config(app)) {
+		// Landlock allows only what exists: make it now, as load() would.
+		if (auto made = redis::AppendOnlyFile::create_directory(aof->dir); !made)
+			return std::unexpected(display(made.error()));
+		read_write.push_back(aof->dir);
+	}
+	const std::array<std::filesystem::path, 2> read_only{
+		"/etc/localtime", "/usr/share/zoneinfo"};
+
+	auto confined = redis::os::confine_paths(
+		{.read_write = read_write, .read_only = read_only});
+	if (!confined) return std::unexpected(display(confined.error()));
+	return *confined;
+}
+
 int run(int argc, char **argv) {
 	const auto app = redis::setup_cli_options();
 	CLI11_PARSE(*app, argc, argv);
@@ -90,6 +135,20 @@ int run(int argc, char **argv) {
 		log.info("Using config file: {}",
 				 app->get_option("--config")->as<std::string>());
 
+	const bool is_sandboxed =
+		app->get_option("--sandbox")->as<std::string>() == "yes";
+	if (is_sandboxed) {
+		const auto confined = confine_files(*app);
+		if (!confined) {
+			log.critical("{} (--sandbox no to start without it)",
+						 confined.error());
+			return EXIT_FAILURE;
+		}
+		log.info("Sandbox: files {}", *confined);
+	} else {
+		log.warn("Sandbox off (--sandbox no)");
+	}
+
 	try {
 		auto server = redis::RedisServer::create(redis::ServerConfig{
 			.host       = app->get_option("--host")->as<std::string>(),
@@ -102,6 +161,7 @@ int run(int argc, char **argv) {
 				app->get_option("--enable-config-set")->as<bool>(),
 			.watchdog = {.threshold = std::chrono::milliseconds(
 							 app->get_option("--watchdog-ms")->as<int64_t>())},
+			.is_sandboxed            = is_sandboxed,
 			.fail_housekeeping_after = test_fail_housekeeping_after(),
 		});
 		if (!server) {

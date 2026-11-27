@@ -22,16 +22,17 @@ Two facts decide where each goes:
 * A seccomp filter installed with `SECCOMP_FILTER_FLAG_TSYNC` applies to every thread of the process, so it can
   wait until everything is set up: after the load and the bind, just before serving.
 * A Landlock ruleset applies to the calling thread and the threads it creates afterwards, not to threads that
-  already exist. The keyspace thread, which runs every command, starts with the server, so Landlock must be applied
-  in `main()` before any thread is started (the log writer included).
+  already exist. The keyspace thread, which runs every command, and the I/O threads start with the server, so
+  Landlock must be applied in `main()` before the server is created. Only the log writer, started with logging,
+  runs before it; it holds nothing but the log file.
 
 ## Decision
 
 On Linux the server sandboxes itself by default; `--sandbox no` turns it off.
 
-1. **Landlock, first thing in `main()`** after the options are parsed: read and write beneath the dump file's
-   directory, the append-only directory (created first if missing) and the log file's directory; read only
-   `/proc/self` (the crash report's symbols) and the time zone files. Everything else is refused with `EACCES`, which
+1. **Landlock, in `main()`** once logging and the crash handler are up, before the server is created: read and
+   write beneath the dump file's directory, the append-only directory (created first if missing, as `load()` would)
+   and the log file's directory; read only the time zone files. Everything else is refused with `EACCES`, which
    the server reports as it reports any file error. Best effort: on a kernel without Landlock it logs a warning and
    carries on with seccomp alone, as the Landlock documentation recommends.
 2. **seccomp, in `RedisServer::run()`** after the load and `Listener::create`, before serving: an allow-list of
@@ -53,6 +54,11 @@ On Linux the server sandboxes itself by default; `--sandbox no` turns it off.
   `SECCOMP_RET_TRAP` costs nothing in safety (the call still does not run) and names the call.
 - **libseccomp:** a dependency for what is about sixty lines of BPF over a fixed list.
 - **Landlock in `RedisServer::run()`, with the other rules:** too late; it would not cover the keyspace thread.
+- **Landlock before logging starts:** would cover the log writer too, but creating the append-only directory
+  logs, and the writer only writes a descriptor it already holds.
+- **Read access to `/proc`:** a forked child lists `/dev/fd` to close what it inherited, and a rule on
+  `/proc/self` names the parent's directory, not the child's. Allowing `/proc` would expose other processes; the
+  child falls back to closing every descriptor up to the limit instead.
 
 ## Consequences
 

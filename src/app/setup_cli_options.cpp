@@ -164,6 +164,16 @@ CLI::App_p setup_cli_options() {
 		->group("Limits")
 		->default_val(false);
 
+	app->add_option("--sandbox",
+					"On Linux, once started, open only the server's own files "
+					"and make only the system calls it needs; 'no' turns this "
+					"off")
+		->envname("REDIS_SANDBOX")
+		->option_text("yes|no")
+		->group("Limits")
+		->check(CLI::IsMember({"yes", "no"}))
+		->default_val("yes");
+
 	app->add_option("--watchdog-ms",
 					"Warn when one command runs this many milliseconds, "
 					"holding up every client; 0 never")

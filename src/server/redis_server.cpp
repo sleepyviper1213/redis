@@ -1,6 +1,7 @@
 #include "redis_server.hpp"
 
 #include "core/error/failed.hpp"
+#include "core/os/sandbox.hpp"
 #include "core/stdexec_ext/supervise.hpp"
 #include "log_channels.hpp"
 #include "net/detail/asio_context.hpp"
@@ -215,6 +216,16 @@ std::expected<void, ServerError> RedisServer::run() {
 		REDIS_FAILED(ServerError{.kind   = ServerKind::ListenFailed,
 								 .source = listening.error()});
 	Listener &server = **listening;
+
+	// Everything is set up: the data loaded, the port bound. From here on
+	// every thread may make only the calls serving needs (ADR-0014).
+	if (config_.is_sandboxed) {
+		const auto confined = os::confine_syscalls();
+		if (!confined)
+			REDIS_FAILED(ServerError{.kind   = ServerKind::SandboxFailed,
+									 .detail = display(confined.error())});
+		log().info("Sandbox: system calls {}", *confined);
+	}
 
 	FirstFailure failure;
 	// Stops serve()'s tasks from outside them: an I/O thread that failed.
