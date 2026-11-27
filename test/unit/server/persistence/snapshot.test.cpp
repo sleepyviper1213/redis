@@ -1,7 +1,6 @@
 #include "server/persistence/detail/snapshot.hpp"
 
 #include "../commands/commands.fixture.hpp"
-#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -19,7 +18,6 @@ using persistence::PersistKind;
 
 SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 	GIVEN("a keyspace with one key of each type and a TTL") {
-		test::SimulatedWallClock clock; // DX-90: the TTL reads exactly
 		test::Server server;
 		REQUIRE(server.run({"SET", "s", "hello", "EX", "100"}) == "+OK\r\n");
 		REQUIRE(server.run({"RPUSH", "l", "a", "b", "c"}) == ":3\r\n");
@@ -45,12 +43,9 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 				CHECK(restored.run({"STRLEN", "binary"}) == ":5\r\n");
 			}
 
-			THEN("the TTL is kept as an absolute deadline") {
+			THEN("the TTL is kept, and the deadline is the same instant") {
 				CHECK(restored.run({"TTL", "s"}) == ":100\r\n");
-				// Absolute, not 100 s from the load: it counts down with
-				// the clock.
-				clock.advance(1s);
-				CHECK(restored.run({"TTL", "s"}) == ":99\r\n");
+				CHECK(restored.db.expiry("s") == server.db.expiry("s"));
 				CHECK(restored.run({"TTL", "l"}) == ":-1\r\n");
 			}
 		}
@@ -77,27 +72,6 @@ SCENARIO("Snapshots round-trip every value type", "[persistence]") {
 					  "$3\r\n" + bytes + "\r\n");
 				CHECK(restored.run({"HGET", "h", bytes}) ==
 					  "$3\r\n" + bytes + "\r\n");
-			}
-		}
-	}
-
-	GIVEN("a key whose TTL passes after the snapshot is written") {
-		test::SimulatedWallClock clock; // DX-90
-		test::Server server;
-		REQUIRE(server.run({"SET", "short", "v", "PX", "200"}) == "+OK\r\n");
-		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
-		REQUIRE(
-			persistence::detail::save_snapshot(server.db, server.dump.path()));
-		clock.advance(200ms);
-
-		WHEN("TC-118: the snapshot is loaded") {
-			test::Server restored;
-			REQUIRE(persistence::detail::load_snapshot(restored.db,
-													   server.dump.path()));
-
-			THEN("the expired key is not resurrected") {
-				CHECK(restored.run({"EXISTS", "short"}) == ":0\r\n");
-				CHECK(restored.run({"EXISTS", "kept"}) == ":1\r\n");
 			}
 		}
 	}
@@ -194,20 +168,15 @@ SCENARIO("Loading rejects files that are not valid snapshots",
 
 SCENARIO("Saving through commands", "[persistence][commands]") {
 	GIVEN("a keyspace with data") {
-		// Before the server, which records its start as the last save.
-		test::SimulatedWallClock clock;
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
 
 		WHEN("SAVE is called") {
-			const auto before = server.run({"LASTSAVE"});
-			clock.advance(1s); // LASTSAVE has 1 s resolution (DX-90)
 			const auto reply = server.run({"SAVE"});
 
-			THEN("the file is written and LASTSAVE advances") {
+			THEN("the file is written") {
 				CHECK(reply == "+OK\r\n");
 				CHECK(std::filesystem::exists(server.dump.path()));
-				CHECK(server.run({"LASTSAVE"}) != before);
 			}
 		}
 
@@ -286,15 +255,19 @@ SCENARIO("A snapshot keeps absolute deadlines",
 			}
 		}
 	}
+}
 
+// A save writes only live keys, so the deadline must pass between the save and
+// the load. Waits on the real clock: excluded under the sanitizers (DX-93).
+SCENARIO("A snapshot is loaded after one of its deadlines has passed",
+		 "[persistence][expiry][timing]") {
 	GIVEN("a snapshot whose short deadline has passed since it was written") {
-		test::SimulatedWallClock clock; // DX-90
 		test::Server server;
 		REQUIRE(server.run({"SET", "short", "v", "PX", "200"}) == "+OK\r\n");
 		REQUIRE(server.run({"SET", "kept", "v"}) == "+OK\r\n");
 		REQUIRE(
 			persistence::detail::save_snapshot(server.db, server.dump.path()));
-		clock.advance(200ms);
+		std::this_thread::sleep_for(400ms);
 
 		WHEN("TC-119: it is loaded as the base of an append-only file") {
 			test::Server restored;
@@ -313,14 +286,34 @@ SCENARIO("A snapshot keeps absolute deadlines",
 			}
 		}
 
-		WHEN("it is loaded as a plain snapshot") {
+		WHEN("TC-118: it is loaded as a plain snapshot") {
 			test::Server restored;
 			REQUIRE(persistence::detail::load_snapshot(restored.db,
 													   server.dump.path()));
 
-			THEN("the key is not restored at all") {
+			THEN("the expired key is not resurrected at all") {
 				CHECK(restored.db.size() == 1);
 				CHECK(restored.db.expiring() == 0);
+				CHECK(restored.run({"EXISTS", "short"}) == ":0\r\n");
+				CHECK(restored.run({"EXISTS", "kept"}) == ":1\r\n");
+			}
+		}
+	}
+}
+
+// Waits on the real clock: excluded under the sanitizers (DX-93).
+SCENARIO("SAVE moves LASTSAVE on", "[persistence][commands][timing]") {
+	GIVEN("a server that has not saved since it started") {
+		test::Server server;
+		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
+		const auto before = server.run({"LASTSAVE"});
+
+		WHEN("SAVE is called more than a second later") {
+			std::this_thread::sleep_for(1100ms); // LASTSAVE has 1 s resolution
+			REQUIRE(server.run({"SAVE"}) == "+OK\r\n");
+
+			THEN("LASTSAVE has moved") {
+				CHECK(server.run({"LASTSAVE"}) != before);
 			}
 		}
 	}

@@ -14,8 +14,8 @@ namespace redis {
  * clients and files exchange (EXPIREAT, PXAT, snapshot deadlines). Standard
  * code reads them directly, and clock_cast converts them.
  *
- * now() reads DateTime::current(), so a test's SimulatedWallClock applies
- * (DX-90). Not monotonic: it follows the system time when it is set.
+ * now() reads DateTime::current(), which reads std::chrono::system_clock.
+ * Not monotonic: it follows the system time when it is set.
  */
 struct WallTime {
 	using duration   = std::chrono::milliseconds;

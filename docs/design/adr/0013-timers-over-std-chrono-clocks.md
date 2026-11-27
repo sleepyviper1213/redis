@@ -1,6 +1,6 @@
 # ADR-0013: Elapsed and deadline timers share one interface over std::chrono clocks
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by DX-93 (the simulated clocks are removed)
 - **Date:** 2026-11-26
 - **Requirements:** NFR-006, NFR-010.1, NFR-003
 - **Issue / PR:** #54 (builds on #53, DX-90)
@@ -16,8 +16,8 @@ The code measures time in two ways:
 - **Deadlines** (key expiry) use `DeadlineTimer`, wired to the wall clock through `DateTime`. It has no clock
   parameter, a different shape, and there is no monotonic deadline.
 
-Tests can replace the wall clock since #53, through the `WallClockSource` switch, but nothing can stand in for a
-monotonic clock. The watchdog's `HeartbeatSlot<T, Clock>` and the elapsed timer take a clock type, yet every test
+Tests could replace the wall clock since #53, through the `WallClockSource` switch (removed again in DX-93), but nothing
+could stand in for a monotonic clock. The watchdog's `HeartbeatSlot<T, Clock>` and the elapsed timer take a clock type, yet every test
 passes the real `steady_clock`.
 
 What the standard already provides, and where it falls short:
@@ -60,15 +60,14 @@ using TickDeadlineTimer = BasicDeadlineTimer<TickClock>;
 
 - **What the template parameter chooses:** the clock's kind (wall or monotonic, precision, cost), checked by the type
   system: deadlines on different clocks have different `time_point` types and cannot be compared by mistake.
-- **What `WallClockSource` chooses (DX-90):** only whether the one wall clock is real or simulated. It stays a runtime
-  switch because `Database` and the commands hold a plain `DeadlineTimer`; making them templates for the sake of tests
-  is out of proportion. `WallTime::now()` reads through it, so `test::SimulatedWallClock` keeps working.
+- **The wall clock is always the system clock (DX-93):** `WallTime::now()` reads `DateTime::current()`, which reads
+  `system_clock`. The `WallClockSource` switch of DX-90 is removed, and with it every test seam in the server's clock.
 - **Saturation:** `BasicDeadlineTimer::after()` saturates on `C::rep` for any clock; `forever()` is
   `time_point::max()`, which for `WallTime` is the same instant as `DateTime::distant_future()`.
 - **Unix-time members** (`at_s`, `at_ms`, `after_s`, `after_ms`, `millis_since_epoch`, `date_time`) exist only for
   `WallTime`, through `requires`: an absolute Unix time means nothing on a monotonic clock.
-- **Tests:** `test::SimulatedClock<Tag>` is a monotonic clock that moves only by `advance()`, for any template
-  parameter; `test::SimulatedWallClock` (DX-90) simulates the wall clock. Both have `advance()` and `now()`.
+- **Tests (DX-93):** no simulated clock. A test that needs a deadline already passed sets one in the past; a test that
+  needs time to pass sleeps and is tagged `[timing]`, which the sanitizer test presets exclude.
 - **Coarse clocks:** each would be one more clock type (`CoarseSteadyClock`: `CLOCK_MONOTONIC_COARSE`,
   `mach_approximate_time`, `GetTickCount64`), stating its resolution, added only when a user exists and a
   `redis-benchmark` profile shows clock reads matter. The wall clock gets no coarse variant: a key would outlive its
@@ -94,7 +93,7 @@ using TickDeadlineTimer = BasicDeadlineTimer<TickClock>;
 
 - Elapsed and deadline timers read the same way, on any clock; a monotonic deadline (`TickDeadlineTimer`) is
   available, though nothing uses one yet. The gain today is one interface and testability, not removed code.
-- Deadline code that a test drives can use `SimulatedClock` with no seam and no shared state.
+- Tests use real clocks only (DX-93): a test that waits is tagged `[timing]` and does not run under the sanitizers.
 - `DeadlineTimer::deadline()` now returns `sys_time<milliseconds>`; code that stores a `DateTime` (the two expiry
   indexes) calls `date_time()`. `remaining_time_ms()` goes: on `WallTime`, `remaining_time()` is already milliseconds.
 - When libc++ ships `std::chrono::is_clock_v`, the concepts become `is_clock_v<C>` and `is_clock_v<C> && C::is_steady`.

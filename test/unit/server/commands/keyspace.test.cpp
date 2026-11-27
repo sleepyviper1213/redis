@@ -1,10 +1,10 @@
 #include "commands.fixture.hpp"
-#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
+#include <thread>
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::StartsWith;
@@ -67,7 +67,6 @@ SCENARIO("Listing keys by pattern", "[commands][keyspace]") {
 SCENARIO("Setting and clearing expiry",
 		 "[commands][keyspace][ttl]") {
 	GIVEN("a persistent key") {
-		test::SimulatedWallClock clock; // DX-90: time passes only when told
 		test::Server server;
 		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
 
@@ -95,15 +94,6 @@ SCENARIO("Setting and clearing expiry",
 			}
 		}
 
-		WHEN("PEXPIRE sets a short TTL that passes") {
-			REQUIRE(server.run({"PEXPIRE", "k", "20"}) == ":1\r\n");
-			clock.advance(20ms);
-
-			THEN("the key is gone") {
-				CHECK(server.run({"EXISTS", "k"}) == ":0\r\n");
-			}
-		}
-
 		WHEN("EXPIREAT names a time in the past") {
 			const auto reply = server.run({"EXPIREAT", "k", "1"});
 
@@ -118,6 +108,24 @@ SCENARIO("Setting and clearing expiry",
 				CHECK(server.run({"EXPIRE", "missing", "10"}) == ":0\r\n");
 				CHECK(server.run({"EXPIRE", "k", "soon"}) ==
 					  "-ERR value is not an integer or out of range\r\n");
+			}
+		}
+	}
+}
+
+// Waits on the real clock: excluded under the sanitizers (DX-93).
+SCENARIO("A PEXPIRE deadline passes on the real clock",
+		 "[commands][keyspace][ttl][timing]") {
+	GIVEN("a key with a 50 ms deadline") {
+		test::Server server;
+		REQUIRE(server.run({"SET", "k", "v"}) == "+OK\r\n");
+		REQUIRE(server.run({"PEXPIRE", "k", "50"}) == ":1\r\n");
+
+		WHEN("well past it") {
+			std::this_thread::sleep_for(300ms);
+
+			THEN("the key is gone") {
+				CHECK(server.run({"EXISTS", "k"}) == ":0\r\n");
 			}
 		}
 	}

@@ -1,5 +1,4 @@
 #include "common/store/database.hpp"
-#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
@@ -75,27 +74,27 @@ SCENARIO("Removing empty collections", "[storage]") {
 	}
 }
 
+// A deadline already past is made without waiting: with expiry off it is
+// stored, not acted on (DX-93).
 SCENARIO("Expiring keys", "[storage][expiry]") {
-	// Deadlines pass when the clock is moved, never early (DX-90).
-	test::SimulatedWallClock clock;
-
-	GIVEN("one short-lived, one long-lived and one persistent key") {
+	GIVEN("one long-lived and one persistent key") {
 		Database db;
-		db.set("short", String("v"));
 		db.set("long", String("v"));
 		db.set("forever", String("v"));
-		REQUIRE(db.set_expiry("short", DeadlineTimer::after(20ms)) ==
-			Database::ExpiryResult::Set);
 		REQUIRE(db.set_expiry("long", DeadlineTimer::after(1h)) ==
 			Database::ExpiryResult::Set);
 
 		THEN("only keys with a deadline report one") {
-			CHECK(db.expiry("short").has_value());
+			CHECK(db.expiry("long").has_value());
 			CHECK_FALSE(db.expiry("forever").has_value());
 		}
 
-		AND_GIVEN("the short deadline has passed") {
-			clock.advance(20ms);
+		AND_GIVEN("a key whose deadline has passed") {
+			db.set_expiry_enabled(false);
+			db.set("short", String("v"));
+			REQUIRE(db.set_expiry("short", DeadlineTimer::after(-1s)) ==
+					Database::ExpiryResult::Set);
+			db.set_expiry_enabled(true);
 
 			WHEN("the active expiry cycle runs") {
 				REQUIRE(db.size() == 3);
@@ -121,16 +120,15 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 
 	GIVEN("ten keys that expired at the same time") {
 		Database db;
-		// The simulated clock stands still while the keys are added, so none
-		// expires early and the counts below are exact.
-		const DeadlineTimer deadline = DeadlineTimer::after(200ms);
+		db.set_expiry_enabled(false);
+		const DeadlineTimer deadline = DeadlineTimer::after(-1s);
 		constexpr int KEYS_WITH_DEADLINE = 10;
 		for (int i = 0; i < KEYS_WITH_DEADLINE; ++i) {
 			const auto key = fmt::format("k{}", i);
 			db.set(key, String("v"));
 			(void)db.set_expiry(key, deadline);
 		}
-		clock.advance(200ms);
+		db.set_expiry_enabled(true);
 
 		WHEN("cycles run with a budget of 4, then a large one") {
 			const auto first  = db.active_expire_cycle(4);
@@ -167,20 +165,20 @@ SCENARIO("Expiring keys", "[storage][expiry]") {
 }
 
 SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
-	GIVEN("a key whose deadline is replaced, persisted, then erased") {
-		test::SimulatedWallClock clock;
+	GIVEN("a key whose past deadline is replaced, persisted, then erased") {
 		Database db;
+		db.set_expiry_enabled(false); // the past deadlines are stored
 		db.set("k", String("v"));
-		(void)db.set_expiry("k", DeadlineTimer::after(10ms));
+		(void)db.set_expiry("k", DeadlineTimer::after(-1s));
 		(void)db.set_expiry("k", DeadlineTimer::after(1h));
 		REQUIRE(db.persist("k"));
 		REQUIRE_FALSE(db.persist("k"));
-		(void)db.set_expiry("k", DeadlineTimer::after(10ms));
+		(void)db.set_expiry("k", DeadlineTimer::after(-1s));
 		REQUIRE(db.erase("k"));
+		db.set_expiry_enabled(true);
 
-		WHEN("the key is recreated without a deadline and old ones pass") {
+		WHEN("the key is recreated without a deadline") {
 			db.set("k", String("again"));
-			clock.advance(10ms);
 			const auto removed = db.active_expire_cycle(100);
 
 			THEN("no stale deadline expires the new key") {
@@ -191,9 +189,8 @@ SCENARIO("Keeping the expiry indexes consistent", "[storage][expiry]") {
 	}
 }
 
-// Deadlines that have passed are made without waiting: with
-// expiry off a deadline in the past is stored, not acted on, so the order and
-// the count do not depend on the clock.
+// The order and the count do not depend on the clock: every deadline is
+// already past, set with expiry off.
 SCENARIO("The active expiry cycle is bounded and takes the oldest first",
 		 "[storage][expiry]") {
 	GIVEN("2500 keys whose deadlines have passed") {

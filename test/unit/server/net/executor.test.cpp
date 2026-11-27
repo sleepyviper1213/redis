@@ -1,19 +1,22 @@
+#include "server/net/executor.hpp"
+
 #include "common/resp/value.hpp"
 #include "core/chrono/elapsed_timer.hpp"
 #include "server/net/detail/asio_context.hpp"
-#include "server/net/executor.hpp"
 #include "server/services.hpp"
 #include "support/temp_file.hpp"
 
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_range_equals.hpp>
 #include <exec/start_detached.hpp>
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -39,18 +42,19 @@ SCENARIO("Running work on the keyspace thread", "[net][executor]") {
 				std::thread::id ran_on;
 				std::thread::id resumed_on;
 				int result = 0;
-				exec::start_detached(
-					executor.run_on(
-						[&] {
-							ran_on = std::this_thread::get_id();
-							return 42;
-						},
-						back.get_scheduler())
-					| stdexec::then([&](int value) {
-						  result     = value;
-						  resumed_on = std::this_thread::get_id();
-						  guard.reset();
-					  }));
+				exec::start_detached(executor.run_on(
+										 [&] {
+											 ran_on =
+												 std::this_thread::get_id();
+											 return 42;
+										 },
+										 back.get_scheduler()) |
+									 stdexec::then([&](int value) {
+										 result = value;
+										 resumed_on =
+											 std::this_thread::get_id();
+										 guard.reset();
+									 }));
 				io.run();
 
 				THEN("it ran off the I/O thread and continued back on it") {
@@ -65,16 +69,16 @@ SCENARIO("Running work on the keyspace thread", "[net][executor]") {
 				exec::start_detached(
 					executor.run_on(
 						[]() -> int { throw std::runtime_error("boom"); },
-						back.get_scheduler())
-					| stdexec::then([&](int) { guard.reset(); })
-					| stdexec::upon_error([&](std::exception_ptr e) {
-						  try {
-							  std::rethrow_exception(std::move(e));
-						  } catch (const std::runtime_error &ex) {
-							  caught = ex.what();
-						  }
-						  guard.reset();
-					  }));
+						back.get_scheduler()) |
+					stdexec::then([&](int) { guard.reset(); }) |
+					stdexec::upon_error([&](std::exception_ptr e) {
+						try {
+							std::rethrow_exception(std::move(e));
+						} catch (const std::runtime_error &ex) {
+							caught = ex.what();
+						}
+						guard.reset();
+					}));
 				io.run();
 
 				THEN("the sender completes with that error") {
@@ -113,8 +117,8 @@ SCENARIO("Running work on the keyspace thread", "[net][executor]") {
 				exec::start_detached(
 					executor.run_on(
 						[&] { ran_on = std::this_thread::get_id(); },
-						back.get_scheduler())
-					| stdexec::then([&] { guard.reset(); }));
+						back.get_scheduler()) |
+					stdexec::then([&] { guard.reset(); }));
 				io.run();
 
 				THEN("it runs inline where the sender started") {
@@ -183,8 +187,9 @@ template <class Guard>
 [[nodiscard]] bool drain(net::io_context &io, Guard &guard,
 						 detail::AsioContext &back,
 						 stdexec::simple_counting_scope &scope) {
-	exec::start_detached(stdexec::starts_on(back.get_scheduler(), scope.join()) |
-						 stdexec::then([&guard] { guard.reset(); }));
+	exec::start_detached(
+		stdexec::starts_on(back.get_scheduler(), scope.join()) |
+		stdexec::then([&guard] { guard.reset(); }));
 	io.run_for(DRAIN_LIMIT);
 	return io.stopped();
 }
@@ -199,17 +204,16 @@ SCENARIO("Destroying the executor waits for the work queued on it",
 		net::io_context io;
 		auto guard = net::make_work_guard(io);
 		detail::AsioContext back(io.get_executor());
-		auto executor = std::make_unique<Executor>(true);
+		auto executor             = std::make_unique<Executor>(true);
 		std::atomic<bool> started = false;
 		std::vector<int> order;
 		stdexec::simple_counting_scope scope;
 		for (int i = 0; i < BATCHES; ++i)
-			stdexec::spawn(
-				executor->run_on(SlowBatch{&started, &order, i},
-								 back.get_scheduler()) |
-					stdexec::upon_error(
-						[](const std::exception_ptr &) noexcept {}),
-				scope.get_token());
+			stdexec::spawn(executor->run_on(SlowBatch{&started, &order, i},
+											back.get_scheduler()) |
+							   stdexec::upon_error(
+								   [](const std::exception_ptr &) noexcept {}),
+						   scope.get_token());
 		REQUIRE(set_within(started, 5s));
 
 		WHEN("TC-296: it is destroyed") {
@@ -217,10 +221,10 @@ SCENARIO("Destroying the executor waits for the work queued on it",
 			const bool drained = drain(io, guard, back, scope);
 
 			THEN("every batch ran, in the order queued, before it returned") {
-				std::vector<int> queued(BATCHES);
-				for (int i = 0; i < BATCHES; ++i) queued[i] = i;
 				CHECK(drained);
-				CHECK(order == queued);
+				CHECK_THAT(order,
+						   Catch::Matchers::RangeEquals(
+							   std::ranges::iota_view(0, BATCHES)));
 			}
 		}
 	}

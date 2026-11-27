@@ -7,7 +7,6 @@
 #include "server/commands/handler.hpp"
 #include "server/persistence/append_only_file.hpp"
 #include "server/persistence/snapshot_manager.hpp"
-#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -18,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -200,10 +200,9 @@ SCENARIO("Commands that cannot be replayed as received",
 
 SCENARIO("A restart gets back what was logged", "[aof]") {
 	GIVEN("a server that logged every kind of value") {
-		test::SimulatedWallClock clock; // DX-90: the deadline reads exactly
 		TempDir const dir;
 		test::TempFile const snapshot;
-		std::string ttl;
+		std::optional<DateTime> deadline;
 		{
 			AofServer server(dir.path(), snapshot.path());
 			REQUIRE(server.start().has_value());
@@ -217,7 +216,8 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 			server.run({"HSET", "hash", "f", "v"});
 			server.run({"SET", "ttl", "v", "EX", "100"});
 			server.run({"DEL", "y"});
-			ttl = server.run({"PTTL", "ttl"});
+			deadline = server.db.expiry("ttl");
+			REQUIRE(deadline.has_value());
 		}
 
 		WHEN("another server starts over the same files") {
@@ -234,10 +234,8 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 			}
 
 			AND_THEN("the deadline is the original, not one from the restart") {
-				// A deadline renewed at the restart would read the same while
-				// the clock stands still: move it, so only the original fits.
-				clock.advance(1s);
-				CHECK(server.run({"PTTL", "ttl"}) == ":99000\r\n");
+				// To the millisecond: one renewed at the restart would be later.
+				CHECK(server.db.expiry("ttl") == deadline);
 			}
 
 			AND_THEN("it keeps logging after the old commands") {
@@ -251,11 +249,9 @@ SCENARIO("A restart gets back what was logged", "[aof]") {
 	}
 }
 
-SCENARIO("A replay does not depend on when it runs", "[aof]") {
+// Waits on the real clock: excluded under the sanitizers (DX-93).
+SCENARIO("A replay does not depend on when it runs", "[aof][timing]") {
 	GIVEN("a key that expired before the restart, and one that was persisted") {
-		// The clock moves only when told (DX-90), so no machine is too slow
-		// for the INCR to run before k's deadline.
-		test::SimulatedWallClock clock;
 		TempDir const dir;
 		test::TempFile const snapshot;
 		{
@@ -269,10 +265,10 @@ SCENARIO("A replay does not depend on when it runs", "[aof]") {
 			// gone is found expired by a read, which logs a DEL; INCR then
 			// starts over from 1.
 			server.run({"SET", "gone", "5", "PX", "1"});
-			clock.advance(1ms);
+			std::this_thread::sleep_for(20ms);
 			CHECK(server.run({"GET", "gone"}) == "$-1\r\n");
 			CHECK(server.run({"INCR", "gone"}) == ":1\r\n");
-			clock.advance(500ms); // k's deadline is behind us now
+			std::this_thread::sleep_for(600ms); // k's deadline is behind us now
 		}
 
 		WHEN("TC-116: the files are replayed after the deadlines") {
@@ -708,15 +704,15 @@ SCENARIO("A discard does not outlive its command",
 SCENARIO("A key that expires is logged as DEL, once",
 		 "[aof][expiry]") {
 	GIVEN("two keys that expire and one that does not") {
-		test::SimulatedWallClock clock; // DX-90
 		TempDir const dir;
 		test::TempFile const snapshot;
 		AofServer server(dir.path(), snapshot.path());
 		REQUIRE(server.start().has_value());
-		server.run({"SET", "by_access", "v", "PX", "20"});
-		server.run({"SET", "by_sweep", "v", "PX", "20"});
+		// A past PXAT keeps the key until it is read or swept (TC-263), so
+		// both are due without waiting (DX-93).
+		server.run({"SET", "by_access", "v", "PXAT", "1"});
+		server.run({"SET", "by_sweep", "v", "PXAT", "1"});
 		server.run({"SET", "kept", "v"});
-		clock.advance(20ms);
 
 		WHEN("TC-114: one is found by a read and the other by the sweep") {
 			CHECK(server.run({"GET", "by_access"}) == "$-1\r\n");
@@ -734,24 +730,28 @@ SCENARIO("A key that expires is logged as DEL, once",
 	}
 }
 
+// Waits on the real clock: excluded under the sanitizers (DX-93).
 SCENARIO("A replay does not extend a lifetime",
-		 "[aof][expiry]") {
+		 "[aof][expiry][timing]") {
 	GIVEN("a key set to live two seconds, restarted after part of that") {
-		test::SimulatedWallClock clock; // DX-90: so what is left is exact
 		TempDir const dir;
 		test::TempFile const snapshot;
 		{
 			AofServer server(dir.path(), snapshot.path());
 			REQUIRE(server.start().has_value());
 			server.run({"SET", "k", "v", "EX", "2"});
-			clock.advance(700ms);
+			std::this_thread::sleep_for(700ms);
 		}
 
 		WHEN("TC-115: the files are replayed") {
 			Restarted server(dir.path(), snapshot.path());
 
 			THEN("what is left is what was left, not the full two seconds") {
-				CHECK(server.run({"PTTL", "k"}) == ":1300\r\n");
+				const auto reply = server.run({"PTTL", "k"});
+				REQUIRE(reply.starts_with(':'));
+				const auto left = std::stoll(reply.substr(1));
+				CHECK(left > 0);
+				CHECK(left <= 1300);
 			}
 		}
 	}
@@ -809,12 +809,11 @@ SCENARIO("The once-a-second sync thread stops with the log",
 	}
 }
 
+// Waits on the real clock: excluded under the sanitizers (DX-93).
 SCENARIO("A base keeps a deadline that passes before the restart",
-		 "[aof][expiry]") {
+		 "[aof][expiry][timing]") {
 	constexpr auto DEADLINE_MS = "500";
 	GIVEN("a base with a short deadline and a logged command on that key") {
-		// The restart cannot take the key past its deadline early (DX-90).
-		test::SimulatedWallClock clock;
 		TempDir const dir;
 		test::TempFile const snapshot;
 		{
@@ -832,7 +831,7 @@ SCENARIO("A base keeps a deadline that passes before the restart",
 			// Still before the deadline: the key is there to be appended to.
 			REQUIRE(server.run({"APPEND", "short", "x"}) == ":2\r\n");
 		}
-		clock.advance(500ms); // the deadline
+		std::this_thread::sleep_for(700ms); // past the deadline
 
 		WHEN("TC-119: the files are replayed after the deadline") {
 			Restarted server(dir.path(), snapshot.path());
