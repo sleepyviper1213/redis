@@ -1,5 +1,6 @@
 #include "child_process.hpp"
 #include "core/error/failed.hpp"
+#include "core/size_units.hpp"
 #include "durable_file.hpp"
 
 #include <fmt/format.h>
@@ -270,7 +271,7 @@ std::error_code DurableFile::write_all(std::string_view data) {
 
 std::expected<std::string, std::error_code> DurableFile::read_all() const {
 	std::string content;
-	std::array<char, 64 * 1024> chunk{};
+	std::array<char, 64 * KiB> chunk{};
 	for (;;) {
 		const ssize_t got = ::read(fd_, chunk.data(), chunk.size());
 		if (got == -1) {

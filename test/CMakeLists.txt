@@ -30,6 +30,8 @@ add_executable(redis_unit_test
     unit/core/utils/parse_number.test.cpp
     unit/core/utils/ring_buffer.test.cpp
     unit/core/utils/saturating.test.cpp
+    unit/core/utils/scope_guard.test.cpp
+    unit/core/utils/scoped_value_rollback.test.cpp
 
     unit/common/resp/format_spec.test.cpp
     unit/common/resp/parser.test.cpp

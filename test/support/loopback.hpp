@@ -7,6 +7,8 @@
  * fails the test instead of hanging the run.
  */
 
+#include "core/size_units.hpp"
+
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
@@ -107,7 +109,7 @@ public:
 	/// Waits up to \p limit for the server to send something (into \p data)
 	/// or hang up.
 	Heard listen(std::chrono::milliseconds limit, std::string &data) {
-		std::array<char, 64 * 1024> chunk{};
+		std::array<char, 64 * KiB> chunk{};
 		std::promise<std::pair<boost::system::error_code, size_t>> done;
 		auto result = done.get_future();
 		socket_.async_read_some(boost::asio::buffer(chunk),

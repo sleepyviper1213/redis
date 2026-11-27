@@ -5,6 +5,7 @@
 #include "core/error/try.hpp"
 #include "core/error/verify.hpp"
 #include "core/os/save_file.hpp"
+#include "core/size_units.hpp"
 #include "detail/aof_replay.hpp"
 #include "detail/snapshot.hpp"
 #include "server/commands/handler.hpp"
@@ -411,11 +412,11 @@ void AppendOnlyFile::write_out() {
 						cut.message());
 		// Cap the pending buffer so a sustained disk error cannot exhaust
 		// memory.
-		constexpr size_t MAX_PENDING = 64z * 1024 * 1024;
+		constexpr size_t MAX_PENDING = 64 * MiB;
 		if (buf_.size() > MAX_PENDING) {
 			log().critical(
 				"AOF pending buffer exceeded {}MB; discarding {} bytes",
-				MAX_PENDING / (1024 * 1024),
+				MAX_PENDING / MiB,
 				buf_.size());
 			buf_.clear();
 		}

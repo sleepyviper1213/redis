@@ -101,6 +101,25 @@ for the dimension (a size plus a size is a size; a size times a size does not co
 
 A `using Port = uint16_t` alias is not a strong type: it documents and checks nothing.
 
+Until then, `core/size_units.hpp` has `KiB` and `MiB` as plain `std::size_t` constants, so a byte count reads as
+`64 * KiB` and not `64 * 1024`. They check nothing; they only name the unit.
+
+## Scope cleanup: `ScopeGuard`, `ScopedValueRollback`, owning handles
+
+Work that must happen on every way out of a scope (return, early exit, exception) goes in a destructor, not after
+each exit. From SerenityOS AK:
+
+| Spelling | Use for |
+|----------|---------|
+| `ScopeGuard guard{&function}` | A call to make once at the end of the scope, such as clearing the crash report's current command |
+| `ScopedValueRollback rollback{variable}` | A variable the scope changes and must put back; `set_rollback_value()` keeps a change that succeeded |
+| A class holding a `std::unique_ptr<T, Releaser>` | A handle that is moved around and releases something once, such as `NetGuard::Ticket`: the moves and destructor are defaulted |
+
+Neither guard can be copied or moved, and the function must be `noexcept`, as it runs in a destructor. Give
+`ScopeGuard` a named function or lambda, not a long inline one. A handle keeps its `unique_ptr` private and its
+constructor private to its maker. Used as a bare alias, `release()`, `reset()` and `get()` would let any caller
+make or leak one.
+
 ## Intrusive containers
 
 Not adopted yet: no container of clients or sessions exists. Sessions are tracked by an stdexec `counting_scope`,

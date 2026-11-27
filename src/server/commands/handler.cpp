@@ -5,6 +5,7 @@
 #include "common/store/database.hpp"
 #include "core/chrono/tick_timer.hpp"
 #include "core/utils/ascii.hpp"
+#include "core/utils/scope_guard.hpp"
 #include "server/diagnostics/current_command.hpp"
 #include "server/log_channels.hpp"
 #include "server/persistence/append_only_file.hpp"
@@ -134,9 +135,8 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 	// Its start also tells the watchdog how long the command has been running.
 	const TickTimer timer;
 	// For a crash report and the watchdog: which command is running.
-	const diagnostics::CommandScope running{info.name,
-											args.size(),
-											timer.started()};
+	diagnostics::set_current_command(info.name, args.size(), timer.started());
+	const ScopeGuard clear_on_exit{&diagnostics::clear_current_command};
 	if (ctx.stats == nullptr)
 		return {.reply = info.fn(ctx, args), .ran = &info};
 	Value result = info.fn(ctx, args);
@@ -157,11 +157,11 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 	if (ctx.aof != nullptr) ctx.aof->command_starting({});
 	const size_t reply_start = out.size();
 	const CommandInfo *ran   = nullptr;
-	bool has_failed              = false;
+	bool has_failed          = false;
 	try {
 		const auto [response, command] = dispatch(ctx, args);
 		fmt::format_to(std::back_inserter(out), "{:e}", response);
-		ran    = command;
+		ran        = command;
 		has_failed = response.is_error();
 	} catch (const std::bad_alloc &) {
 		// The command may have changed part of what it was asked to (an MSET,
