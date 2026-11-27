@@ -37,10 +37,12 @@ SCENARIO("SET applies each expiration option",
 		}
 
 		WHEN("TC-093: a key is set with PX") {
-			REQUIRE(server.run({"SET", "k", "v", "PX", "50"}) == "+OK\r\n");
+			// Long enough not to pass during the test, even under a sanitizer.
+			REQUIRE(server.run({"SET", "k", "v", "PX", "100000"}) == "+OK\r\n");
 			THEN("its TTL is in milliseconds") {
-				CHECK(server.run({"TTL", "k"}) == ":0\r\n");
-				CHECK(pttl(server, "k") <= 50);
+				CHECK(server.run({"TTL", "k"}) == ":100\r\n");
+				CHECK(pttl(server, "k") > 99'000);
+				CHECK(pttl(server, "k") <= 100'000);
 			}
 		}
 
