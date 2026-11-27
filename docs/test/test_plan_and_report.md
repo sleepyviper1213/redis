@@ -11,6 +11,7 @@
 | 13 Nov 2026 | 1.0      | Khac Truong Nguyen | First version; replaces `TEST_CHECKLIST.md` |
 | 17 Nov 2026 | 1.1      | Khac Truong Nguyen | Section 12 split by feature; A-9 and A-10 added; the checklist file removed |
 | 26 Nov 2026 | 1.2      | Khac Truong Nguyen | Fuzz level added (parsers, #51): sections 5.2, 6, 9 |
+| 27 Nov 2026 | 1.3      | Khac Truong Nguyen | Fuzz level extended to the glob matcher, number parsing and log replay: section 5.2 |
 
 ## Table of contents
 
@@ -118,7 +119,7 @@ Each feature is identified by its requirement in the SRS and its use case [5]. S
 | Integration     | `test/integration/`       | A running server, via hiredis | `scripts/test_server.sh <preset> <config>`   |
 | Stress          | `test/stress/`            | A running server              | `scripts/stress_server.sh <preset> <config>` |
 | Differential    | `scripts/diff_test.py`    | This server and real Redis    | `scripts/diff_server.sh <preset> <config>`   |
-| Fuzz            | `test/fuzz/`              | The parsers in-process        | `cmake --workflow --preset x86_64-linux-gnu-clang-fuzz`; CI job `fuzz` |
+| Fuzz            | `test/fuzz/`              | Parsers and log replay in-process | `cmake --workflow --preset x86_64-linux-gnu-clang-fuzz`; CI job `fuzz` |
 | Static analysis | clang-tidy, cppcheck      | The source                    | CI job `x86_64-linux-gnu-clang-analysis`                |
 | Performance     | `scripts/bench_server.sh` | This server and real Redis    | See [4]                                      |
 
@@ -142,6 +143,12 @@ servers and stops at the first reply that differs. It sends nothing that depends
 the absence of crashes: bounded allocation, prefix consistency of framing, and encoding idempotence (TC-300, TC-307,
 TC-308 in the connection test plan). Without libFuzzer (Windows, GCC) the same harnesses link a replay driver, and
 CTest replays the checked-in corpus in every preset. Each crashing input found is added to that corpus.
+
+Three more harnesses take input that does not come from a socket: `redis_fuzz_glob` checks `is_glob_match` against
+a reference matcher (TC-329, keyspace), `redis_fuzz_parse_number` checks `parse_integer` and `parse_double` against
+Redis's canonical spelling and a print-and-parse round trip (TC-330, data types), and `redis_fuzz_aof_replay` replays
+arbitrary bytes as an append-only log, running every command it frames (TC-331, persistence). Each harness has its own
+corpus directory under `test/fuzz/corpus/`; the AOF harness also reads the RESP one.
 
 ### 5.3 Test design technique
 

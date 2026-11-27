@@ -28,7 +28,7 @@ redis/
     ├── server/            Storage, command and persistence tests, in-process
     ├── integration/       hiredis tests against a running server
     ├── stress/            Verifying stress test against a running server
-    └── fuzz/              libFuzzer harnesses for the parsers, seed corpus, replay driver
+    └── fuzz/              libFuzzer harnesses (parsers, glob, numbers, AOF replay), seed corpora, replay driver
 ```
 
 ```text

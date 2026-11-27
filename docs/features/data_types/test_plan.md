@@ -31,6 +31,7 @@ gating.
 | Integration  | A running server through hiredis: sockets, framing, binary-safe bytes                     |
 | Stress       | Concurrent clients against a model; atomicity and ordering                                |
 | Differential | Replies compared with real Redis, order-independent where Redis defines no order          |
+| Fuzz         | Generated input to one function in-process under ASan and UBSan, with properties checked (`test/fuzz/`). Counts as tested where the CI fuzz job runs the harness and the corpus replay passes under `ctest` |
 
 ## 1. SET (UC-002)
 
@@ -61,6 +62,7 @@ gating.
 | TC-040 | Counters start at zero | `INCR n`; `INCRBY n 10`; `DECRBY n 20`; `DECR n`; `GET n` | `:1`, `:11`, `:-9`, `:-10`; stored as the decimal string `-10` | Unit, Differential | `string`: "Counting with INCR and DECR" | Unit | Partial |
 | TC-041 | Value or delta is not an integer | `SET s abc`; `INCR s`; `INCRBY n` with `1.5`, `+5`, a leading space, `0x10`, empty, past int64 | `-ERR value is not an integer or out of range`; value unchanged | Unit, Differential | `string`: "Counting with INCR and DECR", "Integer arguments are parsed the way Redis does" | Unit | Partial |
 | TC-042 | Overflow | `n` is `9223372036854775807`; `INCR n`; `n` at the minimum; `DECR n`, `DECRBY n` | `-ERR increment or decrement would overflow`; value unchanged | Unit, Differential | `string`: "Counting with INCR and DECR" (`INCR` at the maximum only) | Unit | Partial |
+| TC-330 | Integer and double arguments parse as Redis spells them, on any input | Any byte string up to 4 KiB, to `parse_integer` and to `parse_double` | `parse_integer` accepts exactly the canonical decimal spellings of an int64 (`0`, or `-?[1-9][0-9]*` in range), and the value prints back to the input byte for byte; with that syntax but out of range it fails with `result_out_of_range`, otherwise with `invalid_argument`. What `parse_integer` accepts, `parse_double` accepts as the nearest double. A double `parse_double` accepts prints (`{fmt}`, shortest form) to a string that parses back to the same bits, or to a NaN from a NaN. TC-041 and TC-042 for every input | Fuzz | `test/fuzz/parse_number.fuzz.cpp` (planned) | none | Gap |
 | TC-043 | Counters and `APPEND` keep the deadline | `k` has a deadline; `INCR k`; `APPEND k x` | `TTL k` stays positive (TC-104c) | Unit | None found | none | Gap |
 | TC-044 | Wrong type and wrong arity | `l` is a list: `INCR`, `DECR`, `INCRBY`, `DECRBY`, `APPEND`, `STRLEN` on `l`; `INCR`; `INCRBY n`; `APPEND k`; `MGET` | `-WRONGTYPE ...` each; `-ERR wrong number of arguments for '<command>' command` | Unit, Differential | `string`: "Commands reject keys holding another type" (`INCR` only); `set_ttl`: "Malformed requests get RESP error replies" (generic arity) | Unit | Partial |
 | TC-045 | Counters are atomic | Several clients `INCR` one key at once | The final value equals the number of increments | Stress | `stress`: `INCR` on a shared counter key; final value check not read | Stress | Covered |

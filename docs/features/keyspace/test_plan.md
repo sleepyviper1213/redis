@@ -31,6 +31,7 @@ gating (the differential step for expiry has gated since CI run 59; see the key-
 | Integration  | A running server through hiredis: sockets, framing, binary-safe key names                 |
 | Stress       | Concurrent clients against a model                                                        |
 | Differential | Replies compared with real Redis; `KEYS` replies compared sorted                          |
+| Fuzz         | Generated input to one function in-process under ASan and UBSan, with properties checked (`test/fuzz/`). Counts as tested where the CI fuzz job runs the harness and the corpus replay passes under `ctest` |
 
 ## 1. Deleting keys (UC-004)
 
@@ -61,6 +62,7 @@ gating (the differential step for expiry has gated since CI run 59; see the key-
 | TC-082 | Due keys are not reported | `PEXPIRE k 20`; wait; `EXISTS k`, `KEYS *`, `TYPE k`, `DBSIZE` | `:0`; not listed; `+none`; the count excludes it once swept (an unswept key is still counted, LI-05) | Unit | `keyspace`: "Setting and clearing expiry" (`EXISTS` only); `database`: "Expiring keys" | Unit | Covered |
 | TC-083 | Wrong arity | `EXISTS`; `KEYS`; `TYPE`; `TYPE a b`; `DBSIZE x` | `-ERR wrong number of arguments for '<command>' command` | Unit, Differential | `set_ttl`: "Malformed requests get RESP error replies" (generic arity, not these commands) | Unit | Partial |
 | TC-084 | Inspection leaves data unchanged | Random writes of all types, then `KEYS *`, `EXISTS`, `TYPE`, `DBSIZE` | Replies match real Redis; no key changes | Differential | `scripts/diff_test.py` (keyspace family) | Differential | Covered |
+| TC-329 | The glob matcher agrees with a reference on any pattern | Any byte string up to 4 KiB, split at its first line feed into a pattern and a text (no line feed means an empty text) | `is_glob_match` gives the answer of a reference that tokenises the pattern by the rules of `glob.hpp` and matches by dynamic programming over (token, text position), wherever that table fits in 2^22 cells; a pattern escaping every byte of the text matches it. No sanitizer report, and no input outlasts the fuzzer's timeout (TC-080's "no exponential backtracking" for every pattern) | Fuzz | `test/fuzz/glob.fuzz.cpp` (planned) | none | Gap |
 
 ## 3. Related commands owned by key expiry
 
