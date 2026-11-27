@@ -16,9 +16,10 @@ std::expected<T, std::errc> parse_whole(std::string_view s) {
 	T value{};
 	auto [ptr, ec] =
 		fast_float::from_chars(s.data(), s.data() + s.size(), value);
-	// Trailing garbage after a valid prefix ("12abc") reports no error code.
-	if (ec == std::errc() && ptr != s.data() + s.size())
-		ec = std::errc::invalid_argument;
+	// Trailing garbage is malformed whatever the prefix was: "12abc" reports
+	// no error code, and an overflowing "99...9-" reports out of range
+	// (TC-330).
+	if (ptr != s.data() + s.size()) ec = std::errc::invalid_argument;
 	if (ec != std::errc()) REDIS_FAILED(ec);
 	return value;
 }
