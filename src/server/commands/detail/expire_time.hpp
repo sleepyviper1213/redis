@@ -1,7 +1,7 @@
 #pragma once
 #include "core/chrono/date_time.hpp"
 #include "core/chrono/deadline_timer.hpp"
-#include "core/utils/saturating.hpp"
+#include "core/utils/checked.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -24,15 +24,12 @@ enum class ExpireBase : bool { Relative, Absolute };
 [[nodiscard]] inline std::optional<DeadlineTimer>
 expire_time(int64_t amount, ExpireUnit unit, ExpireBase base) noexcept {
 	constexpr int64_t MS_PER_S = 1000;
-	int64_t millis             = amount;
-	if (unit == ExpireUnit::Seconds && mul_overflow(amount, MS_PER_S, &millis))
-		return std::nullopt;
-	if (base == ExpireBase::Relative &&
-		add_overflow(millis,
-					 DateTime::current().to_msecs_since_epoch(),
-					 &millis))
-		return std::nullopt;
-	return DeadlineTimer::at_ms(millis);
+	Checked<int64_t> millis    = amount;
+	if (unit == ExpireUnit::Seconds) millis *= MS_PER_S;
+	if (base == ExpireBase::Relative)
+		millis += DateTime::current().to_msecs_since_epoch();
+	if (millis.has_overflow()) return std::nullopt;
+	return DeadlineTimer::at_ms(millis.value());
 }
 
 } // namespace redis::detail
