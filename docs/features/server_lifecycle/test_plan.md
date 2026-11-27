@@ -79,6 +79,18 @@ one fixed sleep.
 | TC-262 | A FailFast end still saves | Housekeeping fails after 20 ticks (seam `REDIS_TEST_FAIL_HOUSEKEEPING_AFTER`) with `--dump` writable; a write before it; read the snapshot after exit | The snapshot holds the write; exit non-zero. Not yet covered: `--dump` unwritable (exit non-zero, previous file untouched) | Integration | `failfast_save`: "TC-262" (POSIX only, runs in `scripts/test_server.sh`) | none | Partial |
 | TC-296 | Tearing down the keyspace executor waits for its work | A threaded `Executor` with a slow batch running and more queued; it is destroyed (or `stop()` is called) while they run | Every queued batch has finished, in the order queued, before destruction returns. With `Services` in place of the `Executor`: a command that touches the keyspace after the destructor began still runs to the end against a live keyspace (the thread is joined before the keyspace goes away); under the sanitizer presets, no report | Unit | `executor`: "Destroying the executor waits for the work queued on it" and "Destroying the services waits for the keyspace thread first". Fail when `~Executor` does not stop (queued batches dropped) and when `keyspace` is declared before `db` in `Services` (abseil: "Use of destroyed hash table") | Unit | Covered |
 
+## 4. Least privilege on Linux (NFR-002, [ADR-0014](adr/0014-least-privilege-on-linux.md), DX-95)
+
+Linux only: Landlock and seccomp do not exist elsewhere, and the sandbox is off in sanitizer builds. The unit
+scenarios fork a child, sandbox it, and look at how it ends, so a failure cannot take the test runner with it.
+
+| ID | Behaviour | Given / When | Expected | Level | Existing test | Tested at | Status |
+|----|-----------|--------------|----------|-------|---------------|-----------|--------|
+| TC-334 | A system call outside the allow-list is not run, and is named | A child installs the seccomp filter, then calls `ptrace` (never on the list); separately, the server started with a crash log | The child ends with `SIGSYS`; the call had no effect. The server's crash report names the call (`SIGSYS`, call number and name) before it aborts | Unit, Integration | `sandbox`: "A call outside the allow-list is refused" (planned) | none | Gap |
+| TC-335 | Files outside the allowed directories cannot be opened | A child applies the Landlock rules for a temporary dump directory, then creates a file in it and one in another directory | The first succeeds; the second fails with `EACCES`. Skipped, with a message, where the kernel has no Landlock | Unit | `sandbox`: "Landlock confines files to the allowed directories" (planned) | none | Gap |
+| TC-336 | Everything the server does still works under the sandbox | The integration, stress and persistence suites against a server started with the default (`--sandbox` on), `BGSAVE` and `BGREWRITEAOF` included | Every suite passes; no `SIGSYS` report in the log | Integration | Every CI suite on the Linux debug and release builds, which start the server with its defaults | none | Gap |
+| TC-337 | The sandbox can be turned off, and is a no-op off Linux | `--sandbox no` on Linux; the default on Windows and macOS | Startup logs that the sandbox is off (or unavailable on this platform), and nothing is restricted | Integration | None found | none | Gap |
+
 ## Entry and exit criteria
 
 * **Entry**: the server builds; the unit suite runs in the chosen preset; for the Integration scenarios, a Linux or
