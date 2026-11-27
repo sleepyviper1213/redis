@@ -16,8 +16,8 @@
 #include <exec/asio/use_sender.hpp>
 #include <spdlog/logger.h>
 
+#include <chrono>
 #include <utility>
-
 
 namespace redis {
 
@@ -86,10 +86,12 @@ stdexec_ext::InlineTask<void> BasicListener<A>::run() {
 				   });
 		}
 
-		// The error usually persists: wait a little rather than spin on it.
-		[[nodiscard]] detail::AcceptPause pause() override {
+		// The error usually persists: wait rather than spin on it, as long as
+		// the loop says.
+		[[nodiscard]] detail::AcceptPause
+		pause(std::chrono::milliseconds wait) override {
 			BasicListener &listener = listener_;
-			listener.retry_timer_.expires_after(detail::ACCEPT_RETRY_DELAY);
+			listener.retry_timer_.expires_after(wait);
 			return listener.retry_timer_.async_wait(exec::asio::use_sender) |
 				   then([&listener] { return listener.acceptor_.is_open(); });
 		}

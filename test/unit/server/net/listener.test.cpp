@@ -2,6 +2,7 @@
 
 #include "core/chrono/elapsed_timer.hpp"
 #include "core/stdexec_ext/erased.hpp"
+#include "core/stdexec_ext/retry.hpp"
 #include "core/stdexec_ext/supervise.hpp"
 #include "server/net/detail/listener_impl.tpp" // instantiates the failing one
 #include "server/services.hpp"
@@ -18,6 +19,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -290,9 +292,15 @@ SCENARIO("A listener survives failed accepts", "[net][listener][fault]") {
 				"it is served once the failures are over, after a pause each") {
 				CHECK(client.ping_answered());
 				CHECK(plan->injected == 3);
-				// A lower bound only: each failure waits ACCEPT_RETRY_DELAY
+				// A lower bound only: the failures wait 100, 200 and 400 ms
 				// before the next try, so the loop cannot have spun.
-				CHECK(timer.has_expired(3 * detail::ACCEPT_RETRY_DELAY));
+				using stdexec_ext::retry_policy::backoff_delay;
+				const auto waited = [](size_t failures) {
+					return backoff_delay(detail::ACCEPT_BACKOFF_INITIAL,
+										 detail::ACCEPT_BACKOFF_CAP,
+										 failures);
+				};
+				CHECK(timer.has_expired(waited(1) + waited(2) + waited(3)));
 				CHECK(!fixture.loop_failed());
 			}
 		}
@@ -307,10 +315,21 @@ SCENARIO("A listener survives failed accepts", "[net][listener][fault]") {
 			std::this_thread::sleep_for(350ms);
 
 			THEN("it retried a few times, not in a tight loop") {
-				// About one try per ACCEPT_RETRY_DELAY (100 ms): generous
-				// bounds, so a slow machine does not fail the test.
+				// Tries at 0, 0.1 and 0.3 s: generous bounds, so a slow
+				// machine does not fail the test.
 				CHECK(plan->injected >= 1);
 				CHECK(plan->injected <= 10);
+			}
+		}
+
+		WHEN("it has been failing for longer") {
+			std::this_thread::sleep_for(1600ms);
+
+			THEN("its waits grew, rather than staying at the first") {
+				// Tries at 0, 0.1, 0.3, 0.7 and 1.5 s: about five. A fixed
+				// 100 ms wait would make sixteen.
+				CHECK(plan->injected >= 3);
+				CHECK(plan->injected <= 8);
 			}
 		}
 

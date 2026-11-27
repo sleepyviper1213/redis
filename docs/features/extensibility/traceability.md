@@ -19,5 +19,5 @@ verification is recorded here.
 | ID | Quality | Verification |
 |----|---------|--------------|
 | NFR-006 | Maintainability | Static analysis in CI; no scenario here |
-| NFR-008 | Extensibility | TC-253 to 260: a command added through a table, with no change to the built-in ones |
+| NFR-008 | Extensibility | TC-253 to 260: a command added through a table, with no change to the built-in ones; TC-309 to 319: `retry` policies (backoff, jitter) and `fail_after` for new background work |
 | NFR-009 | Reusability | Not checked by a test |

@@ -108,8 +108,9 @@ public:
 	 * \brief The accept loop: accepts clients and starts a session for each,
 	 * until the acceptor is closed (by stop()) or a stop request reaches it.
 	 *
-	 * A failed accept is logged and tried again after a short pause, so a
-	 * transient failure (out of descriptors) does not end it. It completes
+	 * A failed accept is logged and tried again after a pause that grows
+	 * while the failures last (DX-89), so a transient failure (out of
+	 * descriptors) does not end it. It completes
 	 * with an error only when something unexpected escapes; that is the
 	 * caller's to handle (the server treats it as fatal: FailPolicy::FailFast).
 	 * Runs on the acceptor's strand once started.
