@@ -44,8 +44,9 @@ another. When the type cannot move (it holds a mutex, an `io_context`, a `counti
 `std::expected<std::unique_ptr<T>, E>`, and the pointer is never null on success. Name the factory after what it does
 when that says more (`open_existing`, `listen`); `create` otherwise.
 
-In the code: `os::DurableFile`, `os::SaveFile`. *Planned* (`test/fallible-create`): `Listener`, which binds in its
-factory instead of `listen()` after construction, and `RedisServer`, whose constructor can throw from Asio today.
+In the code: `os::DurableFile`, `os::SaveFile`; `Listener::create`, which binds before the listener exists, and
+`RedisServer::create`, which turns what Asio throws during setup into `ServerKind::SetupFailed` (DX-94). Their
+constructors take a private `Token`, so `std::make_unique` works inside `create()` and nowhere else.
 
 ## Checked arithmetic: `Checked<T>`
 

@@ -17,6 +17,7 @@ enum class ServerKind : std::uint8_t {
 	ListenFailed,    ///< [source = ListenError]: the port cannot be taken
 	WorkerFailed,    ///< [detail]: an I/O thread died
 	FinalSaveFailed, ///< [source = PersistError]: the last snapshot was not written
+	SetupFailed, ///< [detail]: the event loop or signal handling could not be set up
 };
 
 /**

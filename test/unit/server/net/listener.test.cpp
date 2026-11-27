@@ -113,12 +113,11 @@ public:
 		  context_(threads),
 		  listener_(make_listener(context_.io(), services_, threads,
 								  std::move(plan))) {
-		REQUIRE(listener_.listen("127.0.0.1", 0).has_value());
 		// As the server does, but a failure is recorded, not fatal: the tests
 		// check that stopping ends the loop without one.
 		stdexec::spawn(
 			stdexec_ext::supervised<stdexec_ext::FailPolicy::Isolate>(
-				listener_.run(),
+				listener_->run(),
 				[this](const std::exception_ptr &) noexcept {
 					loop_failed_ = true;
 				}),
@@ -129,7 +128,7 @@ public:
 	BasicListenerFixture &operator=(const BasicListenerFixture &) = delete;
 
 	~BasicListenerFixture() {
-		listener_.stop();
+		listener_->stop();
 		if (!drained_) drain_within(5s);
 		// stop() posts the acceptor's close to an I/O thread. Without the
 		// join, the listener (destroyed before context_) could be destroyed
@@ -139,9 +138,9 @@ public:
 	}
 
 	/// A client connected to the listener; throws if refused.
-	test::Client connect() { return {context_.io(), listener_.port()}; }
+	test::Client connect() { return {context_.io(), listener_->port()}; }
 
-	void stop() { listener_.stop(); }
+	void stop() { listener_->stop(); }
 
 	/// Whether the accept loop ended with an error rather than by stopping.
 	[[nodiscard]] bool loop_failed() const { return loop_failed_; }
@@ -150,7 +149,7 @@ public:
 	/// see test::require_finishes_within.
 	void drain_within(std::chrono::milliseconds limit) {
 		test::require_finishes_within(
-			stdexec::when_all(listener_.drained(), loop_scope_.join()),
+			stdexec::when_all(listener_->drained(), loop_scope_.join()),
 			limit,
 			"The listener");
 		drained_ = true;
@@ -159,26 +158,34 @@ public:
 private:
 	/// The listener on A: built as the server builds it, or on a
 	/// FailingAcceptor that follows \p plan.
-	static BasicListener<A> make_listener(asio::io_context &io,
-										  std::shared_ptr<Services> services,
-										  unsigned threads,
-										  std::shared_ptr<FaultPlan> plan) {
+	/// A listener on an ephemeral loopback port, or why not.
+	static auto create_listener(asio::io_context &io,
+								std::shared_ptr<Services> services,
+								unsigned threads,
+								std::shared_ptr<FaultPlan> plan) {
 		if constexpr (std::is_same_v<A, FailingAcceptor>)
-			return BasicListener<A>(
+			return BasicListener<A>::create(
 				A(asio::make_strand(io.get_executor()), std::move(plan)),
-				io.get_executor(),
-				std::move(services),
+				io.get_executor(), "127.0.0.1", 0, std::move(services),
 				threads > 1);
 		else
-			return BasicListener<A>(io.get_executor(),
-									std::move(services),
-									threads > 1);
+			return BasicListener<A>::create(io.get_executor(), "127.0.0.1", 0,
+											std::move(services), threads > 1);
+	}
+
+	static std::unique_ptr<BasicListener<A>>
+	make_listener(asio::io_context &io, std::shared_ptr<Services> services,
+				  unsigned threads, std::shared_ptr<FaultPlan> plan) {
+		auto listener = create_listener(io, std::move(services), threads,
+										std::move(plan));
+		REQUIRE(listener.has_value());
+		return std::move(*listener);
 	}
 
 	test::TempFile file_;
 	std::shared_ptr<Services> services_;
 	test::RunningContext context_;
-	BasicListener<A> listener_;
+	std::unique_ptr<BasicListener<A>> listener_;
 	/// Owns the accept loop, as the server's when_any does; after listener_,
 	/// so it is destroyed first.
 	stdexec::simple_counting_scope loop_scope_;

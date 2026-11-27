@@ -29,6 +29,8 @@ std::string display(const ServerError &error) {
 	case ServerKind::WorkerFailed: return error.detail;
 	case ServerKind::FinalSaveFailed:
 		return fmt::format("final snapshot failed: {}", describe(error.source));
+	case ServerKind::SetupFailed:
+		return fmt::format("cannot set up the event loop: {}", error.detail);
 	}
 	return "server error";
 }

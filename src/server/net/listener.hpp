@@ -70,35 +70,54 @@ concept Acceptor = std::derived_from<A, boost::asio::ip::tcp::acceptor> &&
  */
 template <Acceptor A>
 class [[nodiscard]] BasicListener {
+	/// Only create() can make one: what it constructs is a listener that
+	/// listens (docs/design/patterns.md, fallible construction).
+	struct Token {
+		explicit Token() = default;
+	};
+
 public:
 	/**
-	 * \p services is shared with every session. With \p is_concurrent false only
-	 * one thread runs \p ex, so the per-client strands that serialize
+	 * rief A listener bound to \p host:\p port (IPv4) and listening, or why
+	 * not: the port is in use, or \p host is not an address.
+	 *
+	 * \p services is shared with every session. With \p is_concurrent false
+	 * only one thread runs \p ex, so the per-client strands that serialize
 	 * handlers are left out: a strand costs a lock and a queue hop on every
-	 * completion. Call listen() before run().
+	 * completion. Not movable (it owns its sessions' scope), so it is handed
+	 * out by pointer, never null.
 	 */
-	BasicListener(const boost::asio::any_io_executor &ex,
-				  std::shared_ptr<Services> services, bool is_concurrent = true)
+	[[nodiscard]] static std::expected<std::unique_ptr<BasicListener>,
+									   ListenError>
+	create(const boost::asio::any_io_executor &ex, std::string_view host,
+		   boost::asio::ip::port_type port, std::shared_ptr<Services> services,
+		   bool is_concurrent = true)
 		requires std::constructible_from<
 			A, boost::asio::strand<boost::asio::any_io_executor>>
-		: BasicListener(A(boost::asio::make_strand(ex)), ex,
-						std::move(services), is_concurrent) {}
+	{
+		return create(A(boost::asio::make_strand(ex)), ex, host, port,
+					  std::move(services), is_concurrent);
+	}
 
 	/**
-	 * \brief As above, accepting on \p acceptor: the injection point for a
-	 * test's acceptor. It must not be open yet (listen() opens it) and must
+	 * rief As above, accepting on \p acceptor: the injection point for a
+	 * test's acceptor. It must not be open yet (create() opens it) and must
 	 * run on a strand of \p ex, where the accept loop runs.
 	 */
-	BasicListener(A acceptor, boost::asio::any_io_executor ex,
-				  std::shared_ptr<Services> services, bool is_concurrent = true);
+	[[nodiscard]] static std::expected<std::unique_ptr<BasicListener>,
+									   ListenError>
+	create(A acceptor, boost::asio::any_io_executor ex, std::string_view host,
+		   boost::asio::ip::port_type port, std::shared_ptr<Services> services,
+		   bool is_concurrent = true);
 
-	/// Bind and listen on \p host:\p port (IPv4). Fails when the port is in use
-	/// or \p host is not an address.
-	[[nodiscard]] std::expected<void, ListenError>
-	listen(std::string_view host, boost::asio::ip::port_type port);
+	/// For create() only: \p acceptor is not open yet.
+	BasicListener(Token, A acceptor, boost::asio::any_io_executor ex,
+				  std::shared_ptr<Services> services, bool is_concurrent);
 
-	/// The port actually bound: what listen() chose when given port 0. Only
-	/// meaningful after a successful listen().
+	BasicListener(const BasicListener &)            = delete;
+	BasicListener &operator=(const BasicListener &) = delete;
+
+	/// The port actually bound: what create() chose when given port 0.
 	[[nodiscard]] boost::asio::ip::port_type port() const {
 		boost::system::error_code ignored;
 		return acceptor_.local_endpoint(ignored).port();
