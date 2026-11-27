@@ -51,21 +51,4 @@ using CommandHeartbeat = stdexec_ext::HeartbeatSlot<CurrentCommand, TickClock>;
  * short as current_command()'s is.
  */
 [[nodiscard]] const CommandHeartbeat &command_heartbeat() noexcept;
-
-/// Sets the current command for the scope, clearing it on every exit path.
-class CommandScope {
-public:
-	CommandScope(std::string_view name, std::size_t argc,
-				 TickClock::time_point started) noexcept {
-		set_current_command(name, argc, started);
-	}
-
-	~CommandScope() { clear_current_command(); }
-
-	CommandScope(const CommandScope &)            = delete;
-	CommandScope &operator=(const CommandScope &) = delete;
-	CommandScope(CommandScope &&)                 = delete;
-	CommandScope &operator=(CommandScope &&)      = delete;
-};
-
 } // namespace redis::diagnostics
