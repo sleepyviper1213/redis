@@ -49,7 +49,7 @@ factory instead of `listen()` after construction, and `RedisServer`, whose const
 
 ## Checked arithmetic: `Checked<T>`
 
-*Planned* (`test/checked-arith`). An integer that remembers whether any step that produced it overflowed, after AK's
+An integer that remembers whether any step that produced it overflowed, after AK's
 `Checked<T>`, over the `__builtin_*_overflow` helpers of `saturating.hpp`:
 
 ```cpp
@@ -64,6 +64,9 @@ The overflow is checked once, after the whole computation, instead of after each
 `value()` on an overflowed `Checked` is a `REDIS_VERIFY` failure, never a wrapped number. Use it where Redis answers
 an overflow with an error (`INCRBY`, `EXPIRE`); use the saturating functions where clamping is the behaviour
 (`DeadlineTimer`, `DateTime`).
+
+In the code: `core/utils/checked.hpp`; `INCRBY` and `DECRBY` (`commands/string.cpp`), the expiry arguments
+(`commands/detail/expire_time.hpp`).
 
 ## Access tokens: `Badge<T>`
 

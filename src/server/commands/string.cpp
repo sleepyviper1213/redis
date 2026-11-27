@@ -6,7 +6,7 @@
 #include "core/chrono/deadline_timer.hpp"
 #include "common/store/object.hpp"
 #include "core/utils/ascii.hpp"
-#include "core/utils/saturating.hpp"
+#include "core/utils/checked.hpp"
 #include "detail/expire_time.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep
 #include "common/store/database_fwd.hpp"
@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -204,10 +203,11 @@ Value increment_by(CommandContext &ctx, std::string_view key, int64_t delta) {
 		current = *parsed;
 	}
 
-	int64_t result = 0;
-	if (add_overflow(current, delta, &result)) {
+	const Checked<int64_t> sum = Checked<int64_t>(current) + delta;
+	if (sum.has_overflow()) {
 		return reply::error("ERR increment or decrement would overflow");
 	}
+	const int64_t result = sum.value();
 
 	if (*value != nullptr) { (*value)->assign_string(fmt::to_string(result));
 	} else {
@@ -235,11 +235,11 @@ Value incrby(CommandContext &ctx, Args args) {
 
 Value decrby(CommandContext &ctx, Args args) {
 	const auto delta = parse_integer(args[2]);
+	if (!delta) return reply::not_integer();
 	// Negating INT64_MIN overflows, so it is out of range here.
-	if (!delta || *delta == std::numeric_limits<int64_t>::min()) {
-		return reply::not_integer();
-	}
-	return increment_by(ctx, args[1], -*delta);
+	const Checked<int64_t> negated = -Checked<int64_t>(*delta);
+	if (negated.has_overflow()) return reply::not_integer();
+	return increment_by(ctx, args[1], negated.value());
 }
 
 Value mset(CommandContext &ctx, Args args) {
