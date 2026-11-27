@@ -253,6 +253,9 @@ Every option is settable on the command line, in a `--config` file or in a `REDI
 | RAII                           | Logging guard, files, child processes  | Release on every path                                                      |
 | Copy-on-write via `fork`       | `BGSAVE`, rewrite                      | A consistent snapshot without locking                                      |
 
+The idioms below these (error macros, fallible `create()`, `Checked<T>`, `Badge<T>`, strong types) are in
+[patterns.md](patterns.md).
+
 ## 10. Interface viewpoint
 
 ### 10.1 Client protocol
