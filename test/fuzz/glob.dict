@@ -1,0 +1,12 @@
+# Glob tokens for libFuzzer's -dict (TC-329).
+sep="\x0a"
+star="*"
+question="?"
+open="["
+close="]"
+negate="^"
+range="-"
+escape="\x5c"
+class="[a-z]"
+negated_class="[^a]"
+escaped_star="\x5c*"
