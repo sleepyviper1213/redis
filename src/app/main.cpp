@@ -1,3 +1,4 @@
+#include "core/os/child_process.hpp"
 #include "core/os/sandbox.hpp"
 #include "core/utils/enum_name.hpp"
 #include "server/diagnostics/crash.hpp"
@@ -22,21 +23,7 @@
 #include <system_error>
 #include <vector>
 
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
-
 namespace {
-int current_pid() {
-#ifdef _WIN32
-	return _getpid();
-#else
-	return static_cast<int>(getpid());
-#endif
-}
-
 // The append-only file the options ask for, if any.
 std::optional<redis::AofConfig> aof_config(const CLI::App &app) {
 	if (!app.get_option("--appendonly")->as<bool>()) return std::nullopt;
@@ -126,7 +113,7 @@ int run(int argc, char **argv) {
 	// Who was running, and how: what an operator compares against a crash
 	// report or a core dump.
 	log.info("Server started, pid {}, port {}, {} I/O thread(s), dump file {}",
-			 current_pid(),
+			 redis::os::current_pid(),
 			 app->get_option("--port")->as<uint16_t>(),
 			 app->get_option("--io-threads")->as<unsigned>(),
 			 app->get_option("--dump")->as<std::string>());

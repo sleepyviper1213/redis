@@ -114,4 +114,6 @@ from every list when it is destroyed. AK's `IntrusiveList` does the same but is 
 Everything that calls the operating system directly is in `src/core/os/` (and the crash handler in
 `src/server/diagnostics/`), behind an interface that is the same on every platform. The rest builds and is tested on
 Windows, where the development happens, so CI only has to cover that thin layer on Linux and macOS. An `#ifdef` on a
-platform outside those directories is a bug to move.
+platform outside those directories is a bug to move; `scripts/check_platform_code.sh` fails on one, in the static
+analysis job. Where only one file differs, CMake picks the file (`chrono/tick_clock.cpp` or
+`os/tick_clock_mach.cpp`) instead of an `#ifdef` choosing inside it.
