@@ -26,3 +26,4 @@ and the git history; dates are those of the commit that first implemented the de
 | [0011](../../features/observability/adr/0011-jemalloc-keyspace-allocator.md) | jemalloc as the keyspace allocator | Proposed |
 | [0012](../../features/connection/adr/0012-session-decisions-apart-from-io.md) | A session's decisions live apart from its I/O | Accepted |
 | [0013](0013-timers-over-std-chrono-clocks.md) | Elapsed and deadline timers share one interface over std::chrono clocks | Accepted |
+| [0014](../../features/server_lifecycle/adr/0014-least-privilege-on-linux.md) | Drop privileges on Linux: Landlock at startup, seccomp before serving | Proposed |

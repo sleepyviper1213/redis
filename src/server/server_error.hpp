@@ -18,6 +18,7 @@ enum class ServerKind : std::uint8_t {
 	WorkerFailed,    ///< [detail]: an I/O thread died
 	FinalSaveFailed, ///< [source = PersistError]: the last snapshot was not written
 	SetupFailed, ///< [detail]: the event loop or signal handling could not be set up
+	SandboxFailed, ///< [detail]: the system call filter could not be installed
 };
 
 /**

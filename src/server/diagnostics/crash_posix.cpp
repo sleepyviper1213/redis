@@ -2,6 +2,7 @@
 
 #include "current_command.hpp"
 #include "core/os/child_process.hpp"
+#include "core/os/sandbox.hpp"
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -36,7 +37,9 @@ int log_fd = -1;
 /// skips straight to the default action instead of recursing.
 std::atomic<bool> is_reporting{false};
 
-constexpr std::array FATAL_SIGNALS{SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
+// SIGSYS: a system call the sandbox refused (ADR-0014).
+constexpr std::array FATAL_SIGNALS{SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT,
+								   SIGSYS};
 
 /// How long the report may take before on_report_timeout() ends the process.
 constexpr unsigned REPORT_TIMEOUT_SECONDS = 3;
@@ -142,6 +145,7 @@ std::string_view signal_name(int sig) noexcept {
 	case SIGFPE: return "SIGFPE";
 	case SIGILL: return "SIGILL";
 	case SIGABRT: return "SIGABRT";
+	case SIGSYS: return "SIGSYS";
 	default: return "signal";
 	}
 }
@@ -179,6 +183,19 @@ void on_report_timeout(int /*sig*/) {
 	::abort();
 }
 
+#ifdef __linux__
+/// The system call the sandbox refused, by number and, when known, name.
+void report_refused_call(const siginfo_t &info) noexcept {
+	out("Refused system call: ");
+	const std::string_view name = os::syscall_name(info.si_syscall);
+	out(name.empty() ? std::string_view{"unknown"} : name);
+	out(" (");
+	out_number(static_cast<unsigned>(info.si_syscall));
+	out("); the sandbox allows only what the server needs (ADR-0014, "
+		"--sandbox no to turn it off)\n");
+}
+#endif
+
 void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 	if (!is_reporting.exchange(true)) {
 		::alarm(REPORT_TIMEOUT_SECONDS);
@@ -203,6 +220,9 @@ void on_fatal_signal(int sig, siginfo_t *info, void * /*context*/) {
 				out("Stack overflow: the fault is at the end of the main "
 					"thread's stack\n");
 		}
+#ifdef __linux__
+		if (sig == SIGSYS && info != nullptr) report_refused_call(*info);
+#endif
 		out("Pid: ");
 		out_number(static_cast<std::uintmax_t>(::getpid()));
 		out("\n");

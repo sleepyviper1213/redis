@@ -286,6 +286,7 @@ For a controlled comparison with Redis, use `scripts/bench_server.sh`; see the b
 | `--idle-timeout <s>`            | `0` (never)        | `REDIS_IDLE_TIMEOUT`                | Close idle clients                                         |
 | `--request-timeout <s>`         | `0` (never)        | `REDIS_REQUEST_TIMEOUT`             | Close a client whose request is not answered in time       |
 | `--enable-config-set`           | off                | `REDIS_ENABLE_CONFIG_SET`           | Allow `CONFIG SET loglevel` from any client                |
+| `--sandbox yes\|no`              | `yes`              | `REDIS_SANDBOX`                     | Linux: confine files and system calls once started (ADR-0014) |
 | `--watchdog-ms <ms>`            | `1000`             | `REDIS_WATCHDOG_MS`                 | Warn about a command running this long; 0 never            |
 | `--log-file <file>`             | `redis_server.log` | `REDIS_LOGFILE`                     | Log file, in addition to stderr                            |
 | `--log-level <level>`           | `info`             | `REDIS_LOGLEVEL`                    | `trace`, `debug`, `info`, `warning`, `error`, `critical`, `off` |

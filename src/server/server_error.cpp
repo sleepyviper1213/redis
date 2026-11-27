@@ -31,6 +31,9 @@ std::string display(const ServerError &error) {
 		return fmt::format("final snapshot failed: {}", describe(error.source));
 	case ServerKind::SetupFailed:
 		return fmt::format("cannot set up the event loop: {}", error.detail);
+	case ServerKind::SandboxFailed:
+		return fmt::format("{} (--sandbox no to start without it)",
+						   error.detail);
 	}
 	return "server error";
 }

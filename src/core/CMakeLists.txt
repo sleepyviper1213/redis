@@ -6,6 +6,7 @@ add_library(
     logging/channels.cpp
     logging/guard.cpp
     logging/lifecycle.cpp
+    os/sandbox.cpp
     os/save_file.cpp
     utils/glob.cpp
     utils/parse_number.cpp
@@ -22,7 +23,8 @@ if(WIN32)
     # std::max; every consumer includes it, directly or through Asio.
     target_compile_definitions(redis_core PUBLIC NOMINMAX)
 else()
-    target_sources(redis_core PRIVATE os/posix.cpp)
+    # sandbox_linux.cpp compiles to nothing outside Linux x86-64.
+    target_sources(redis_core PRIVATE os/posix.cpp os/sandbox_linux.cpp)
 endif()
 
 target_include_directories(

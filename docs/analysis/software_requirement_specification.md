@@ -458,6 +458,8 @@ Targets, measured with redis-benchmark (FR-019):
 * Listens on `127.0.0.1` by default; there is no authentication, so it must not be exposed to untrusted networks.
 * `CONFIG SET` is disabled unless `--enable-config-set` is given.
 * Files are replaced atomically; the append-only file is private to its owner.
+* On Linux, once started, the server can reach only its own directories and the system calls it needs (Landlock and
+  seccomp, ADR-0014); `--sandbox no` turns this off.
 
 ### [NFR-003] Reliability
 
