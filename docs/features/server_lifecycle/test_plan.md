@@ -58,7 +58,7 @@ one fixed sleep.
 | TC-238 | The append-only directory is locked | Another server holds `--appenddir`; start | Fails with `<dir> is in use by another server; refusing to share it`; the first server is undisturbed | Unit, Integration | `aof`: "One server at a time uses the directory" | Unit | Partial |
 | TC-239 | Port in use | The port is bound; start | A critical log line with the reason; exit non-zero | Integration | None found | none | Gap |
 | TC-240 | Log file cannot be opened | `--log-file` in a directory that does not exist; start | The server logs to stderr only, says so, and starts | Integration | None found | none | Gap |
-| TC-295 | A start that fails after its threads began stops them | `--appendonly --appendfsync everysec` over a good directory, and the port bound by another socket; start. The log is replayed and the sync thread runs before `listen()` fails, so only destructors stop what was started | A critical log line with the reason (as TC-239); exit non-zero within a few seconds, no hang; the append-only directory is free again (a second server starts over it); no sanitizer report | Integration | None found | none | Gap |
+| TC-295 | A start that fails after its threads began stops them | `--appendonly --appendfsync everysec` over a good directory, and the port bound by another socket; start. The log is replayed and the sync thread runs before `Listener::create` fails, so only destructors stop what was started | A critical log line with the reason (as TC-239); exit non-zero within a few seconds, no hang; the append-only directory is free again (a second server starts over it); no sanitizer report | Integration | None found | none | Gap |
 
 ## 3. Stopping (UC-017 steps 1 to 8; FR-017)
 

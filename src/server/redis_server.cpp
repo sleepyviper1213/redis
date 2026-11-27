@@ -12,6 +12,7 @@
 
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/system/system_error.hpp>
 #include <exec/asio/use_sender.hpp>
 #include <exec/start_detached.hpp>
 #include <exec/when_any.hpp>
@@ -22,6 +23,7 @@
 #include <exception>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -170,7 +172,7 @@ serve(Listener &server, stdexec_ext::InlineTask<void> housekeeping,
 }
 } // namespace
 
-RedisServer::RedisServer(ServerConfig config)
+RedisServer::RedisServer(Token /*only create()*/, ServerConfig config)
 	: config_(std::move(config)),
 	  io_(detail::io_config(config_.io_threads)),
 	  signals_(io_, SIGINT, SIGTERM),
@@ -178,6 +180,17 @@ RedisServer::RedisServer(ServerConfig config)
 	  services_(std::make_shared<Services>(
 		  config_.dump_file, config_.io_threads > 1, config_.aof,
 		  config_.limits, config_.is_config_set_enabled)) {}
+
+std::expected<std::unique_ptr<RedisServer>, ServerError>
+RedisServer::create(ServerConfig config) {
+	// io_context and signal_set report a failure only by throwing.
+	try {
+		return std::make_unique<RedisServer>(Token{}, std::move(config));
+	} catch (const boost::system::system_error &e) {
+		REDIS_FAILED(ServerError{.kind = ServerKind::SetupFailed,
+								 .detail = e.what()});
+	}
+}
 
 std::expected<void, ServerError> RedisServer::run() {
 	// With an append-only file it is the source of truth: it holds everything
@@ -193,10 +206,15 @@ std::expected<void, ServerError> RedisServer::run() {
 								 .source = loaded.error()});
 	}
 
-	Listener server(io_.get_executor(), services_, config_.io_threads > 1);
-	if (auto listening = server.listen(config_.host, config_.port); !listening)
+	auto listening = Listener::create(io_.get_executor(),
+									  config_.host,
+									  config_.port,
+									  services_,
+									  config_.io_threads > 1);
+	if (!listening)
 		REDIS_FAILED(ServerError{.kind   = ServerKind::ListenFailed,
 								 .source = listening.error()});
+	Listener &server = **listening;
 
 	FirstFailure failure;
 	// Stops serve()'s tasks from outside them: an I/O thread that failed.

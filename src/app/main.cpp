@@ -91,7 +91,7 @@ int run(int argc, char **argv) {
 				 app->get_option("--config")->as<std::string>());
 
 	try {
-		redis::RedisServer server(redis::ServerConfig{
+		auto server = redis::RedisServer::create(redis::ServerConfig{
 			.host       = app->get_option("--host")->as<std::string>(),
 			.port       = app->get_option("--port")->as<uint16_t>(),
 			.dump_file  = app->get_option("--dump")->as<std::string>(),
@@ -104,13 +104,18 @@ int run(int argc, char **argv) {
 							 app->get_option("--watchdog-ms")->as<int64_t>())},
 			.fail_housekeeping_after = test_fail_housekeeping_after(),
 		});
-		if (const auto ran = server.run(); !ran) {
+		if (!server) {
+			log.critical("{}", server.error());
+			return EXIT_FAILURE;
+		}
+		if (const auto ran = (*server)->run(); !ran) {
 			log.critical("{}", ran.error());
 			return EXIT_FAILURE;
 		}
 	} catch (const std::exception &e) {
-		// Only what Asio reports by throwing, e.g. boost::system::system_error
-		// when the port is already in use.
+		// Not expected: setup and run() report their failures as values. This
+		// keeps an exception that escapes anyway from ending the process
+		// without a log line.
 		log.critical("{}", e.what());
 		return EXIT_FAILURE;
 	}

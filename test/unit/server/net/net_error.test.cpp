@@ -160,5 +160,11 @@ SCENARIO("A server error shows the error that caused it",
 				  "final snapshot failed: d is in use by another server; "
 				  "refusing to share it");
 		}
+		THEN("a failed setup quotes what Asio said") {
+			CHECK(fmt::format("{}",
+							  ServerError{.kind   = ServerKind::SetupFailed,
+										  .detail = "no signals"}) ==
+				  "cannot set up the event loop: no signals");
+		}
 	}
 }

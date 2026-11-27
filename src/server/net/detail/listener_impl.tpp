@@ -7,6 +7,7 @@
  */
 
 #include "accept_loop.hpp"
+#include "core/error/failed.hpp"
 #include "server/log_channels.hpp"
 #include "server/net/formatter.hpp" // IWYU pragma: keep (endpoint formatter)
 #include "server/net/listener.hpp"
@@ -17,12 +18,15 @@
 #include <spdlog/logger.h>
 
 #include <chrono>
+#include <expected>
+#include <memory>
 #include <utility>
 
 namespace redis {
 
 template <Acceptor A>
-BasicListener<A>::BasicListener(A acceptor, boost::asio::any_io_executor ex,
+BasicListener<A>::BasicListener(Token /*only create()*/, A acceptor,
+								boost::asio::any_io_executor ex,
 								std::shared_ptr<Services> services,
 								bool is_concurrent)
 	: ex_(std::move(ex)),
@@ -35,10 +39,19 @@ BasicListener<A>::BasicListener(A acceptor, boost::asio::any_io_executor ex,
 	  sessions_(ex_) {}
 
 template <Acceptor A>
-std::expected<void, ListenError>
-BasicListener<A>::listen(std::string_view host,
-						 boost::asio::ip::port_type port) {
-	return listen_on(acceptor_, host, port);
+std::expected<std::unique_ptr<BasicListener<A>>, ListenError>
+BasicListener<A>::create(A acceptor, boost::asio::any_io_executor ex,
+						 std::string_view host, boost::asio::ip::port_type port,
+						 std::shared_ptr<Services> services,
+						 bool is_concurrent) {
+	auto listener = std::make_unique<BasicListener>(Token{},
+													std::move(acceptor),
+													std::move(ex),
+													std::move(services),
+													is_concurrent);
+	if (auto bound = listen_on(listener->acceptor_, host, port); !bound)
+		REDIS_FAILED(bound.error());
+	return listener;
 }
 
 // The loop itself is detail::accept_loop, built once over erased senders; what

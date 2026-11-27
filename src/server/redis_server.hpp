@@ -51,8 +51,23 @@ struct ServerConfig {
  * I/O threads only read, parse and write.
  */
 class RedisServer {
+	/// Only create() can make one (docs/design/patterns.md).
+	struct Token {
+		explicit Token() = default;
+	};
+
 public:
-	explicit RedisServer(ServerConfig config);
+	/**
+	 * rief A server ready to run(), or why not: Asio could not set up its
+	 * event loop or the SIGINT / SIGTERM handling (it reports that by
+	 * throwing). Not movable, so handed out by pointer, never null.
+	 */
+	[[nodiscard]] static std::expected<std::unique_ptr<RedisServer>,
+									   ServerError>
+	create(ServerConfig config);
+
+	/// For create() only; throws what Asio throws.
+	RedisServer(Token, ServerConfig config);
 
 	RedisServer(const RedisServer &)            = delete;
 	RedisServer &operator=(const RedisServer &) = delete;
