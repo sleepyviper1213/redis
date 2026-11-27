@@ -1,5 +1,6 @@
 #pragma once
 #include "core/convert/from.hpp"
+#include "core/size_units.hpp"
 #include "core/utils/error_enum_formatter.hpp"
 #include "value.hpp"
 
@@ -60,7 +61,7 @@ public:
 	 * \brief Largest bulk string accepted (same default as Redis'
 	 * proto-max-bulk-len).
 	 */
-	static constexpr int64_t MAX_BULK_LENGTH = 512LL * 1024 * 1024;
+	static constexpr int64_t MAX_BULK_LENGTH = static_cast<int64_t>(512 * MiB);
 
 	/**
 	 * \brief Largest number of array elements pre-allocated up front. Bigger

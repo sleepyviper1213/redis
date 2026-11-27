@@ -1,6 +1,7 @@
 // Development builds on Windows (MinGW) only. Windows cannot fork, so BGSAVE
 // fails with an error there; SAVE and shutdown saves work.
 #include "child_process.hpp"
+#include "core/size_units.hpp"
 #include "durable_file.hpp"
 
 #include <windows.h>
@@ -123,7 +124,7 @@ std::error_code DurableFile::write_all(std::string_view data) {
 
 std::expected<std::string, std::error_code> DurableFile::read_all() const {
 	std::string content;
-	std::array<char, 64 * 1024> chunk{};
+	std::array<char, 64 * KiB> chunk{};
 	for (;;) {
 		const int got =
 			::_read(fd_, chunk.data(), static_cast<unsigned>(chunk.size()));

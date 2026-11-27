@@ -3,6 +3,7 @@
 #include "current_command.hpp"
 #include "core/os/child_process.hpp"
 #include "core/os/sandbox.hpp"
+#include "core/size_units.hpp"
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -51,7 +52,7 @@ bool is_stalling_report = false;
 
 /// A crash on a thread that has run out of stack needs another stack to
 /// report from. Covers the thread that installed the handler (main).
-constexpr std::size_t ALT_STACK_SIZE = 64 * 1024;
+constexpr std::size_t ALT_STACK_SIZE = 64 * KiB;
 alignas(16) std::array<std::byte, ALT_STACK_SIZE> alt_stack;
 
 /// Bounds of the installing thread's stack (DX-84); 0 where unknown.
@@ -59,7 +60,7 @@ std::uintptr_t stack_low = 0;
 
 /// How far below the stack's lowest address a fault still counts as running
 /// off it: the guard gap, and a large frame that jumps over part of it.
-constexpr std::uintptr_t OVERFLOW_WINDOW = 256 * 1024;
+constexpr std::uintptr_t OVERFLOW_WINDOW = 256 * KiB;
 
 /// Test seam for TC-302: set at install time from
 /// REDIS_TEST_CRASH_STACK_OVERFLOW, it makes install_crash_handler() recurse
