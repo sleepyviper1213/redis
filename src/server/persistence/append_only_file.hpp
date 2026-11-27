@@ -4,6 +4,7 @@
 #include "persist_error.hpp"
 #include "aof_config.hpp"
 #include "common/store/database_fwd.hpp"
+#include "core/utils/badge.hpp"
 #include "server/commands/args.hpp"
 
 #include <atomic>
@@ -95,8 +96,10 @@ public:
 	 * \brief Called after every command: log the keys that expired meanwhile
 	 * (as DEL, before the command, which may have found them gone), then, if
 	 * \p logged, the command itself - or what replace() set in its place.
+	 * The dispatcher's to call: a command calling it would log itself twice.
 	 */
-	void command_ran(Database &db, bool is_logged, Args args);
+	void command_ran(Badge<CommandHandler>, Database &db, bool is_logged,
+					 Args args);
 
 	/// Log \p args instead of the command's own arguments. Call from a command
 	/// while it runs, and only when `ctx.aof` is set.
@@ -109,8 +112,8 @@ public:
 	}
 
 	/// A command is about to run: forget what the last one left (replace(),
-	/// discard()), whether or not it reached command_ran().
-	void command_starting() noexcept {
+	/// discard()), whether or not it reached command_ran(). The dispatcher's.
+	void command_starting(Badge<CommandHandler> /*unused*/) noexcept {
 		replaced_.clear();
 		is_discarded_ = false;
 	}

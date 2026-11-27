@@ -140,7 +140,7 @@ CommandHandler::Dispatched CommandHandler::dispatch(CommandContext &ctx,
 	if (ctx.stats == nullptr)
 		return {.reply = info.fn(ctx, args), .ran = &info};
 	Value result = info.fn(ctx, args);
-	ctx.stats->command_ran(info.name, timer.duration_elapsed());
+	ctx.stats->command_ran({}, info.name, timer.duration_elapsed());
 	return {.reply = std::move(result), .ran = &info};
 }
 
@@ -154,7 +154,7 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 				 args.empty() ? std::string_view{} : args[0],
 				 args.size());
 
-	if (ctx.aof != nullptr) ctx.aof->command_starting();
+	if (ctx.aof != nullptr) ctx.aof->command_starting({});
 	const size_t reply_start = out.size();
 	const CommandInfo *ran   = nullptr;
 	bool has_failed              = false;
@@ -181,7 +181,8 @@ void CommandHandler::execute(CommandContext &ctx, Args args,
 	// logged anyway: replaying it is harmless, and telling the two apart
 	// would need every command to report it.
 	if (ctx.aof != nullptr) {
-		ctx.aof->command_ran(ctx.db,
+		ctx.aof->command_ran({},
+							 ctx.db,
 							 ran != nullptr && ran->is_write && !has_failed,
 							 args);
 	}

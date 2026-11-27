@@ -378,7 +378,8 @@ void AppendOnlyFile::log_expired(Database &db) {
 	});
 }
 
-void AppendOnlyFile::command_ran(Database &db, bool is_logged, Args args) {
+void AppendOnlyFile::command_ran(Badge<CommandHandler> /*unused*/, Database &db,
+								 bool is_logged, Args args) {
 	log_expired(db);
 	if (!is_logged || is_discarded_) {
 		replaced_.clear();
