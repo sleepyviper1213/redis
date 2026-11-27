@@ -86,6 +86,7 @@ docs/doxygen
 
 .claude
 artifacts/
+.ua/
 # Crashing inputs written by scripts/fuzz.sh
 fuzz-artifacts/
 # Next free project IDs, shared by every checkout (scripts/next_id.sh)
