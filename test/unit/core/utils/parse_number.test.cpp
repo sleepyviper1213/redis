@@ -27,7 +27,10 @@ SCENARIO("Parsing decimal integers", "[parse][integer]") {
 	}
 
 	THEN("trailing characters after the digits are invalid") {
-		for (const std::string_view s : {"12abc", "1.5", "7 "}) {
+		// An overflowing prefix too: TC-330's fuzz find.
+		for (const std::string_view s :
+			 {"12abc", "1.5", "7 ", "99999999999999999999-",
+			  "-9223372223372036854703685477580-"}) {
 			INFO("input " << s);
 			const auto result = parse_integer(s);
 			REQUIRE(!result);

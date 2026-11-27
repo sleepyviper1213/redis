@@ -30,6 +30,7 @@ add_library(
     persistence/append_only_file.cpp
     persistence/persist_error.cpp
     persistence/snapshot_manager.cpp
+    persistence/detail/aof_replay.cpp
     persistence/detail/snapshot.cpp
 )
 

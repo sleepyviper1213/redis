@@ -100,7 +100,10 @@
             "configuration": "AddressSanitizer",
             "targets": [
                 "redis_fuzz_resp_parser",
-                "redis_fuzz_resp_request"
+                "redis_fuzz_resp_request",
+                "redis_fuzz_glob",
+                "redis_fuzz_parse_number",
+                "redis_fuzz_aof_replay"
             ]
         },
         {

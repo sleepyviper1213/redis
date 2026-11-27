@@ -1,11 +1,10 @@
 #include "append_only_file.hpp"
 
-#include "common/resp/parser.hpp"
-#include "common/resp/request.hpp"
 #include "common/store/database.hpp" // IWYU pragma: keep (db.drain_expired())
 #include "core/error/failed.hpp"
 #include "core/error/verify.hpp"
 #include "core/os/save_file.hpp"
+#include "detail/aof_replay.hpp"
 #include "detail/snapshot.hpp"
 #include "server/commands/handler.hpp"
 #include "server/log_channels.hpp"
@@ -19,7 +18,6 @@
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
-#include <deque>
 #include <exception>
 #include <fstream>
 #include <ios>
@@ -219,39 +217,23 @@ AppendOnlyFile::replay(const fs::path &file, bool is_last, CommandContext &ctx,
 	if (!content) return bad(PersistKind::CannotRead, content.error());
 	const std::string_view data = *content;
 
-	std::vector<std::string_view> args;
-	std::deque<std::string> owned;
-	std::string reply;
-	size_t pos   = 0;
-	size_t whole = 0; // end of the last command that parsed completely
-
-	while (pos < data.size()) {
-		args.clear();
-		owned.clear();
-		const auto found = resp::parse_request(data, pos, args, owned);
-		if (!found) {
-			if (!resp::Parser::is_incomplete(found.error()))
-				return bad(PersistKind::LogCorrupt,
-						   {},
-						   pos,
-						   static_cast<std::int64_t>(found.error()));
-			// The server died while writing the last command. Redis' default
-			// too: drop the torn command and carry on, rather than refuse to
-			// start over a few bytes. Anywhere but the end it is corruption.
-			if (!is_last) return bad(PersistKind::LogTornInside);
-			log().warn("{} ends in the middle of a command: cutting {} bytes",
-					   file,
-					   data.size() - whole);
-			if (const auto cut = opened->truncate(whole))
-				return bad(PersistKind::CannotTruncate, cut);
-			return {};
-		}
-		whole = pos;
-		if (*found != resp::RequestKind::Command) continue;
-		reply.clear();
-		handler.execute(ctx, Args{args}, reply);
-		++commands;
+	auto whole = persistence::detail::replay_log(data, ctx, handler, commands);
+	if (!whole) {
+		PersistError error = std::move(whole.error());
+		error.path         = file;
+		REDIS_FAILED(std::move(error));
 	}
+	if (*whole == data.size()) return {};
+
+	// The server died while writing the last command. Redis' default too:
+	// drop the torn command and carry on, rather than refuse to start over a
+	// few bytes. Anywhere but the end it is corruption.
+	if (!is_last) return bad(PersistKind::LogTornInside);
+	log().warn("{} ends in the middle of a command: cutting {} bytes",
+			   file,
+			   data.size() - *whole);
+	if (const auto cut = opened->truncate(*whole))
+		return bad(PersistKind::CannotTruncate, cut);
 	return {};
 }
 

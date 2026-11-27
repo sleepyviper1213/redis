@@ -30,6 +30,7 @@ gating.
 | Integration  | A running server through hiredis: `SAVE`, `BGSAVE`, restart over the same files                    |
 | Stress       | Commands and saves at the same time, under ThreadSanitizer                                        |
 | Differential | Not used: the snapshot and log formats are this project's own, not Redis's                         |
+| Fuzz         | Generated log bytes replayed in-process, no files, under ASan and UBSan, with properties checked (`test/fuzz/`). Counts as tested where the CI fuzz job runs the harness and the corpus replay passes under `ctest` |
 
 Tests of a forked child poll with a timeout until the child is collected, never one fixed sleep.
 
@@ -105,6 +106,7 @@ A checksum of the snapshot is deferred (risk R-001 in the SRS); add a scenario f
 | TC-158 | One server per directory | A second server starts over a directory in use; then the first closes | The second is refused and the first carries on; after close the directory is free | Unit | `aof`: "One server at a time uses the directory" | Unit | Covered |
 | TC-159 | Files are private and links are not followed | A link planted where the manifest or log is written | The file behind the link is untouched; the server's files are owner-only | Unit | `aof`: "The server's files are private, and links are not followed" | Unit | Covered |
 | TC-261 | `everysec` data-loss bound | Writes under `--appendfsync everysec`; `SIGKILL` after a pause of more than one second; restart | Every write older than one second is present; the writes lost are all within the last second. Under `always`, every acknowledged write is present | Integration | `appendfsync_bound`: "TC-261" (POSIX only, runs in `scripts/test_server.sh`) | none | Gap |
+| TC-331 | Replaying any log is total and consistent (DX-92) | Any byte string up to 64 KiB as the contents of the last incremental file, replayed by `persistence::detail::replay_log` into an empty keyspace with expiry off. `SAVE`, `BGSAVE`, `BGREWRITEAOF` and `CONFIG` are stubbed, so nothing is written and no child forked | Either `LogCorrupt` at an offset inside the input, or the length of the whole commands, which is the input's length unless the rest is one torn command. Replaying only the bytes before that offset or length, into a new keyspace, succeeds with that same length and runs as many commands. No sanitizer report, no abort, no allocation over `-malloc_limit_mb` (TC-146, TC-147 for every log; every command run on arbitrary arguments) | Fuzz | `test/fuzz/aof_replay.fuzz.cpp` (planned) | none | Gap |
 
 ## Entry and exit criteria
 
