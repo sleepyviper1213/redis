@@ -5,8 +5,6 @@
 
 #include <spdlog/logger.h>
 
-#include <utility>
-
 namespace redis {
 namespace {
 spdlog::logger &log() { return logging::logger_for(logging::channel::net); }
@@ -49,7 +47,7 @@ std::expected<NetGuard::Ticket, Violation> NetGuard::admit() noexcept {
 		REDIS_FAILED(Violation::TooManyClients);
 	}
 	admitted_.fetch_add(1, std::memory_order_relaxed);
-	return Ticket(this);
+	return Ticket{this};
 }
 
 [[nodiscard]] std::expected<void, Violation>
@@ -94,27 +92,5 @@ void NetGuard::record(Violation violation, std::string_view peer,
 [[nodiscard]] size_t NetGuard::clients() const noexcept {
 	return clients_.load(std::memory_order_relaxed);
 }
-
-NetGuard::Ticket::Ticket(Ticket &&other) noexcept
-	: owner_(std::exchange(other.owner_, nullptr)) {}
-
-NetGuard::Ticket &NetGuard::Ticket::operator=(Ticket &&other) noexcept {
-	if (this != &other) {
-		release();
-		owner_ = std::exchange(other.owner_, nullptr);
-	}
-	return *this;
-}
-
-NetGuard::Ticket::~Ticket() { release(); }
-
-NetGuard::Ticket::Ticket(NetGuard *owner) noexcept : owner_(owner) {}
-
-void NetGuard::Ticket::release() noexcept {
-	if (owner_ != nullptr)
-		owner_->clients_.fetch_sub(1, std::memory_order_relaxed);
-	owner_ = nullptr;
-}
-
 
 } // namespace redis

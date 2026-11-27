@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <string_view>
 
 namespace redis {
@@ -36,26 +37,22 @@ enum class Violation : uint8_t {
  */
 class NetGuard {
 public:
-	/// Proof of admission; releases the client slot when destroyed.
+	/// Proof of admission: only admit() makes one. Movable, and gives the
+	/// client slot back when the last holder lets go (a moved-from ticket
+	/// holds nothing).
 	class [[nodiscard]] Ticket {
-	public:
-		Ticket(const Ticket &)            = delete;
-		Ticket &operator=(const Ticket &) = delete;
-
-		Ticket(Ticket &&other) noexcept;
-
-		Ticket &operator=(Ticket &&other) noexcept;
-
-		~Ticket();
-
 	private:
 		friend class NetGuard;
 
-		explicit Ticket(NetGuard *owner) noexcept;
+		struct SlotReleaser {
+			void operator()(NetGuard *owner) const noexcept {
+				owner->clients_.fetch_sub(1, std::memory_order_relaxed);
+			}
+		};
 
-		void release() noexcept;
+		explicit Ticket(NetGuard *owner) noexcept : owner_(owner) {}
 
-		NetGuard *owner_;
+		std::unique_ptr<NetGuard, SlotReleaser> owner_;
 	};
 
 	explicit NetGuard(NetLimits limits = {}) noexcept;
