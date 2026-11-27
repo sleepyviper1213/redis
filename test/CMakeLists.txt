@@ -75,11 +75,13 @@ target_include_directories(redis_unit_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_warnings(redis_unit_test)
 enable_coverage(redis_unit_test)
 copy_sanitizer_runtime(redis_unit_test)
+# Each Catch2 tag is also a CTest label: tests that wait on the real clock are
+# tagged [timing], and the sanitizer test presets exclude that label (DX-93).
 if(WIN32)
     # Windows cannot fork, so BGSAVE is unavailable there.
-    catch_discover_tests(redis_unit_test TEST_SPEC "~[fork]")
+    catch_discover_tests(redis_unit_test TEST_SPEC "~[fork]" ADD_TAGS_AS_LABELS)
 else()
-    catch_discover_tests(redis_unit_test)
+    catch_discover_tests(redis_unit_test ADD_TAGS_AS_LABELS)
 endif()
 
 # Fuzz harnesses for the parsers; their corpus replay runs under CTest in every

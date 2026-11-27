@@ -9,19 +9,6 @@
 namespace redis {
 
 /**
- * \brief Where DateTime::current() takes the wall-clock time from (DX-90),
- * named the way Qt::TimerType names a timer's kind. The clock's kind
- * (precision, cost) is a template parameter elsewhere; this only says
- * whether the one wall clock is real or simulated.
- */
-enum class WallClockSource : uint8_t {
-	/// std::chrono::system_clock. The server never uses another.
-	System,
-	/// A time that only moves when told to: test::SimulatedWallClock.
-	Fixed,
-};
-
-/**
  * \brief A point on the wall clock: milliseconds since the Unix epoch.
  *
  * Not a monotonic clock: use ElapsedTimer to measure intervals.
@@ -40,17 +27,8 @@ public:
 	/// The Unix epoch.
 	DateTime() noexcept = default;
 
-	/// The current time from the source use_source() chose: the system clock
-	/// unless a test said otherwise.
+	/// The current time, from std::chrono::system_clock.
 	[[nodiscard]] static DateTime current() noexcept;
-
-	/**
-	 * \brief Test seam (DX-90): makes current() read \p source. With
-	 * WallClockSource::Fixed, current() returns \p fixed_at until the next
-	 * call; WallClockSource::System ignores \p fixed_at (pass `{}`). Called by
-	 * test::SimulatedWallClock, never by the server.
-	 */
-	static void use_source(WallClockSource source, DateTime fixed_at) noexcept;
 
 	/// Construction from Unix timestamps; seconds saturate on overflow.
 	[[nodiscard]] static DateTime from_msecs_since_epoch(int64_t ms) noexcept;

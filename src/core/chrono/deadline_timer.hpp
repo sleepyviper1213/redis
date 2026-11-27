@@ -1,10 +1,10 @@
 #pragma once
 
 #include "clock.hpp"
+#include "core/utils/saturating.hpp"
 #include "date_time.hpp"
 #include "tick_clock.hpp"
 #include "wall_time.hpp"
-#include "core/utils/saturating.hpp"
 
 #include <chrono>
 #include <concepts>
@@ -22,7 +22,8 @@ namespace detail {
 template <class To, class Rep, class Period>
 [[nodiscard]] constexpr To
 saturating_duration_cast(std::chrono::duration<Rep, Period> d) noexcept {
-	static_assert(std::is_integral_v<Rep> && std::is_integral_v<typename To::rep>,
+	static_assert(std::is_integral_v<Rep> &&
+					  std::is_integral_v<typename To::rep>,
 				  "a floating-point duration cannot be converted safely");
 	using ToRep = typename To::rep;
 	using Ratio = std::ratio_divide<Period, typename To::period>;
@@ -47,8 +48,7 @@ saturating_duration_cast(std::chrono::duration<Rep, Period> d) noexcept {
  * far behind is the earliest instant, never a wrapped value.
  *
  * \tparam C Any std::chrono clock. steady_clock by default; WallTime for
- * deadlines that are Unix times (DeadlineTimer); TickClock on the hot path;
- * test::SimulatedClock in tests.
+ * deadlines that are Unix times (DeadlineTimer); TickClock on the hot path.
  */
 template <Clock C = std::chrono::steady_clock>
 class BasicDeadlineTimer {

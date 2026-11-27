@@ -2,48 +2,44 @@
 // of docs/features/key_expiry/test_plan.md; the issue is #43.
 #include "absl/strings/match.h"
 #include "commands.fixture.hpp"
-#include "support/simulated_wall_clock.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
-#include <chrono>
 #include <string>
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::StartsWith;
 
 using namespace redis;
-using namespace std::chrono_literals;
 
 namespace {
-// Deadlines pass when the simulated clock is moved, not by waiting (DX-90), so a
-// loaded machine cannot reach one early.
-constexpr auto SHORT_DEADLINE_MS = "20";
-constexpr auto SHORT_DEADLINE    = 20ms;
-
-/// Give \p key a deadline, then move \p clock to it: the key is due.
-void make_due(test::Server &server, test::SimulatedWallClock &clock,
-			  const std::string &key) {
-	REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) == ":1\r\n");
-	clock.advance(SHORT_DEADLINE);
+/// Give \p key a deadline already past, without waiting (DX-93): with expiry
+/// off the deadline is stored, not acted on, so the key is due but still there.
+void make_due(test::Server &server, const std::string &key) {
+	server.db.set_expiry_enabled(false);
+	REQUIRE(server.run({"PEXPIREAT", key, "1"}) == ":1\r\n");
+	server.db.set_expiry_enabled(true);
 }
 
-/// \p key has exactly \p seconds left. The simulated clock does not move
-/// between the command that set the deadline and this reading, so no slow
-/// machine can make it read one second low (TC-324). It is a parameter so a
-/// scenario cannot call this without fixing the clock first.
-void expect_ttl(test::Server &server,
-				[[maybe_unused]] const test::SimulatedWallClock &clock,
-				const std::string &key, long long seconds) {
+/// \p key has \p seconds left. TTL rounds to the nearest second, so the
+/// reading is exact unless half a second passed since the deadline was set.
+void expect_ttl(test::Server &server, const std::string &key,
+				long long seconds) {
 	CAPTURE(key, seconds);
 	CHECK(server.run({"TTL", key}) == fmt::format(":{}\r\n", seconds));
+}
+
+/// PTTL of \p key as a number, for checks that allow for time passing.
+long long pttl(test::Server &server, const std::string &key) {
+	const auto reply = server.run({"PTTL", key});
+	REQUIRE(reply.starts_with(':'));
+	return std::stoll(reply.substr(1));
 }
 } // namespace
 
 SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
-	test::SimulatedWallClock clock; // DX-90: TTLs read exactly
 	GIVEN("a string, a list, a hash and a set") {
 		test::Server server;
 		server.run({"SET", "str", "v"});
@@ -59,7 +55,7 @@ SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
 				CHECK(server.run({"TYPE", "list"}) == "+list\r\n");
 				CHECK(server.run({"TYPE", "hash"}) == "+hash\r\n");
 				CHECK(server.run({"TYPE", "set"}) == "+set\r\n");
-				expect_ttl(server, clock, "list", 100);
+				expect_ttl(server, "list", 100);
 			}
 		}
 
@@ -68,7 +64,7 @@ SCENARIO("Every value type takes a deadline", "[commands][expiry]") {
 			server.run({"EXPIRE", "str", "500"});
 
 			THEN("the new one replaces the old") {
-				expect_ttl(server, clock, "str", 500);
+				expect_ttl(server, "str", 500);
 			}
 		}
 	}
@@ -125,7 +121,6 @@ SCENARIO("SET over a key that is already due",
 
 SCENARIO("Options decide whether EXPIRE sets a deadline",
 		 "[commands][expiry]") {
-	test::SimulatedWallClock clock; // DX-90: TTLs read exactly
 	GIVEN("a key with a deadline 100 seconds ahead") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
@@ -134,14 +129,14 @@ SCENARIO("Options decide whether EXPIRE sets a deadline",
 		WHEN("TC-266: GT, NX, XX and LT are tried in turn (#41)") {
 			THEN("only the deadline that passes its option is set") {
 				CHECK(server.run({"EXPIRE", "k", "50", "GT"}) == ":0\r\n");
-				expect_ttl(server, clock, "k", 100);
+				expect_ttl(server, "k", 100);
 				CHECK(server.run({"EXPIRE", "k", "200", "GT"}) == ":1\r\n");
-				expect_ttl(server, clock, "k", 200);
+				expect_ttl(server, "k", 200);
 				CHECK(server.run({"EXPIRE", "k", "10", "NX"}) == ":0\r\n");
 				CHECK(server.run({"EXPIRE", "k", "10", "XX"}) == ":1\r\n");
 				CHECK(server.run({"EXPIRE", "k", "5", "LT"}) == ":1\r\n");
 				CHECK(server.run({"EXPIRE", "k", "9999", "LT"}) == ":0\r\n");
-				expect_ttl(server, clock, "k", 5);
+				expect_ttl(server, "k", 5);
 			}
 		}
 	}
@@ -159,8 +154,8 @@ SCENARIO("Options decide whether EXPIRE sets a deadline",
 				CHECK(server.run({"TTL", "b"}) == ":-1\r\n");
 				CHECK(server.run({"EXPIRE", "c", "10", "LT"}) == ":1\r\n");
 				CHECK(server.run({"EXPIRE", "d", "10", "NX"}) == ":1\r\n");
-				expect_ttl(server, clock, "c", 10);
-				expect_ttl(server, clock, "d", 10);
+				expect_ttl(server, "c", 10);
+				expect_ttl(server, "d", 10);
 			}
 		}
 	}
@@ -212,10 +207,9 @@ SCENARIO("Options with a missing key, a due key and a past deadline",
 	}
 
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
-		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		make_due(server, clock, "k");
+		make_due(server, "k");
 
 		WHEN("TC-268: EXPIRE is sent with XX") {
 			THEN("the key is missing, so the reply is 0") {
@@ -341,7 +335,6 @@ SCENARIO("Deadlines already past, invalid amounts and wrong arity",
 }
 
 SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
-	test::SimulatedWallClock clock; // DX-90: TTLs read exactly
 	GIVEN("keys of each type, each with a deadline") {
 		test::Server server;
 		server.run({"SET", "n", "1"});
@@ -360,7 +353,7 @@ SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
 
 			THEN("each keeps its deadline") {
 				for (const char *key : {"n", "list", "hash", "set"})
-					expect_ttl(server, clock, key, 100);
+					expect_ttl(server, key, 100);
 			}
 		}
 
@@ -404,16 +397,13 @@ SCENARIO("Writes keep or drop a deadline", "[commands][expiry]") {
 SCENARIO("A key past its deadline is missing to every command",
 		 "[commands][expiry]") {
 	GIVEN("keys of each type whose deadlines have passed, and one live key") {
-		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "str", "v"});
 		server.run({"RPUSH", "list", "x"});
 		server.run({"HSET", "hash", "f", "v"});
 		server.run({"SET", "live", "v"});
 		for (const char *key : {"str", "list", "hash"})
-			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) ==
-					":1\r\n");
-		clock.advance(SHORT_DEADLINE);
+			make_due(server, key);
 
 		THEN("TC-105: reads see them as missing") {
 			CHECK(server.run({"GET", "str"}) == "$-1\r\n");
@@ -479,15 +469,12 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 	}
 
 	GIVEN("five keys that expire, by a read and by the sweep") {
-		test::SimulatedWallClock clock;
 		test::Server server;
 		for (int i = 0; i < 5; ++i) {
 			const auto key = fmt::format("k{}", i);
 			server.run({"SET", key, "v"});
-			REQUIRE(server.run({"PEXPIRE", key, SHORT_DEADLINE_MS}) ==
-					":1\r\n");
+			make_due(server, key);
 		}
-		clock.advance(SHORT_DEADLINE);
 		server.run({"GET", "k0"});
 		server.db.active_expire_cycle(100);
 
@@ -506,10 +493,9 @@ SCENARIO("INFO reports the keys with a deadline and the keys that expired",
 SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 		 "[commands][expiry]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
-		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		make_due(server, clock, "k");
+		make_due(server, "k");
 
 		THEN("DEL finds no key, and the key counts as expired") {
 			const auto before = server.db.expired_keys();
@@ -524,10 +510,9 @@ SCENARIO("DEL of a key past its deadline replies 0, as Redis does (#40)",
 SCENARIO("Key expiry limits by design and commands not implemented",
 		 "[commands][expiry][limit]") {
 	GIVEN("a key whose deadline has passed but which nothing has removed") {
-		test::SimulatedWallClock clock;
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		make_due(server, clock, "k");
+		make_due(server, "k");
 
 		THEN("DBSIZE still counts it, until it is removed (LI-05)") {
 			CHECK(server.run({"DBSIZE"}) == ":1\r\n");
@@ -554,40 +539,44 @@ SCENARIO("Key expiry limits by design and commands not implemented",
 // TC-087, TC-088, TC-089: deadlines in the future, set by each command.
 SCENARIO("Deadlines in the future are read back in their unit",
 		 "[commands][expiry]") {
-	// On a whole second, so every reading below is exact (DX-90).
-	test::SimulatedWallClock clock(DateTime::from_secs_since_epoch(1'700'000'000));
-
+	// The real clock runs on between setting and reading, so the
+	// millisecond readings are bounds (DX-93).
 	GIVEN("a key, and PEXPIRE with 5000 milliseconds") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
 		REQUIRE(server.run({"PEXPIRE", "k", "5000"}) == ":1\r\n");
 
 		THEN("TC-087: PTTL is in milliseconds") {
-			CHECK(server.run({"PTTL", "k"}) == ":5000\r\n");
+			CHECK(pttl(server, "k") > 4000);
+			CHECK(pttl(server, "k") <= 5000);
 		}
 	}
 
 	GIVEN("a key, and EXPIREAT 100 seconds from now") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
-		const auto now = clock.now().to_secs_since_epoch();
+		const auto now = DateTime::current().to_secs_since_epoch();
 		REQUIRE(server.run({"EXPIREAT", "k", fmt::format("{}", now + 100)}) ==
 				":1\r\n");
 
-		THEN("TC-088: TTL is 100 seconds") {
-			CHECK(server.run({"TTL", "k"}) == ":100\r\n");
+		THEN("TC-088: TTL is in seconds") {
+			// now was rounded down, so up to a second less than 100 s.
+			const auto ttl = server.run({"TTL", "k"});
+			CHECK((ttl == ":100\r\n" || ttl == ":99\r\n"));
 		}
 	}
 
 	GIVEN("a key, and PEXPIREAT 100000 milliseconds from now") {
 		test::Server server;
 		server.run({"SET", "k", "v"});
+		const auto now_ms = DateTime::current().to_msecs_since_epoch();
 		REQUIRE(server.run({"PEXPIREAT", "k",
-							fmt::format("{}", clock.now_ms() + 100'000)}) ==
+							fmt::format("{}", now_ms + 100'000)}) ==
 				":1\r\n");
 
-		THEN("TC-089: PTTL is 100000 milliseconds") {
-			CHECK(server.run({"PTTL", "k"}) == ":100000\r\n");
+		THEN("TC-089: PTTL is in milliseconds") {
+			CHECK(pttl(server, "k") > 99'000);
+			CHECK(pttl(server, "k") <= 100'000);
 		}
 	}
 }

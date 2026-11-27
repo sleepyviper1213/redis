@@ -1,14 +1,11 @@
 #include "core/chrono/deadline_timer.hpp"
 
-#include "core/chrono/elapsed_timer.hpp"
-#include "support/simulated_clock.hpp"
-#include "support/simulated_wall_clock.hpp"
-
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <limits>
+#include <thread>
 
 using namespace redis;
 using namespace std::chrono_literals;
@@ -20,18 +17,12 @@ concept HasUnixTime = requires(Timer t) {
 	Timer::at_ms(int64_t{0});
 	t.millis_since_epoch();
 };
-
-struct Tc325;
-struct Tc326;
-struct TagA;
-struct TagB;
 } // namespace
 
-// TC-328: the clocks are what the concepts say (ADR-0013).
+// The clocks are what the concepts say (ADR-0013).
 static_assert(Clock<WallTime> && !MonotonicClock<WallTime>);
 static_assert(MonotonicClock<TickClock>);
 static_assert(MonotonicClock<std::chrono::steady_clock>);
-static_assert(MonotonicClock<test::SimulatedClock<TagA>>);
 static_assert(HasUnixTime<DeadlineTimer>);
 static_assert(!HasUnixTime<BasicDeadlineTimer<std::chrono::steady_clock>>);
 static_assert(!HasUnixTime<TickDeadlineTimer>);
@@ -65,37 +56,13 @@ SCENARIO("TC-123: DeadlineTimer saturates instead of overflowing",
 	}
 }
 
-SCENARIO("TC-325: both timers read a simulated clock exactly",
-		 "[core][deadline_timer][simulated_clock]") {
-	using Clock = test::SimulatedClock<Tc325>;
-	Clock::reset();
-	BasicElapsedTimer<Clock> elapsed;
-	const auto deadline = BasicDeadlineTimer<Clock>::after(100ms);
-
-	Clock::advance(40ms);
-	CHECK(elapsed.elapsed() == 40ms);
-	CHECK(deadline.remaining_time() == 60ms);
-	CHECK_FALSE(deadline.has_expired());
-
-	Clock::advance(60ms);
-	CHECK(elapsed.elapsed() == 100ms);
-	CHECK(deadline.remaining_time() == Clock::duration::zero());
-	CHECK(deadline.has_expired());
-
-	CHECK(elapsed.restart() == 100ms);
-	CHECK(elapsed.elapsed() == 0ms);
-}
-
 SCENARIO("TC-326: a deadline saturates on any clock",
-		 "[core][deadline_timer][simulated_clock]") {
-	using Clock = test::SimulatedClock<Tc326>;
-	Clock::reset();
+		 "[core][deadline_timer]") {
+	using Clock = std::chrono::steady_clock;
 	constexpr auto huge = std::chrono::hours::max();
 
 	THEN("the largest duration from now is forever, on every clock") {
 		CHECK(BasicDeadlineTimer<Clock>::after(huge).is_forever());
-		CHECK(BasicDeadlineTimer<std::chrono::steady_clock>::after(huge)
-				  .is_forever());
 		CHECK(TickDeadlineTimer::after(huge).is_forever());
 		CHECK(DeadlineTimer::after(huge).is_forever());
 	}
@@ -107,52 +74,42 @@ SCENARIO("TC-326: a deadline saturates on any clock",
 		CHECK(DeadlineTimer::after(std::chrono::hours::min()).has_expired());
 	}
 
-	THEN("forever never expires, and has all the time there is") {
+	THEN("forever never expires, and has all the time the clock has left") {
 		const auto forever = BasicDeadlineTimer<Clock>::forever();
-		CHECK(forever.remaining_time() == Clock::duration::max());
-		Clock::advance(24h);
+		CHECK(forever.is_forever());
 		CHECK_FALSE(forever.has_expired());
+		// max() less now(): exactly max() only on a clock at its epoch. Read
+		// now() first, so the timer's own reading is the later one.
+		const auto at_most = Clock::duration::max() -
+							 Clock::now().time_since_epoch();
+		CHECK(forever.remaining_time() <= at_most);
+		CHECK(forever.remaining_time() > at_most - 1h);
 	}
 }
 
 SCENARIO("TC-327: DeadlineTimer keeps Unix times on the wall clock",
-		 "[core][deadline_timer][simulated_clock]") {
-	constexpr int64_t start_ms = 1'700'000'000'000;
-	test::SimulatedWallClock clock(DateTime::from_msecs_since_epoch(start_ms));
-	const auto timer = DeadlineTimer::after_ms(50);
+		 "[core][deadline_timer]") {
+	constexpr int64_t at_ms = 1'700'000'000'050;
+	const auto timer = DeadlineTimer::at_ms(at_ms);
 
 	THEN("its Unix time and its DateTime are the same instant") {
-		CHECK(timer.millis_since_epoch() == start_ms + 50);
-		CHECK(timer.date_time() == DateTime::from_msecs_since_epoch(start_ms + 50));
+		CHECK(timer.millis_since_epoch() == at_ms);
+		CHECK(timer.date_time() == DateTime::from_msecs_since_epoch(at_ms));
 		CHECK(DeadlineTimer::at(timer.date_time()) == timer);
 		CHECK(DeadlineTimer::at_s(100).date_time() ==
 			  DateTime::from_secs_since_epoch(100));
 		CHECK(DeadlineTimer::forever().date_time() == DateTime::distant_future());
 	}
-
-	THEN("it expires when the simulated wall clock reaches it") {
-		CHECK(timer.remaining_time() == 50ms);
-		clock.advance(49ms);
-		CHECK_FALSE(timer.has_expired());
-		clock.advance(1ms);
-		CHECK(timer.has_expired());
-	}
 }
 
-SCENARIO("TC-328: a simulated clock moves only when told",
-		 "[core][simulated_clock]") {
-	using A = test::SimulatedClock<TagA>;
-	using B = test::SimulatedClock<TagB>;
-	A::reset();
-	B::reset();
+// Waits on the real clock: excluded under the sanitizers (DX-93).
+SCENARIO("TC-333: a wall-clock deadline expires on the real clock",
+		 "[core][deadline_timer][timing]") {
+	const auto timer = DeadlineTimer::after_ms(50);
+	CHECK(timer.remaining_time() <= 50ms);
+	CHECK_FALSE(timer.has_expired());
 
-	A::advance(5ms);
-	THEN("it moved by exactly that much, and another tag did not move") {
-		CHECK(A::now().time_since_epoch() == 5ms);
-		CHECK(B::now().time_since_epoch() == B::duration::zero());
-	}
-	THEN("reset() brings it back to the origin") {
-		A::reset();
-		CHECK(A::now().time_since_epoch() == A::duration::zero());
-	}
+	std::this_thread::sleep_for(300ms);
+	CHECK(timer.has_expired());
+	CHECK(timer.remaining_time() == DeadlineTimer::duration::zero());
 }

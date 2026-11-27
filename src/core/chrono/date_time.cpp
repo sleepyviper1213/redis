@@ -2,32 +2,15 @@
 
 #include "core/utils/saturating.hpp"
 
-#include <atomic>
 #include <limits>
 
 namespace redis {
 namespace {
 constexpr int64_t MS_PER_S = 1000;
-
-// The seam's state (DX-90). The time is stored before the source is switched
-// (release) and read after it (acquire), so a reader that sees Fixed sees its
-// time. On x86 and ARM64 the acquire load is a plain load.
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-std::atomic<WallClockSource> current_source{WallClockSource::System};
-std::atomic<int64_t> fixed_ms{0};
-// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 } // namespace
 
 DateTime DateTime::current() noexcept {
-	if (current_source.load(std::memory_order_acquire) ==
-		WallClockSource::Fixed) [[unlikely]]
-		return DateTime(fixed_ms.load(std::memory_order_relaxed));
 	return from_std_time_point(std::chrono::system_clock::now());
-}
-
-void DateTime::use_source(WallClockSource source, DateTime fixed_at) noexcept {
-	fixed_ms.store(fixed_at.ms_, std::memory_order_relaxed);
-	current_source.store(source, std::memory_order_release);
 }
 
 DateTime DateTime::from_msecs_since_epoch(int64_t ms) noexcept {

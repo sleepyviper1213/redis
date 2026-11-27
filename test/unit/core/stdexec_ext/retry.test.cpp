@@ -1,8 +1,8 @@
 #include "core/stdexec_ext/retry.hpp"
-#include "core/stdexec_ext/watchdog/fail_after.hpp"
-#include "core/stdexec_ext/watchdog/time_limited.hpp"
 
 #include "core/chrono/elapsed_timer.hpp"
+#include "core/stdexec_ext/watchdog/fail_after.hpp"
+#include "core/stdexec_ext/watchdog/time_limited.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <exec/timed_thread_scheduler.hpp>
@@ -85,9 +85,7 @@ AttemptFunc auto hangs_once(int &calls, exec::timed_thread_scheduler scheduler,
 std::error_code code_of(const std::exception_ptr &error) {
 	try {
 		std::rethrow_exception(error);
-	} catch (const std::system_error &e) {
-		return e.code();
-	} catch (...) {
+	} catch (const std::system_error &e) { return e.code(); } catch (...) {
 		return {};
 	}
 }
@@ -98,7 +96,8 @@ SCENARIO("A failed sender is tried again", "[retry]") {
 		int calls = 0;
 
 		WHEN("the policy allows enough attempts") {
-			auto result = ex::sync_wait(retry(flaky(calls, 3), retry_policy::immediately(5)));
+			auto result = ex::sync_wait(
+				retry(flaky(calls, 3), retry_policy::immediately(5)));
 
 			THEN("it completes with the successful attempt's value") {
 				REQUIRE(result.has_value());
@@ -109,8 +108,10 @@ SCENARIO("A failed sender is tried again", "[retry]") {
 
 		WHEN("the policy allows only two attempts") {
 			THEN("it completes with the last error, after exactly two tries") {
-				CHECK_THROWS_AS(ex::sync_wait(retry(flaky(calls, 3), retry_policy::immediately(2))),
-								std::runtime_error);
+				CHECK_THROWS_AS(
+					ex::sync_wait(
+						retry(flaky(calls, 3), retry_policy::immediately(2))),
+					std::runtime_error);
 				CHECK(calls == 2);
 			}
 		}
@@ -118,7 +119,8 @@ SCENARIO("A failed sender is tried again", "[retry]") {
 
 	GIVEN("an attempt that succeeds at once") {
 		int calls = 0;
-		auto result = ex::sync_wait(retry(flaky(calls, 1), retry_policy::immediately(3)));
+		auto result =
+			ex::sync_wait(retry(flaky(calls, 1), retry_policy::immediately(3)));
 
 		THEN("it is tried once and the policy is never asked") {
 			REQUIRE(result.has_value());
@@ -128,8 +130,8 @@ SCENARIO("A failed sender is tried again", "[retry]") {
 	}
 
 	GIVEN("an attempt with no value") {
-		int calls     = 0;
-		AttemptFunc auto make     = [&calls] {
+		int calls             = 0;
+		AttemptFunc auto make = [&calls] {
 			return ex::just() | ex::then([&calls] {
 					   if (++calls < 2) throw std::runtime_error("flaky");
 				   });
@@ -148,7 +150,8 @@ SCENARIO("The policy sees every failure", "[retry]") {
 		int calls = 0;
 		std::vector<size_t> failures;
 		std::vector<std::string> reasons;
-		RetryFunc auto policy = [&](size_t count, const std::exception_ptr &error) {
+		RetryFunc auto policy = [&](size_t count,
+									const std::exception_ptr &error) {
 			failures.push_back(count);
 			try {
 				std::rethrow_exception(error);
@@ -170,7 +173,7 @@ SCENARIO("The policy sees every failure", "[retry]") {
 	}
 
 	GIVEN("an attempt that fails with an error code rather than an exception") {
-		int calls = 0;
+		int calls             = 0;
 		AttemptFunc auto make = [&calls] {
 			++calls;
 			return ex::just_error(
@@ -178,8 +181,9 @@ SCENARIO("The policy sees every failure", "[retry]") {
 		};
 
 		THEN("the policy and the final error still see an exception") {
-			CHECK_THROWS_AS(ex::sync_wait(retry(make, retry_policy::immediately(2))),
-							std::system_error);
+			CHECK_THROWS_AS(
+				ex::sync_wait(retry(make, retry_policy::immediately(2))),
+				std::system_error);
 			CHECK(calls == 2);
 		}
 	}
@@ -189,15 +193,16 @@ SCENARIO("A retry that cannot overflow the stack", "[retry]") {
 	GIVEN("an attempt that fails immediately, many times in a row") {
 		const auto error = std::make_exception_ptr(std::runtime_error("down"));
 		size_t calls     = 0;
-		AttemptFunc auto make        = [&] {
-            ++calls;
-            return ex::just_error(error);
+		AttemptFunc auto make = [&] {
+			++calls;
+			return ex::just_error(error);
 		};
 		constexpr size_t ATTEMPTS = 100'000;
 
 		THEN("it gives up cleanly after the last one") {
-			CHECK_THROWS_AS(ex::sync_wait(retry(make, retry_policy::immediately(ATTEMPTS))),
-							std::runtime_error);
+			CHECK_THROWS_AS(
+				ex::sync_wait(retry(make, retry_policy::immediately(ATTEMPTS))),
+				std::runtime_error);
 			CHECK(calls == ATTEMPTS);
 		}
 	}
@@ -205,7 +210,7 @@ SCENARIO("A retry that cannot overflow the stack", "[retry]") {
 
 SCENARIO("A stop is never retried", "[retry]") {
 	GIVEN("a policy whose wait is stopped") {
-		int calls   = 0;
+		int calls             = 0;
 		RetryFunc auto policy = [](size_t, const std::exception_ptr &) {
 			return ex::just_stopped() | ex::then([] { return true; });
 		};
@@ -218,14 +223,15 @@ SCENARIO("A stop is never retried", "[retry]") {
 	}
 
 	GIVEN("an attempt that is itself stopped") {
-		int calls = 0;
+		int calls             = 0;
 		AttemptFunc auto make = [&calls] {
 			++calls;
 			return ex::just_stopped() | ex::then([] { return 1; });
 		};
 
 		THEN("it is not tried again") {
-			auto result = ex::sync_wait(retry(make, retry_policy::immediately(5)));
+			auto result =
+				ex::sync_wait(retry(make, retry_policy::immediately(5)));
 			CHECK_FALSE(result.has_value());
 			CHECK(calls == 1);
 		}
@@ -273,9 +279,9 @@ SCENARIO("A retry with backoff waits longer after each failure", "[retry]") {
 
 		WHEN("it is retried with backoff") {
 			const redis::ElapsedTimer timer;
-			auto result = ex::sync_wait(
-				retry(flaky(calls, 3),
-					  retry_policy::exponential_backoff(scheduler, 5, 20ms, 1s)));
+			auto result        = ex::sync_wait(retry(
+				flaky(calls, 3),
+				retry_policy::exponential_backoff(scheduler, 5, 20ms, 1s)));
 			const auto elapsed = timer.elapsed();
 
 			THEN("it completes with the value, after waiting 20 then 40 ms") {
@@ -311,9 +317,10 @@ SCENARIO("A retry with backoff waits longer after each failure", "[retry]") {
 
 		WHEN("a time limit stops the retry during its first wait") {
 			const redis::ElapsedTimer timer;
-			auto result = ex::sync_wait(time_limited(
-				retry(flaky(calls, 1000),
-					  retry_policy::exponential_backoff(scheduler, 5, 10s, 10s)),
+			auto result        = ex::sync_wait(time_limited(
+				retry(
+					flaky(calls, 1000),
+					retry_policy::exponential_backoff(scheduler, 5, 10s, 10s)),
 				scheduler,
 				100ms,
 				[] { return -1; }));
@@ -336,10 +343,9 @@ SCENARIO("A stop during an attempt that ignores it ends the retry", "[retry]") {
 		const auto env = ex::prop{ex::get_stop_token, stop.get_token()};
 
 		WHEN("the policy would try again at once") {
-			auto result = ex::sync_wait(
-				retry(fails_while_stopping(calls, stop),
-					  retry_policy::immediately(3)) |
-				ex::write_env(env));
+			auto result = ex::sync_wait(retry(fails_while_stopping(calls, stop),
+											  retry_policy::immediately(3)) |
+										ex::write_env(env));
 
 			THEN("the retry is stopped, with no further attempt") {
 				CHECK_FALSE(result.has_value());
@@ -353,8 +359,10 @@ SCENARIO("A stop during an attempt that ignores it ends the retry", "[retry]") {
 			const redis::ElapsedTimer timer;
 			auto result = ex::sync_wait(
 				retry(fails_while_stopping(calls, stop),
-					  retry_policy::exponential_backoff(
-						  context.get_scheduler(), 3, 10s, 10s)) |
+					  retry_policy::exponential_backoff(context.get_scheduler(),
+														3,
+														10s,
+														10s)) |
 				ex::write_env(env));
 			const auto elapsed = timer.elapsed();
 
@@ -384,14 +392,18 @@ SCENARIO("A retry with jittered backoff waits what the jitter source chooses",
 			const redis::ElapsedTimer timer;
 			auto result = ex::sync_wait(
 				retry(flaky(calls, 3),
-					  retry_policy::exponential_backoff(
-						  context.get_scheduler(), 5, 400ms, 10s, hundredth)));
+					  retry_policy::exponential_backoff(context.get_scheduler(),
+														5,
+														400ms,
+														10s,
+														hundredth)));
 			const auto elapsed = timer.elapsed();
 
 			THEN("the jitter is asked about every wait, the first included") {
 				REQUIRE(result.has_value());
 				CHECK(calls == 3);
-				CHECK(asked == std::vector<std::chrono::milliseconds>{400ms, 800ms});
+				CHECK(asked ==
+					  std::vector<std::chrono::milliseconds>{400ms, 800ms});
 			}
 
 			THEN("the retry waits what it chose, not the whole delays") {
@@ -407,7 +419,7 @@ SCENARIO("Full jitter draws from zero to the backoff delay", "[retry]") {
 		const auto jitter = retry_policy::full_jitter(std::mt19937_64{42});
 
 		WHEN("it draws many waits for a delay of 100 ms") {
-			constexpr int DRAWS = 10'000;
+			constexpr int DRAWS = 10000;
 			int outside         = 0;
 			int lowest_tenth    = 0;
 			int highest_tenth   = 0;
@@ -433,7 +445,8 @@ SCENARIO("A hung attempt fails after its limit and is retried", "[retry]") {
 	exec::timed_thread_context context;
 	const auto scheduler = context.get_scheduler();
 
-	GIVEN("an attempt that hangs on its first try, each try limited to 100 ms") {
+	GIVEN(
+		"an attempt that hangs on its first try, each try limited to 100 ms") {
 		int calls = 0;
 		std::vector<std::error_code> seen;
 		const RetryFunc auto backoff =

@@ -16,8 +16,7 @@ namespace redis {
  * (ADR-0013).
  *
  * \tparam Clock A steady clock. steady_clock by default; TickClock for short
- * spans on the hot path, where steady_clock is costly on macOS;
- * test::SimulatedClock in tests.
+ * spans on the hot path, where steady_clock is costly on macOS.
  */
 template <MonotonicClock Clock = std::chrono::steady_clock>
 class BasicElapsedTimer {
