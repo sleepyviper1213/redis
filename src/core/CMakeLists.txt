@@ -11,12 +11,18 @@ add_library(
     utils/glob.cpp
     utils/parse_number.cpp
     chrono/date_time.cpp
-    chrono/tick_clock.cpp
 )
 
 add_library(redis::core ALIAS redis_core)
 
-# The only platform-specific code: processes, file descriptors and fsync.
+# The only platform-specific code: processes, file descriptors, fsync, the
+# sandbox, and macOS's tick counter (docs/design/patterns.md, platform code).
+if(APPLE)
+    target_sources(redis_core PRIVATE os/tick_clock_mach.cpp)
+else()
+    target_sources(redis_core PRIVATE chrono/tick_clock.cpp)
+endif()
+
 if(WIN32)
     target_sources(redis_core PRIVATE os/windows.cpp)
     # <windows.h> defines min() and max() macros that break std::min and

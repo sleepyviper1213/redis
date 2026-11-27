@@ -333,5 +333,7 @@ jobs:
       # Both analysers run as compiler launchers, so building is analysing.
       # Clang rather than GCC: clang-tidy re-parses the compiler's own command
       # line, which needs no reconciliation on a Clang tree.
+      - name: Platform code stays in the platform layer
+        run: bash scripts/check_platform_code.sh
       - name: Configure and analyse
         run: cmake --workflow --preset x86_64-linux-gnu-clang-analysis
