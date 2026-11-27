@@ -1,5 +1,6 @@
 #pragma once
 #include "core/chrono/elapsed_timer.hpp"
+#include "core/utils/badge.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -12,6 +13,7 @@
 #include <vector>
 
 namespace redis {
+class CommandHandler;
 
 /// What INFO commandstats reports about one command.
 struct CommandStat {
@@ -30,7 +32,8 @@ struct CommandStat {
 class ServerStats {
 public:
 	/// A command of the given (upper case, static) name finished after \p took.
-	void command_ran(std::string_view name,
+	/// The dispatcher's to call, once per command.
+	void command_ran(Badge<CommandHandler> /*unused*/, std::string_view name,
 					 std::chrono::nanoseconds took) noexcept {
 		commands_.store(commands_.load(std::memory_order_relaxed) + 1,
 						std::memory_order_relaxed);

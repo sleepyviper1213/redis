@@ -13,12 +13,14 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <fmt/format.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -59,6 +61,17 @@ private:
 	fs::path path_;
 };
 
+/// DISCARDTHENTHROW: calls discard(), then throws what the dispatcher does
+/// not catch, so the command never reaches command_ran().
+resp::Value discard_then_throw(CommandContext &ctx, Args /*args*/) {
+	ctx.aof->discard();
+	throw std::runtime_error("escaped the dispatcher");
+}
+
+constexpr std::array TEST_COMMANDS{
+	CommandInfo{.name = "DISCARDTHENTHROW", .fn = discard_then_throw, .arity = 1},
+};
+
 /// A keyspace logging to (and loaded from) the append-only files in \p dir.
 /// Constructing another one over the same directory is a restart.
 struct AofServer {
@@ -90,7 +103,7 @@ struct AofServer {
 
 	Database db;
 	SnapshotManager persistence;
-	CommandHandler handler;
+	CommandHandler handler{TEST_COMMANDS};
 	CommandContext ctx{.db=db, .persistence=persistence};
 	AppendOnlyFile aof;
 };
@@ -691,8 +704,8 @@ SCENARIO("A discard does not outlive its command",
 		REQUIRE(server.start().has_value());
 
 		WHEN("a command called discard() but never reached command_ran()") {
-			server.aof.command_starting();
-			server.aof.discard();
+			CHECK_THROWS_AS(server.run({"DISCARDTHENTHROW"}),
+							std::runtime_error);
 
 			AND_WHEN("the next command starts and a write runs") {
 				server.run({"SET", "a", "b"});

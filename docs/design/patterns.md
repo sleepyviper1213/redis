@@ -71,16 +71,24 @@ In the code: `core/utils/checked.hpp`; `INCRBY` and `DECRBY` (`commands/string.c
 
 ## Access tokens: `Badge<T>`
 
-*Planned* (`test/badge`). A public method that only one class may call takes a `Badge<Caller>` first. Only `Caller`
-can make one (its constructor is private and `Caller` is a friend), so the call compiles only there, and the rest of
-the class stays private. Better than `friend class Caller`, which opens every member.
+A public method that only one class may call takes a `Badge<Caller>` first. Only `Caller` can make one (its
+constructor is private and `Caller` is a friend), so the call compiles only there, and the rest of the class stays
+private. Better than `friend class Caller`, which opens every member. A badge is passed as `{}` and cannot be copied,
+so a callee cannot pass it on.
 
 ```cpp
-class Ticket {
+class AppendOnlyFile {
 public:
-    explicit Ticket(Badge<NetGuard>, NetGuard &owner);   // only NetGuard admits
+    // The dispatcher's: a command calling it would log itself twice.
+    void command_ran(Badge<CommandHandler>, Database &db, bool is_logged, Args args);
 };
+
+ctx.aof->command_ran({}, ctx.db, is_logged, args);   // in a CommandHandler member
 ```
+
+In the code: `core/utils/badge.hpp`; `AppendOnlyFile::command_starting` and `command_ran`, `ServerStats::command_ran`,
+all called once per command by `CommandHandler`. A type-local variant, a private `Token` struct, keeps the
+constructors of types made by `create()` to `create()` alone.
 
 ## Strong types
 
